@@ -180,7 +180,14 @@ const app = {
     showScreen(screenId) {
         const mainScreens = ['voting-screen', 'groups-screen', 'notifications-screen', 'profile-screen'];
         const topLevelScreens = ['loading-screen', 'auth-screen', 'profile-setup-screen'];
+        const detailScreens = ['group-detail-screen'];
         const mainContainer = document.getElementById('main-screens');
+
+        // Always hide detail screens (they are outside main-screens container)
+        detailScreens.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
 
         if (topLevelScreens.includes(screenId) || screenId === 'main-screens') {
             // Top-level navigation: hide all top-level screens and main container
@@ -218,8 +225,16 @@ const app = {
                 target.classList.remove('hidden');
                 this.state.currentScreen = screenId;
             }
+        } else if (detailScreens.includes(screenId)) {
+            // Detail screens (outside main-screens) — hide main container, show detail
+            if (mainContainer) mainContainer.classList.add('hidden');
+            const target = document.getElementById(screenId);
+            if (target) {
+                target.classList.remove('hidden');
+                this.state.currentScreen = screenId;
+            }
         } else {
-            // Other screens (group-detail-screen, etc.)
+            // Fallback for unknown screens
             document.querySelectorAll('#main-screens > .screen').forEach(s => s.classList.add('hidden'));
             const target = document.getElementById(screenId);
             if (target) {
