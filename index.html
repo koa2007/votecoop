@@ -519,74 +519,159 @@
             <div class="modal-overlay" onclick="app.hideModal('instructions-modal')"></div>
             <div class="modal-content modal-large">
                 <div class="modal-header">
-                    <h3 data-lang="instructions_title">📖 Інструкції з використання</h3>
+                    <h3 data-lang="instructions_title">📖 Як користуватися VoteCoop</h3>
                     <button class="btn-icon" onclick="app.hideModal('instructions-modal')">✕</button>
                 </div>
                 <div class="modal-body instructions-body" id="instructions-content">
+
+                    <!-- 1. Quick Start -->
+                    <div class="instruction-section" data-instr-section="quick_start">
+                        <h4 data-lang="instr_quick_start"><i class="ph ph-rocket-launch"></i> Швидкий старт</h4>
+                        <div class="instruction-item">
+                            <p data-lang="instr_qs_step1">1️⃣ <strong>Увійдіть</strong> через Google-акаунт</p>
+                            <p data-lang="instr_qs_step2">2️⃣ <strong>Заповніть профіль</strong> — вкажіть ім'я, прізвище, телефон та номер квартири/ділянки (обов'язково для голосування)</p>
+                            <p data-lang="instr_qs_step3">3️⃣ <strong>Створіть групу</strong> або <strong>приєднайтесь</strong> до існуючої за 6-значним кодом</p>
+                            <p data-lang="instr_qs_step4">4️⃣ <strong>Голосуйте</strong> у активних голосуваннях або створюйте власні</p>
+                            <p data-lang="instr_qs_step5">5️⃣ Слідкуйте за результатами у вкладці <strong>Сповіщення</strong></p>
+                        </div>
+                    </div>
+
+                    <!-- 2. Profile -->
+                    <div class="instruction-section" data-instr-section="profile">
+                        <h4 data-lang="instr_profile"><i class="ph ph-user-circle"></i> Профіль</h4>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_profile_setup_title">Налаштування профілю</h5>
+                            <p data-lang="instr_profile_setup_desc">Після входу заповніть обов'язкові поля: ім'я, прізвище, телефон, адресу та номер квартири/ділянки. Без номера квартири ви не зможете голосувати.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_profile_edit_title">Редагування профілю</h5>
+                            <p data-lang="instr_profile_edit_desc">Відкрийте вкладку «Профіль» → натисніть «Редагувати профіль». Можна змінити будь-яке поле в будь-який час.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_profile_lang_title">Зміна мови</h5>
+                            <p data-lang="instr_profile_lang_desc">У вкладці «Профіль» виберіть мову: українська, English або русский. Вибір зберігається автоматично.</p>
+                        </div>
+                    </div>
+
+                    <!-- 3. Groups -->
+                    <div class="instruction-section" data-instr-section="group_mgmt">
+                        <h4 data-lang="instr_group_mgmt"><i class="ph ph-users-three"></i> Групи</h4>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_create_group_title">Створення групи</h5>
+                            <p data-lang="instr_create_group_desc">Натисніть «+» у вкладці «Групи». Вкажіть назву та опис. Система створить унікальний 6-значний код. Ви автоматично станете адміністратором.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_join_group_title">Вступ до групи</h5>
+                            <p data-lang="instr_join_group_desc">Введіть 6-значний код групи у поле «Приєднатися» і натисніть кнопку. Адміністратор отримає запит і має його схвалити або відхилити.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_group_detail_title">Сторінка групи</h5>
+                            <p data-lang="instr_group_detail_desc">Натисніть на групу, щоб побачити: код групи (можна скопіювати), статистику, список учасників, запити на вступ та історію змін.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_members_title">Учасники групи</h5>
+                            <p data-lang="instr_members_desc">У списку учасників можна: шукати за ім'ям або телефоном, сортувати за алфавітом або за участю в голосуваннях. Заморожені учасники позначені ❄️.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_requests_title">Запити на вступ</h5>
+                            <p data-lang="instr_requests_desc">Адміністратор бачить вхідні запити та може схвалити або відхилити кожного кандидата. Учаснику надійде сповіщення про рішення.</p>
+                        </div>
+                    </div>
+
+                    <!-- 4. Voting Types -->
                     <div class="instruction-section" data-instr-section="voting_types">
                         <h4 data-lang="instr_voting_types"><i class="ph ph-scales"></i> Типи голосування</h4>
-                        <div class="instruction-item" data-instr-item="simple">
-                            <h5 data-lang="instr_simple_title">Звичайне голосування</h5>
-                            <p data-lang="instr_simple_desc">Відкрите голосування, де всі бачать, хто і як проголосував після свого вибору. Підходить для загальних питань ОСГ.</p>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_simple_title">✋ Звичайне (відкрите)</h5>
+                            <p data-lang="instr_simple_desc">Відкрите голосування — всі бачать, хто і як проголосував. Підходить для загальних питань: ремонт, витрати, правила. Тривалість: від 1 години до 5 днів.</p>
                         </div>
-                        <div class="instruction-item" data-instr-item="secret">
-                            <h5 data-lang="instr_secret_title">Тайне голосування</h5>
-                            <p data-lang="instr_secret_desc">Приховане голосування — після голосування ви бачите тільки загальну кількість «за» та «проти», без імен. Використовується для чутливих питань.</p>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_secret_title">🔒 Тайне</h5>
+                            <p data-lang="instr_secret_desc">Анонімне голосування — видно лише загальну кількість голосів «За/Проти/Утримався», без імен. Коментарі приховані. Для чутливих питань.</p>
                         </div>
-                        <div class="instruction-item" data-instr-item="admin">
-                            <h5 data-lang="instr_admin_title">Зміна адміністратора</h5>
-                            <p data-lang="instr_admin_desc">Спеціальне голосування для зміни керівника групи. Вимагає мінімум 3 учасників. Триває 72 години. Для прийняття рішення потрібно 50%+1 голос. Поки йде голосування, адмін не може видаляти учасників.</p>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_admin_title">👑 Зміна адміністратора</h5>
+                            <p data-lang="instr_admin_desc">Голосування за нового керівника групи. Вимоги: мін. 3 учасники, 72 години, 50%+1 для прийняття. При успіху — ролі міняються автоматично.</p>
                         </div>
-                        <div class="instruction-item" data-instr-item="remove">
-                            <h5 data-lang="instr_remove_title">Видалення учасника</h5>
-                            <p data-lang="instr_remove_desc">Голосування про виключення учасника з групи. Рішення приймається більшістю 50%+1 голос. Тривалість — 72 години.</p>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_remove_title">🚫 Видалення учасника</h5>
+                            <p data-lang="instr_remove_desc">Голосування за виключення учасника. Потрібно вказати причину. Вимоги: мін. 3 учасники, 72 години, 50%+1 для прийняття. При успіху — учасник видаляється автоматично.</p>
                         </div>
-                    </div>
-
-                    <div class="instruction-section" data-instr-section="group_mgmt">
-                        <h4 data-lang="instr_group_mgmt"><i class="ph ph-users-three"></i> Управління групою</h4>
-                        <div class="instruction-item" data-instr-item="create_group">
-                            <h5 data-lang="instr_create_group_title">Створення групи</h5>
-                            <p data-lang="instr_create_group_desc">Будь-який користувач може створити групу. Система автоматично генерує унікальний 6-значний ID для запрошення.</p>
-                        </div>
-                        <div class="instruction-item" data-instr-item="join_group">
-                            <h5 data-lang="instr_join_group_title">Вступ до групи</h5>
-                            <p data-lang="instr_join_group_desc">Введіть 6-значний ID групи в поле пошуку. Адміністратор отримає запит на підтвердження.</p>
-                        </div>
-                        <div class="instruction-item" data-instr-item="decision">
-                            <h5 data-lang="instr_decision_title">Прийняття рішень</h5>
-                            <p data-lang="instr_decision_desc">Для прийняття будь-якого рішення потрібно мінімум 50%+1 голос від усіх учасників групи. Якщо набрано менше — голосування вважається «не відбулися» (🟡).</p>
-                        </div>
-                        <div class="instruction-item" data-instr-item="delete_group">
-                            <h5 data-lang="instr_delete_group_title">Видалення групи</h5>
-                            <p data-lang="instr_delete_group_desc">Якщо в групі 3+ учасників, адміністратор не може видалити групу без голосування. Усім учасникам надсилається запит на підтвердження.</p>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_freeze_title">❄️ Заморозка учасника (BETA)</h5>
+                            <p data-lang="instr_freeze_desc">Тільки адміністратор може створити. Обирає учасників для заморозки на 7 днів. Заморожений учасник не може голосувати. Якщо 2+ учасники натиснуть «Не згоден» — заморозка автоматично скасовується.</p>
                         </div>
                     </div>
 
+                    <!-- 5. How to Vote -->
+                    <div class="instruction-section" data-instr-section="how_to_vote">
+                        <h4 data-lang="instr_how_to_vote"><i class="ph ph-check-square"></i> Як голосувати</h4>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_cast_vote_title">Процес голосування</h5>
+                            <p data-lang="instr_cast_vote_desc">Відкрийте активне голосування → оберіть «За», «Проти» або «Утримуюсь» → за бажанням додайте коментар (до 500 символів) → голос зараховано.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_create_vote_title">Створення голосування</h5>
+                            <p data-lang="instr_create_vote_desc">Натисніть «+» у вкладці «Голосування». Заповніть: назву, опис, тип, групу, тривалість. Можна додати посилання на матеріали. Звичайні учасники можуть створити 1 голосування на день у кожній групі.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_delete_vote_title">Видалення голосування</h5>
+                            <p data-lang="instr_delete_vote_desc">Автор голосування може його видалити, вказавши причину (мін. 5 символів). Видалене голосування позначається відповідно.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_comments_title">Коментарі</h5>
+                            <p data-lang="instr_comments_desc">До відкритих голосувань можна додати коментар при голосуванні (до 500 символів). У тайних голосуваннях коментарі приховані.</p>
+                        </div>
+                    </div>
+
+                    <!-- 6. Notifications -->
+                    <div class="instruction-section" data-instr-section="notifications">
+                        <h4 data-lang="instr_notifications"><i class="ph ph-bell"></i> Сповіщення</h4>
+                        <div class="instruction-item">
+                            <p data-lang="instr_notif_desc">Ви отримуєте сповіщення про: нові голосування, запити на вступ, результати голосувань, зміни адміністратора, видалення та заморозку учасників. Непрочитані позначені синім. Можна позначити все як прочитане.</p>
+                        </div>
+                    </div>
+
+                    <!-- 7. Badges -->
                     <div class="instruction-section" data-instr-section="badges">
-                        <h4 data-lang="instr_badges"><i class="ph ph-paint-brush"></i> Позначення голосувань</h4>
+                        <h4 data-lang="instr_badges"><i class="ph ph-paint-brush"></i> Позначення та статуси</h4>
                         <div class="instruction-item">
-                            <p><span class="badge-example yellow">🟡</span> — <span data-lang="instr_badge_yellow">Голосування не відбулося (менше 50%+1 голосів)</span></p>
-                            <p><span class="badge-example green">🟢</span> — <span data-lang="instr_badge_green">Прийнято «за» (більшість проголосувала позитивно)</span></p>
-                            <p><span class="badge-example red">🔴</span> — <span data-lang="instr_badge_red">Прийнято «проти» (більшість проголосувала негативно)</span></p>
+                            <p><span class="badge-example yellow">🟡</span> — <span data-lang="instr_badge_yellow">Активне голосування (ще триває)</span></p>
+                            <p><span class="badge-example green">🟢</span> — <span data-lang="instr_badge_green">Прийнято (50%+1 проголосували «За»)</span></p>
+                            <p><span class="badge-example red">🔴</span> — <span data-lang="instr_badge_red">Відхилено (більшість проголосувала «Проти» або недостатньо голосів)</span></p>
+                            <p>🔵 — <span data-lang="instr_badge_blue">Тайне голосування (імена голосуючих приховані)</span></p>
+                            <p>❄️ — <span data-lang="instr_badge_frozen">Заморожений учасник (не може голосувати)</span></p>
+                            <p>👑 — <span data-lang="instr_badge_admin">Адміністратор групи</span></p>
                         </div>
                     </div>
 
-                    <div class="instruction-section" data-instr-section="duration">
-                        <h4 data-lang="instr_duration"><i class="ph ph-clock"></i> Тривалість голосування</h4>
+                    <!-- 8. Rules & Duration -->
+                    <div class="instruction-section" data-instr-section="rules">
+                        <h4 data-lang="instr_rules"><i class="ph ph-gavel"></i> Правила та терміни</h4>
                         <div class="instruction-item">
-                            <p data-lang="instr_duration_1">• Звичайні голосування: від 1 години до 5 днів</p>
-                            <p data-lang="instr_duration_2">• Управлінські голосування (зміна адміна, видалення): фіксовано 72 години</p>
-                            <p data-lang="instr_duration_3">Результат визначається автоматично по закінченню терміну.</p>
+                            <h5 data-lang="instr_duration_title">Тривалість</h5>
+                            <p data-lang="instr_duration_1">• Звичайні/тайні голосування: від 1 години до 5 днів</p>
+                            <p data-lang="instr_duration_2">• Зміна адміна / Видалення учасника: фіксовано 72 години</p>
+                            <p data-lang="instr_duration_3">• Заморозка: 7 днів дії після прийняття</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_decision_title">Прийняття рішень</h5>
+                            <p data-lang="instr_decision_desc">Для прийняття рішення потрібно 50%+1 голос від усіх учасників групи. Результат визначається автоматично по завершенню терміну.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_limits_title">Обмеження</h5>
+                            <p data-lang="instr_limits_desc">• Без номера квартири/ділянки — голосувати не можна<br>• Звичайний учасник: макс. 1 голосування на день у кожній групі<br>• Адміністратор: без обмежень<br>• Зміна адміна / видалення: мін. 3 учасники в групі</p>
                         </div>
                     </div>
 
-                    <div class="instruction-section" data-instr-section="archive">
-                        <h4 data-lang="instr_archive"><i class="ph ph-archive"></i> Архівування</h4>
+                    <!-- 9. Export -->
+                    <div class="instruction-section" data-instr-section="export">
+                        <h4 data-lang="instr_export"><i class="ph ph-file-csv"></i> Експорт даних</h4>
                         <div class="instruction-item">
-                            <p data-lang="instr_archive_desc">Адміністратор може експортувати історію голосувань групи до Google Sheets. У таблиці зберігаються: дата, питання, опис, результат, кількість учасників.</p>
+                            <p data-lang="instr_export_desc">Адміністратор може завантажити історію голосувань групи у CSV-файл. У файлі: дата, автор, питання, тип, результат, кількість голосів «За/Проти/Утримався», коментарі. Файл відкривається в Excel або Google Sheets.</p>
                         </div>
                     </div>
+
                 </div>
             </div>
         </div>
