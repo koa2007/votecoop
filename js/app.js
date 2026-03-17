@@ -47,20 +47,22 @@ const app = {
             this.changeLanguage(savedLang);
         }
 
-        // Try to initialize Supabase
+        // Initialize Supabase
         let supabaseReady = false;
         try {
             supabaseReady = supabaseService.init();
         } catch (err) {
-            // Supabase not configured — will use mock mode
+            // Supabase initialization failed
         }
 
         if (supabaseReady) {
-            // Real mode: check for existing session
             await this.initWithSupabase();
         } else {
-            // Mock mode: use demo data (for development without Supabase)
-            this.initMockMode();
+            // Supabase not configured — show auth screen with error
+            this.setupEventListeners();
+            this.showScreen('auth-screen');
+            const t = this.translations[this.currentLanguage];
+            this.showAuthError(t.auth_error_network || 'Service unavailable');
         }
     },
 
@@ -98,7 +100,7 @@ const app = {
 
         if (profile && profile.profile_completed) {
             // Profile complete — show main app
-            const realUser = {
+            this.state.user = {
                 id: profile.id,
                 firstName: profile.first_name,
                 lastName: profile.last_name,
@@ -107,11 +109,6 @@ const app = {
                 address: profile.address || '',
                 apartment: profile.apartment || ''
             };
-
-            // Load mock data for groups/votings (Phase 2 will replace with real data)
-            this.loadMockData();
-            // Restore real user data over mock
-            this.state.user = realUser;
 
             this.setupEventListeners();
             this.renderVotings();
@@ -151,243 +148,7 @@ const app = {
         this.showScreen('auth-screen');
     },
 
-    // Initialize in mock mode (no Supabase configured)
-    initMockMode() {
-        this.loadMockData();
-        this.setupEventListeners();
-        this.renderVotings();
-        this.renderGroups();
-        this.renderNotifications();
-        // Show auth screen — login() will use mock flow
-        this.showScreen('auth-screen');
-    },
 
-    // Mock data for prototype
-    loadMockData() {
-        this.state.user = {
-            id: 1,
-            firstName: 'Олександр',
-            lastName: 'Петренко',
-            email: 'oleksandr@example.com',
-            phone: '+380 50 123 4567',
-            address: 'вул. Шевченка, 61',
-            apartment: '15'
-        };
-
-        this.state.groups = [
-            {
-                id: 1,
-                name: 'Будинок 61',
-                description: 'Житловий комплекс на вул. Шевченка',
-                groupId: '284756',
-                isAdmin: true,
-                membersCount: 12,
-                votingsCount: 5,
-                members: [
-                    { id: 1, name: 'Олександр Петренко', role: 'admin', address: 'кв. 15', phone: '+380501234567' },
-                    { id: 2, name: 'Марія Іваненко', role: 'member', address: 'кв. 3', phone: '+380671234567' },
-                    { id: 3, name: 'Іван Сидоренко', role: 'member', address: 'кв. 7', phone: '+380931234567' },
-                    { id: 4, name: 'Наталія Коваленко', role: 'member', address: 'кв. 12', phone: '+380501112233' },
-                    { id: 5, name: 'Петро Мельник', role: 'member', address: 'кв. 8', phone: '+380672223344' }
-                ],
-                requests: [
-                    { id: 6, name: 'Анна Шевченко', address: 'кв. 22' }
-                ],
-                history: [
-                    {
-                        date: new Date(Date.now() - 2592000000).toISOString(),
-                        action: 'admin_change',
-                        from: 'Василь Петренко',
-                        to: 'Олександр Петренко',
-                        initiator: 'Марія Іваненко',
-                        votingId: 101
-                    }
-                ]
-            },
-            {
-                id: 2,
-                name: 'СТ Ромашка',
-                description: 'Дачний кооператив',
-                groupId: '195342',
-                isAdmin: false,
-                membersCount: 8,
-                votingsCount: 2,
-                members: [
-                    { id: 7, name: 'Василь Григоренко', role: 'admin', address: 'ділянка 5' },
-                    { id: 1, name: 'Олександр Петренко', role: 'member', address: 'ділянка 12' }
-                ],
-                requests: []
-            }
-        ];
-
-        this.state.votings = [
-            {
-                id: 1,
-                title: 'Встановлення відеоспостереження у під\'їздах',
-                groupId: 1,
-                groupName: 'Будинок 61',
-                type: 'simple',
-                status: 'active',
-                createdAt: new Date(Date.now() - 86400000),
-                endsAt: new Date(Date.now() + 172800000),
-                yesVotes: 8,
-                noVotes: 2,
-                abstainVotes: 1,
-                totalMembers: 12,
-                link: 'https://drive.google.com/...',
-                hasVoted: false,
-                initiatorId: 1,
-                initiatorName: 'Олександр Петренко',
-                comments: [
-                    { userId: 2, userName: 'Марія Іваненко', vote: 'yes', comment: 'Це дуже важливо для безпеки будинку', time: '2 години тому' },
-                    { userId: 3, userName: 'Іван Сидоренко', vote: 'no', comment: 'Занадто дорого для нашого бюджету', time: '5 годин тому' },
-                    { userId: 4, userName: 'Наталія Коваленко', vote: 'abstain', comment: '', time: '1 день тому' }
-                ]
-            },
-            {
-                id: 2,
-                title: 'Ремонт даху - вибір підрядника',
-                groupId: 1,
-                groupName: 'Будинок 61',
-                type: 'simple',
-                status: 'active',
-                createdAt: new Date(Date.now() - 43200000),
-                endsAt: new Date(Date.now() + 259200000),
-                yesVotes: 10,
-                noVotes: 0,
-                totalMembers: 12,
-                link: null,
-                hasVoted: true
-            },
-            {
-                id: 3,
-                title: 'Зміна правил паркування у дворі',
-                groupId: 1,
-                groupName: 'Будинок 61',
-                type: 'simple',
-                status: 'completed',
-                result: 'accepted',
-                createdAt: new Date(Date.now() - 604800000),
-                endedAt: new Date(Date.now() - 86400000),
-                yesVotes: 9,
-                noVotes: 2,
-                totalMembers: 12,
-                hasVoted: true
-            },
-            {
-                id: 4,
-                title: 'Тайне голосування: обрання голови кооперативу',
-                groupId: 2,
-                groupName: 'СТ Ромашка',
-                type: 'secret',
-                status: 'active',
-                createdAt: new Date(Date.now() - 120000000),
-                endsAt: new Date(Date.now() + 432000000),
-                yesVotes: 5,
-                noVotes: 1,
-                totalMembers: 8,
-                hasVoted: false
-            },
-            {
-                id: 5,
-                title: 'Встановлення огорожі території',
-                groupId: 2,
-                groupName: 'СТ Ромашка',
-                type: 'simple',
-                status: 'completed',
-                result: 'rejected',
-                createdAt: new Date(Date.now() - 518400000),
-                endedAt: new Date(Date.now() - 172800000),
-                yesVotes: 3,
-                noVotes: 4,
-                abstainVotes: 1,
-                totalMembers: 8,
-                hasVoted: true,
-                initiatorId: 7,
-                initiatorName: 'Василь Григоренко',
-                comments: []
-            },
-            {
-                id: 6,
-                title: 'Зміна адміністратора групи',
-                groupId: 1,
-                groupName: 'Будинок 61',
-                type: 'admin-change',
-                status: 'active',
-                createdAt: new Date(Date.now() - 86400000),
-                endsAt: new Date(Date.now() + 172800000),
-                yesVotes: 7,
-                noVotes: 1,
-                abstainVotes: 0,
-                totalMembers: 12,
-                hasVoted: false,
-                targetMemberId: 2,
-                targetMemberName: 'Марія Іваненко',
-                initiatorId: 3,
-                initiatorName: 'Іван Сидоренко',
-                comments: []
-            },
-            {
-                id: 7,
-                title: 'Видалення учасника з групи',
-                groupId: 1,
-                groupName: 'Будинок 61',
-                type: 'remove-member',
-                status: 'active',
-                createdAt: new Date(Date.now() - 43200000),
-                endsAt: new Date(Date.now() + 216000000),
-                yesVotes: 8,
-                noVotes: 2,
-                abstainVotes: 0,
-                totalMembers: 12,
-                hasVoted: false,
-                targetMemberId: 5,
-                targetMemberName: 'Петро Мельник',
-                removalReason: 'Не платить внески',
-                initiatorId: 2,
-                initiatorName: 'Марія Іваненко',
-                comments: []
-            }
-        ];
-
-        this.state.notifications = [
-            {
-                id: 1,
-                type: 'voting',
-                text: 'Нове голосування у групі "Будинок 61": Встановлення відеоспостереження',
-                time: '2 години тому',
-                read: false
-            },
-            {
-                id: 2,
-                type: 'member',
-                text: 'Анна Шевченко хоче приєднатися до групи "Будинок 61"',
-                time: '5 годин тому',
-                read: false
-            },
-            {
-                id: 3,
-                type: 'result',
-                text: 'Голосування завершено: Зміна правил паркування - ПРИЙНЯТО',
-                time: '1 день тому',
-                read: true
-            },
-            {
-                id: 4,
-                type: 'voting',
-                text: 'Нове голосування у групі "СТ Ромашка": Тайне голосування',
-                time: '2 дні тому',
-                read: true
-            },
-            {
-                id: 5,
-                type: 'system',
-                text: 'Вітаємо! Ви стали адміністратором групи "Будинок 61"',
-                time: '3 дні тому',
-                read: true
-            }
-        ];
-    },
 
     // Setup event listeners
     setupEventListeners() {
@@ -515,8 +276,8 @@ const app = {
     // Login with Google OAuth
     async loginWithGoogle() {
         if (!supabaseService.isReady()) {
-            // Mock mode fallback
-            this.loginMock();
+            const t = this.translations[this.currentLanguage];
+            this.showAuthError(t.auth_error_network || 'Service unavailable');
             return;
         }
 
@@ -542,7 +303,7 @@ const app = {
         }
 
         if (!supabaseService.isReady()) {
-            this.loginMock();
+            this.showAuthError(t.auth_error_network || 'Service unavailable');
             return;
         }
 
@@ -584,7 +345,7 @@ const app = {
         }
 
         if (!supabaseService.isReady()) {
-            this.loginMock();
+            this.showAuthError(t.auth_error_network || 'Service unavailable');
             return;
         }
 
@@ -639,17 +400,6 @@ const app = {
         this.showAuthSuccess(t.auth_reset_sent);
     },
 
-    // Mock login (when Supabase is not configured)
-    loginMock() {
-        document.getElementById('auth-screen').classList.add('hidden');
-
-        if (!this.state.user || !this.state.user.firstName) {
-            document.getElementById('profile-setup-screen').classList.remove('hidden');
-        } else {
-            document.getElementById('main-screens').classList.remove('hidden');
-            this.showScreen('voting-screen');
-        }
-    },
 
     // Legacy login() for backward compatibility
     login() {
@@ -732,13 +482,6 @@ const app = {
         this.hideModal('terms-modal');
         document.getElementById('profile-setup-screen').classList.add('hidden');
         document.getElementById('main-screens').classList.remove('hidden');
-
-        // Load mock data for groups/votings (Phase 2: real data)
-        if (!this.state.groups.length) {
-            const realUser = { ...this.state.user };
-            this.loadMockData();
-            this.state.user = realUser;
-        }
 
         this.setupEventListeners();
         this.renderVotings();
@@ -1218,7 +961,7 @@ const app = {
             return;
         }
 
-        // Mock: Create new group for demo
+        // TODO: Phase 2 — send join request via Supabase
         const newGroup = {
             id: Date.now(),
             name: `Група ${groupId}`,
@@ -1878,7 +1621,6 @@ const app = {
                 votesDetail = voting.comments.map(c => {
                     const voteType = c.vote === 'yes' ? t.export_yes : 
                                    c.vote === 'no' ? t.export_no : t.export_abstain;
-                    // Use apartment number from user profile (mock - in real app would lookup)
                     const unit = this.state.user.apartment || 'N/A';
                     return `${unit}: ${voteType}${c.comment ? ' - ' + c.comment : ''}`;
                 }).join(' | ');
@@ -3025,51 +2767,9 @@ const app = {
         // Re-render dynamic content
         this.renderVotings();
         this.renderGroups();
-        this.updateMockNotifications();
         this.renderNotifications();
     },
 
-    updateMockNotifications() {
-        const t = this.translations[this.currentLanguage];
-        // Update mock notification texts based on current language
-        this.state.notifications = [
-            {
-                id: 1,
-                type: 'voting',
-                text: `${t.notif_new_voting} "Будинок 61": ${t.instr_simple_title}`,
-                time: `2 ${t.hours_ago}`,
-                read: false
-            },
-            {
-                id: 2,
-                type: 'member',
-                text: `Анна Шевченко ${t.notif_join_request} "Будинок 61"`,
-                time: `5 ${t.hours_ago}`,
-                read: false
-            },
-            {
-                id: 3,
-                type: 'result',
-                text: `${t.notif_voting_completed}: ${t.instr_simple_title} - ${t.notif_accepted}`,
-                time: `1 ${t.day_ago}`,
-                read: true
-            },
-            {
-                id: 4,
-                type: 'voting',
-                text: `${t.notif_new_voting} "СТ Ромашка": ${t.type_secret}`,
-                time: `2 ${t.days_ago}`,
-                read: true
-            },
-            {
-                id: 5,
-                type: 'system',
-                text: `${t.notif_welcome_admin} "Будинок 61"`,
-                time: `3 ${t.days_ago}`,
-                read: true
-            }
-        ];
-    },
 
     updateInstructionsContent(lang) {
         const t = this.translations[lang];
