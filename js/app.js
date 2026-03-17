@@ -2545,7 +2545,11 @@ const app = {
         document.querySelectorAll('[data-lang]').forEach(el => {
             const key = el.getAttribute('data-lang');
             if (t[key]) {
-                el.textContent = t[key];
+                if (/<[a-z][\s\S]*>/i.test(t[key])) {
+                    el.innerHTML = t[key];
+                } else {
+                    el.textContent = t[key];
+                }
             }
         });
         
@@ -2642,7 +2646,15 @@ const app = {
                     if (icon && el.getAttribute('data-lang').startsWith('instr_')) {
                         el.innerHTML = '';
                         el.appendChild(icon);
-                        el.appendChild(document.createTextNode(' ' + t[key]));
+                        if (/<[a-z][\s\S]*>/i.test(t[key])) {
+                            const span = document.createElement('span');
+                            span.innerHTML = ' ' + t[key];
+                            el.appendChild(span);
+                        } else {
+                            el.appendChild(document.createTextNode(' ' + t[key]));
+                        }
+                    } else if (/<[a-z][\s\S]*>/i.test(t[key])) {
+                        el.innerHTML = t[key];
                     } else {
                         el.textContent = t[key];
                     }
