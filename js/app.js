@@ -7,8 +7,9 @@ const app = {
         notifications: [],
         currentScreen: 'auth-screen',
         votingFilter: 'active',
-        userVotingHistory: {}, // { groupId: lastVotingTimestamp }
-        currentVotingToDelete: null // For delete modal
+        userVotingHistory: {},
+        currentVotingToDelete: null,
+        listenersAttached: false
     },
 
     // Escape HTML to prevent XSS injection
@@ -150,8 +151,11 @@ const app = {
 
 
 
-    // Setup event listeners
+    // Setup event listeners (only once)
     setupEventListeners() {
+        if (this.state.listenersAttached) return;
+        this.state.listenersAttached = true;
+
         // Bottom navigation
         document.querySelectorAll('.nav-item').forEach(item => {
             item.addEventListener('click', (e) => {
@@ -783,38 +787,58 @@ const app = {
 
     // Create actions
     createGroup() {
-        const name = document.getElementById('group-name').value;
-        const description = document.getElementById('group-description').value;
+        const t = this.translations[this.currentLanguage];
+        const name = document.getElementById('group-name').value.trim();
+        const description = document.getElementById('group-description').value.trim();
 
         if (!name) {
-            alert('Введіть назву групи');
+            alert(t.fill_name_error || 'Введіть назву групи');
             return;
         }
 
-        const newGroup = {
-            id: Date.now(),
-            name,
-            description,
-            groupId: Math.random().toString().slice(2, 8),
-            isAdmin: true,
-            membersCount: 1,
-            votingsCount: 0,
-            members: [{ id: this.state.user.id, name: `${this.state.user.firstName} ${this.state.user.lastName}`, role: 'admin' }],
-            requests: []
-        };
+        if (!this.state.user) {
+            alert(t.auth_error_network || 'User not authenticated');
+            return;
+        }
 
-        this.state.groups.push(newGroup);
-        this.renderGroups();
+        try {
+            const userName = [this.state.user.firstName, this.state.user.lastName]
+                .filter(Boolean).join(' ') || 'User';
+
+            const newGroup = {
+                id: Date.now(),
+                name,
+                description,
+                groupId: Math.random().toString().slice(2, 8),
+                isAdmin: true,
+                membersCount: 1,
+                votingsCount: 0,
+                members: [{ id: this.state.user.id, name: userName, role: 'admin' }],
+                requests: [],
+                history: []
+            };
+
+            this.state.groups.push(newGroup);
+            this.renderGroups();
+
+            // Clear form
+            document.getElementById('group-name').value = '';
+            document.getElementById('group-description').value = '';
+        } catch (err) {
+            alert(t.auth_error_network || 'Error creating group');
+        }
+
         this.hideModal('create-group-modal');
-        
-        // Clear form
-        document.getElementById('group-name').value = '';
-        document.getElementById('group-description').value = '';
     },
 
     createVoting() {
         const t = this.translations[this.currentLanguage];
-        
+
+        if (!this.state.user) {
+            alert(t.auth_error_network || 'User not authenticated');
+            return;
+        }
+
         // Check if user has apartment specified
         if (!this.state.user.apartment) {
             alert(t.apartment_required);
@@ -895,52 +919,59 @@ const app = {
             }
         }
 
-        const targetMember = targetMemberId ? group.members.find(m => m.id === parseInt(targetMemberId)) : null;
+        try {
+            const targetMember = targetMemberId ? group.members.find(m => m.id === parseInt(targetMemberId)) : null;
 
-        // Build freeze members data if freeze type
-        let freezeMembersData = null;
-        if (type === 'freeze') {
-            freezeMembersData = this.state.freezeSelectedMembers.map(m => ({
-                id: m.id,
-                name: m.name,
-                address: m.address
-            }));
+            // Build freeze members data if freeze type
+            let freezeMembersData = null;
+            if (type === 'freeze') {
+                freezeMembersData = this.state.freezeSelectedMembers.map(m => ({
+                    id: m.id,
+                    name: m.name,
+                    address: m.address
+                }));
+            }
+
+            const userName = [this.state.user.firstName, this.state.user.lastName]
+                .filter(Boolean).join(' ') || 'User';
+
+            const newVoting = {
+                id: Date.now(),
+                title,
+                description,
+                groupId,
+                groupName: group.name,
+                type,
+                status: 'active',
+                createdAt: new Date(),
+                endsAt: new Date(Date.now() + duration * 3600000),
+                yesVotes: 0,
+                noVotes: 0,
+                totalMembers: group.membersCount,
+                link,
+                hasVoted: false,
+                targetMemberId: targetMemberId ? parseInt(targetMemberId) : null,
+                targetMemberName: targetMember ? targetMember.name : null,
+                removalReason: removalReason,
+                initiatorId: this.state.user.id,
+                initiatorName: userName,
+                freezeMembers: freezeMembersData,
+                objections: [],
+                frozenMembers: []
+            };
+
+            this.state.votings.unshift(newVoting);
+
+            // Track voting creation time for non-admin users
+            if (!group.isAdmin) {
+                this.state.userVotingHistory[groupId] = Date.now();
+            }
+
+            this.renderVotings();
+        } catch (err) {
+            alert(t.auth_error_network || 'Error creating voting');
         }
 
-        const newVoting = {
-            id: Date.now(),
-            title,
-            description,
-            groupId,
-            groupName: group.name,
-            type,
-            status: 'active',
-            createdAt: new Date(),
-            endsAt: new Date(Date.now() + duration * 3600000),
-            yesVotes: 0,
-            noVotes: 0,
-            totalMembers: group.membersCount,
-            link,
-            hasVoted: false,
-            targetMemberId: targetMemberId ? parseInt(targetMemberId) : null,
-            targetMemberName: targetMember ? targetMember.name : null,
-            removalReason: removalReason,
-            initiatorId: this.state.user.id,
-            initiatorName: `${this.state.user.firstName} ${this.state.user.lastName}`,
-            // Freeze-specific fields
-            freezeMembers: freezeMembersData,
-            objections: [], // Array of {userId, userName, time}
-            frozenMembers: [] // Array of member IDs that were frozen after completion
-        };
-
-        this.state.votings.unshift(newVoting);
-        
-        // Track voting creation time for non-admin users
-        if (!group.isAdmin) {
-            this.state.userVotingHistory[groupId] = Date.now();
-        }
-        
-        this.renderVotings();
         this.hideModal('create-voting-modal');
         
         // Clear form
@@ -1404,7 +1435,8 @@ const app = {
         document.getElementById('group-detail-id').textContent = group.groupId;
         document.getElementById('group-detail-description').textContent = group.description || '';
         // Count frozen members
-        const frozenCount = group.members.filter(m => m.frozen).length;
+        const members = group.members || [];
+        const frozenCount = members.filter(m => m.frozen).length;
         const activeMembersCount = group.membersCount - frozenCount;
         
         document.getElementById('group-members-count').textContent = group.membersCount;
