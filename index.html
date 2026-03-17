@@ -74,7 +74,10 @@
             <div class="screen" id="voting-screen">
                 <div class="screen-header">
                     <h2 data-lang="voting">Голосування</h2>
-                    <button class="btn-icon" onclick="app.showCreateVoting()" aria-label="Create new voting">+</button>
+                    <div class="header-actions">
+                        <button class="btn-info" onclick="app.showInstructions()" aria-label="Instructions"><i class="ph ph-info" aria-hidden="true"></i></button>
+                        <button class="btn-icon" onclick="app.showCreateVoting()" aria-label="Create new voting">+</button>
+                    </div>
                 </div>
                 <div class="screen-content">
                     <div class="segmented-control">
@@ -91,7 +94,10 @@
             <div class="screen hidden" id="groups-screen">
                 <div class="screen-header">
                     <h2 data-lang="groups">Групи</h2>
-                    <button class="btn-icon" onclick="app.showCreateGroup()" aria-label="Create new group">+</button>
+                    <div class="header-actions">
+                        <button class="btn-info" onclick="app.showInstructions()" aria-label="Instructions"><i class="ph ph-info" aria-hidden="true"></i></button>
+                        <button class="btn-icon" onclick="app.showCreateGroup()" aria-label="Create new group">+</button>
+                    </div>
                 </div>
                 <div class="screen-content">
                     <div class="join-group-section">
@@ -108,7 +114,10 @@
             <div class="screen hidden" id="notifications-screen">
                 <div class="screen-header">
                     <h2 data-lang="notifications">Сповіщення</h2>
-                    <button class="btn-text" onclick="app.markAllRead()" data-lang="mark_all_read">Прочитано все</button>
+                    <div class="header-actions">
+                        <button class="btn-info" onclick="app.showInstructions()" aria-label="Instructions"><i class="ph ph-info" aria-hidden="true"></i></button>
+                        <button class="btn-text" onclick="app.markAllRead()" data-lang="mark_all_read">Прочитано все</button>
+                    </div>
                 </div>
                 <div class="screen-content">
                     <div class="notifications-list" id="notifications-list">
@@ -121,12 +130,15 @@
             <div class="screen hidden" id="profile-screen">
                 <div class="screen-header">
                     <h2 data-lang="profile">Профіль</h2>
-                    <div class="language-selector">
-                        <select id="language-select" onchange="app.changeLanguage(this.value)">
-                            <option value="uk">🇺🇦 Українська</option>
-                            <option value="en">🇬🇧 English</option>
-                            <option value="ru">🇷🇺 Русский</option>
-                        </select>
+                    <div class="header-actions">
+                        <button class="btn-info" onclick="app.showInstructions()" aria-label="Instructions"><i class="ph ph-info" aria-hidden="true"></i></button>
+                        <div class="language-selector">
+                            <select id="language-select" onchange="app.changeLanguage(this.value)">
+                                <option value="uk">🇺🇦 Українська</option>
+                                <option value="en">🇬🇧 English</option>
+                                <option value="ru">🇷🇺 Русский</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
                 <div class="screen-content">
@@ -510,7 +522,7 @@
             <div class="modal-overlay" onclick="app.hideModal('instructions-modal')"></div>
             <div class="modal-content modal-large">
                 <div class="modal-header">
-                    <h3 data-lang="instructions_title">📖 Як користуватися VoteCoop</h3>
+                    <h3 data-lang="instructions_title"><i class="ph ph-book-open-text"></i> Як користуватися VoteCoop</h3>
                     <button class="btn-icon" onclick="app.hideModal('instructions-modal')" aria-label="Close">✕</button>
                 </div>
                 <div class="modal-body instructions-body" id="instructions-content">
@@ -519,11 +531,11 @@
                     <div class="instruction-section" data-instr-section="quick_start">
                         <h4 data-lang="instr_quick_start"><i class="ph ph-rocket-launch"></i> Швидкий старт</h4>
                         <div class="instruction-item">
-                            <p data-lang="instr_qs_step1">1️⃣ <strong>Увійдіть</strong> через Google-акаунт</p>
-                            <p data-lang="instr_qs_step2">2️⃣ <strong>Заповніть профіль</strong> — вкажіть ім'я, прізвище, телефон та номер квартири/ділянки (обов'язково для голосування)</p>
-                            <p data-lang="instr_qs_step3">3️⃣ <strong>Створіть групу</strong> або <strong>приєднайтесь</strong> до існуючої за 6-значним кодом</p>
-                            <p data-lang="instr_qs_step4">4️⃣ <strong>Голосуйте</strong> у активних голосуваннях або створюйте власні</p>
-                            <p data-lang="instr_qs_step5">5️⃣ Слідкуйте за результатами у вкладці <strong>Сповіщення</strong></p>
+                            <p data-lang="instr_qs_step1">1. <strong>Увійдіть</strong> через Google-акаунт</p>
+                            <p data-lang="instr_qs_step2">2. <strong>Заповніть профіль</strong> — вкажіть ім'я, прізвище, телефон та номер квартири/ділянки (обов'язково для голосування)</p>
+                            <p data-lang="instr_qs_step3">3. <strong>Створіть групу</strong> або <strong>приєднайтесь</strong> до існуючої за 6-значним кодом</p>
+                            <p data-lang="instr_qs_step4">4. <strong>Голосуйте</strong> у активних голосуваннях або створюйте власні</p>
+                            <p data-lang="instr_qs_step5">5. Слідкуйте за результатами у вкладці <strong>Сповіщення</strong></p>
                         </div>
                     </div>
 
@@ -573,23 +585,23 @@
                     <div class="instruction-section" data-instr-section="voting_types">
                         <h4 data-lang="instr_voting_types"><i class="ph ph-scales"></i> Типи голосування</h4>
                         <div class="instruction-item">
-                            <h5 data-lang="instr_simple_title">✋ Звичайне (відкрите)</h5>
+                            <h5 data-lang="instr_simple_title"><i class="ph ph-hand-palm"></i> Звичайне (відкрите)</h5>
                             <p data-lang="instr_simple_desc">Відкрите голосування — всі бачать, хто і як проголосував. Підходить для загальних питань: ремонт, витрати, правила. Тривалість: від 1 години до 5 днів.</p>
                         </div>
                         <div class="instruction-item">
-                            <h5 data-lang="instr_secret_title">🔒 Тайне</h5>
+                            <h5 data-lang="instr_secret_title"><i class="ph ph-lock-simple"></i> Тайне</h5>
                             <p data-lang="instr_secret_desc">Анонімне голосування — видно лише загальну кількість голосів «За/Проти/Утримався», без імен. Коментарі приховані. Для чутливих питань.</p>
                         </div>
                         <div class="instruction-item">
-                            <h5 data-lang="instr_admin_title">👑 Зміна адміністратора</h5>
+                            <h5 data-lang="instr_admin_title"><i class="ph ph-crown"></i> Зміна адміністратора</h5>
                             <p data-lang="instr_admin_desc">Голосування за нового керівника групи. Вимоги: мін. 3 учасники, 72 години, 50%+1 для прийняття. При успіху — ролі міняються автоматично.</p>
                         </div>
                         <div class="instruction-item">
-                            <h5 data-lang="instr_remove_title">🚫 Видалення учасника</h5>
+                            <h5 data-lang="instr_remove_title"><i class="ph ph-prohibit"></i> Видалення учасника</h5>
                             <p data-lang="instr_remove_desc">Голосування за виключення учасника. Потрібно вказати причину. Вимоги: мін. 3 учасники, 72 години, 50%+1 для прийняття. При успіху — учасник видаляється автоматично.</p>
                         </div>
                         <div class="instruction-item">
-                            <h5 data-lang="instr_freeze_title">❄️ Заморозка учасника (BETA)</h5>
+                            <h5 data-lang="instr_freeze_title"><i class="ph ph-snowflake"></i> Заморозка учасника (BETA)</h5>
                             <p data-lang="instr_freeze_desc">Тільки адміністратор може створити. Обирає учасників для заморозки на 7 днів. Заморожений учасник не може голосувати. Якщо 2+ учасники натиснуть «Не згоден» — заморозка автоматично скасовується.</p>
                         </div>
                     </div>
@@ -627,12 +639,12 @@
                     <div class="instruction-section" data-instr-section="badges">
                         <h4 data-lang="instr_badges"><i class="ph ph-paint-brush"></i> Позначення та статуси</h4>
                         <div class="instruction-item">
-                            <p><span class="badge-example yellow">🟡</span> — <span data-lang="instr_badge_yellow">Активне голосування (ще триває)</span></p>
-                            <p><span class="badge-example green">🟢</span> — <span data-lang="instr_badge_green">Прийнято (50%+1 проголосували «За»)</span></p>
-                            <p><span class="badge-example red">🔴</span> — <span data-lang="instr_badge_red">Відхилено (більшість проголосувала «Проти» або недостатньо голосів)</span></p>
-                            <p>🔵 — <span data-lang="instr_badge_blue">Тайне голосування (імена голосуючих приховані)</span></p>
-                            <p>❄️ — <span data-lang="instr_badge_frozen">Заморожений учасник (не може голосувати)</span></p>
-                            <p>👑 — <span data-lang="instr_badge_admin">Адміністратор групи</span></p>
+                            <p><span class="badge-example yellow"><i class="ph-fill ph-circle"></i></span> — <span data-lang="instr_badge_yellow">Активне голосування (ще триває)</span></p>
+                            <p><span class="badge-example green"><i class="ph-fill ph-circle"></i></span> — <span data-lang="instr_badge_green">Прийнято (50%+1 проголосували «За»)</span></p>
+                            <p><span class="badge-example red"><i class="ph-fill ph-circle"></i></span> — <span data-lang="instr_badge_red">Відхилено (більшість проголосувала «Проти» або недостатньо голосів)</span></p>
+                            <p><span class="badge-example blue"><i class="ph-fill ph-circle"></i></span> — <span data-lang="instr_badge_blue">Тайне голосування (імена голосуючих приховані)</span></p>
+                            <p><i class="ph-fill ph-snowflake text-info"></i> — <span data-lang="instr_badge_frozen">Заморожений учасник (не може голосувати)</span></p>
+                            <p><i class="ph-fill ph-crown text-warning"></i> — <span data-lang="instr_badge_admin">Адміністратор групи</span></p>
                         </div>
                     </div>
 

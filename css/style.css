@@ -131,6 +131,40 @@ html, body {
     font-weight: 600;
 }
 
+/* Header actions row (info + create/action buttons) */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Info button (circle with i) */
+.btn-info {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1.5px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 18px;
+    transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.btn-info:hover {
+    background: var(--color-surface-secondary);
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.btn-info:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
 .screen-content {
     flex: 1;
     overflow-y: auto;
@@ -435,10 +469,12 @@ html, body {
     display: flex;
     gap: 8px;
     margin-bottom: 16px;
+    min-width: 0;
 }
 
 .join-group-section input {
     flex: 1;
+    min-width: 0;
     padding: 12px 16px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
@@ -446,8 +482,10 @@ html, body {
 }
 
 .join-group-section .btn {
-    width: auto;
-    padding: 12px 20px;
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding: 12px 16px;
+    font-size: 14px;
 }
 
 .groups-list {
@@ -1248,8 +1286,9 @@ html, body {
     width: 24px;
     height: 24px;
     border-radius: 50%;
-    font-size: 12px;
+    font-size: 14px;
     margin-right: 8px;
+    color: white;
 }
 
 .badge-example.yellow {
@@ -1262,6 +1301,10 @@ html, body {
 
 .badge-example.red {
     background: var(--color-danger);
+}
+
+.badge-example.blue {
+    background: var(--color-primary);
 }
 
 /* Utility Color Classes */
