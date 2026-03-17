@@ -21,19 +21,60 @@
     <!-- App Container -->
     <div id="app">
         
-        <!-- Auth Screen -->
-        <div class="screen" id="auth-screen">
+        <!-- Loading Screen -->
+        <div class="screen" id="loading-screen">
             <div class="auth-container">
                 <div class="logo">
                     <div class="logo-icon"><i class="ph ph-scales"></i></div>
                     <h1>VoteCoop</h1>
-                    <p>Голосування для ОСГ та кооперативів</p>
                 </div>
-                <button class="btn btn-primary btn-google" onclick="app.login()">
+                <div class="loading-spinner"></div>
+            </div>
+        </div>
+
+        <!-- Auth Screen -->
+        <div class="screen hidden" id="auth-screen">
+            <div class="auth-container">
+                <div class="logo">
+                    <div class="logo-icon"><i class="ph ph-scales"></i></div>
+                    <h1>VoteCoop</h1>
+                    <p data-lang="auth_subtitle">Голосування для ОСГ та кооперативів</p>
+                </div>
+
+                <!-- Auth error message -->
+                <div class="auth-error hidden" id="auth-error"></div>
+                <!-- Auth success message -->
+                <div class="auth-success hidden" id="auth-success"></div>
+
+                <!-- Email/Password form -->
+                <form class="auth-form" id="auth-form" onsubmit="return false;">
+                    <div class="form-group">
+                        <input type="email" id="auth-email" data-lang-placeholder="auth_email_placeholder" placeholder="Email" required autocomplete="email">
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="auth-password" data-lang-placeholder="auth_password_placeholder" placeholder="Пароль" required minlength="6" autocomplete="current-password">
+                    </div>
+                    <button class="btn btn-primary" id="auth-login-btn" type="button" onclick="app.loginWithEmail()">
+                        <span data-lang="auth_login_btn">Увійти</span>
+                    </button>
+                    <button class="btn btn-secondary" id="auth-register-btn" type="button" onclick="app.registerWithEmail()">
+                        <span data-lang="auth_register_btn">Зареєструватися</span>
+                    </button>
+                    <a href="#" class="auth-link" onclick="app.resetPassword(); return false;" data-lang="auth_forgot_password">Забули пароль?</a>
+                </form>
+
+                <!-- Divider -->
+                <div class="auth-divider">
+                    <span data-lang="auth_or_divider">або</span>
+                </div>
+
+                <!-- Google OAuth -->
+                <button class="btn btn-primary btn-google" onclick="app.loginWithGoogle()">
                     <span class="icon">G</span>
-                    Увійти через Google
+                    <span data-lang="auth_google_btn">Увійти через Google</span>
                 </button>
-                <p class="auth-hint">Автоматична реєстрація при першому вході</p>
+
+                <p class="auth-hint" data-lang="auth_hint">Автоматична реєстрація при першому вході</p>
             </div>
         </div>
 
@@ -43,6 +84,10 @@
                 <h2 data-lang="complete_profile">Заповніть профіль</h2>
             </div>
             <div class="screen-content">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="profile-email-display" class="input-readonly" readonly>
+                </div>
                 <div class="form-group">
                     <label data-lang="firstname">Ім'я</label>
                     <input type="text" id="profile-firstname" data-lang-placeholder="firstname_placeholder" placeholder="Ваше ім'я">
@@ -63,7 +108,7 @@
                     <label data-lang="apartment">Квартира/офіс</label>
                     <input type="text" id="profile-apartment" data-lang-placeholder="apartment_placeholder" placeholder="№ 15">
                 </div>
-                <button class="btn btn-primary" onclick="app.saveProfile()" data-lang="save">Зберегти</button>
+                <button class="btn btn-primary" id="profile-save-btn" onclick="app.saveProfile()" data-lang="save">Зберегти</button>
             </div>
         </div>
 
@@ -681,6 +726,9 @@
 
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/config.js"></script>
+    <script src="js/supabase.js"></script>
     <script src="js/app.js"></script>
     <script>
         if ('serviceWorker' in navigator) {

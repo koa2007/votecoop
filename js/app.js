@@ -37,19 +37,135 @@ const app = {
     },
 
     // Initialize app
-    init() {
-        this.loadMockData();
-        this.setupEventListeners();
-        this.renderVotings();
-        this.renderGroups();
-        this.renderNotifications();
-        
-        // Load saved language preference
+    async init() {
+        // Load saved language preference first (for error messages)
         const savedLang = localStorage.getItem('votecoop-language') || 'uk';
         if (savedLang !== 'uk') {
             document.getElementById('language-select').value = savedLang;
             this.changeLanguage(savedLang);
         }
+
+        // Try to initialize Supabase
+        let supabaseReady = false;
+        try {
+            supabaseReady = supabaseService.init();
+        } catch (err) {
+            // Supabase not configured — will use mock mode
+        }
+
+        if (supabaseReady) {
+            // Real mode: check for existing session
+            await this.initWithSupabase();
+        } else {
+            // Mock mode: use demo data (for development without Supabase)
+            this.initMockMode();
+        }
+    },
+
+    // Initialize with Supabase — check session, handle auth redirects
+    async initWithSupabase() {
+        this.showScreen('loading-screen');
+
+        // Listen for auth state changes (handles OAuth redirect callback)
+        supabaseService.onAuthStateChange(async (event, session) => {
+            if (event === 'SIGNED_IN' && session) {
+                await this.handleAuthSession(session);
+            } else if (event === 'SIGNED_OUT') {
+                this.handleSignOut();
+            }
+        });
+
+        // Check for existing session
+        const { session, error } = await supabaseService.getSession();
+
+        if (session) {
+            await this.handleAuthSession(session);
+        } else {
+            // No session — show auth screen
+            this.showScreen('auth-screen');
+        }
+    },
+
+    // Handle authenticated session — load profile, decide which screen to show
+    async handleAuthSession(session) {
+        const userId = session.user.id;
+        const userEmail = session.user.email;
+
+        // Load profile from DB
+        const { profile, error } = await supabaseService.getProfile(userId);
+
+        if (profile && profile.profile_completed) {
+            // Profile complete — show main app
+            this.state.user = {
+                id: profile.id,
+                firstName: profile.first_name,
+                lastName: profile.last_name,
+                email: userEmail,
+                phone: profile.phone || '',
+                address: profile.address || '',
+                apartment: profile.apartment || ''
+            };
+
+            // Load mock data for groups/votings (Phase 2 will replace with real data)
+            this.loadMockData();
+            // Restore real user data over mock
+            this.state.user = {
+                id: profile.id,
+                firstName: profile.first_name,
+                lastName: profile.last_name,
+                email: userEmail,
+                phone: profile.phone || '',
+                address: profile.address || '',
+                apartment: profile.apartment || ''
+            };
+
+            this.setupEventListeners();
+            this.renderVotings();
+            this.renderGroups();
+            this.renderNotifications();
+            this.updateProfileDisplay();
+
+            this.showScreen('main-screens');
+        } else {
+            // Profile not completed — show setup screen
+            this.state.user = {
+                id: userId,
+                email: userEmail,
+                firstName: profile?.first_name || '',
+                lastName: profile?.last_name || '',
+                phone: profile?.phone || '',
+                address: profile?.address || '',
+                apartment: profile?.apartment || ''
+            };
+
+            // Pre-fill email in profile-setup
+            const emailField = document.getElementById('profile-email-display');
+            if (emailField) {
+                emailField.value = userEmail;
+            }
+
+            this.showScreen('profile-setup-screen');
+        }
+    },
+
+    // Handle sign out — reset state, show auth screen
+    handleSignOut() {
+        this.state.user = null;
+        this.state.groups = [];
+        this.state.votings = [];
+        this.state.notifications = [];
+        this.showScreen('auth-screen');
+    },
+
+    // Initialize in mock mode (no Supabase configured)
+    initMockMode() {
+        this.loadMockData();
+        this.setupEventListeners();
+        this.renderVotings();
+        this.renderGroups();
+        this.renderNotifications();
+        // Show auth screen — login() will use mock flow
+        this.showScreen('auth-screen');
     },
 
     // Mock data for prototype
@@ -303,21 +419,54 @@ const app = {
 
     // Navigation
     showScreen(screenId) {
-        // Hide all screens
-        document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
-        
-        // Show target screen
-        const target = document.getElementById(screenId);
-        if (target) {
-            target.classList.remove('hidden');
-            this.state.currentScreen = screenId;
-        }
-
-        // Show/hide main screens container
         const mainScreens = ['voting-screen', 'groups-screen', 'notifications-screen', 'profile-screen'];
+        const topLevelScreens = ['loading-screen', 'auth-screen', 'profile-setup-screen'];
         const mainContainer = document.getElementById('main-screens');
-        if (mainScreens.includes(screenId)) {
-            mainContainer.classList.remove('hidden');
+
+        if (topLevelScreens.includes(screenId) || screenId === 'main-screens') {
+            // Top-level navigation: hide all top-level screens and main container
+            topLevelScreens.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('hidden');
+            });
+            if (mainContainer) mainContainer.classList.add('hidden');
+
+            if (screenId === 'main-screens') {
+                // Show main container and default to voting screen
+                mainContainer.classList.remove('hidden');
+                document.querySelectorAll('#main-screens > .screen').forEach(s => s.classList.add('hidden'));
+                const votingScreen = document.getElementById('voting-screen');
+                if (votingScreen) votingScreen.classList.remove('hidden');
+                this.state.currentScreen = 'voting-screen';
+            } else {
+                const target = document.getElementById(screenId);
+                if (target) {
+                    target.classList.remove('hidden');
+                    this.state.currentScreen = screenId;
+                }
+            }
+        } else if (mainScreens.includes(screenId)) {
+            // Switch between main screens (within main container)
+            topLevelScreens.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('hidden');
+            });
+            if (mainContainer) mainContainer.classList.remove('hidden');
+
+            document.querySelectorAll('#main-screens > .screen').forEach(s => s.classList.add('hidden'));
+            const target = document.getElementById(screenId);
+            if (target) {
+                target.classList.remove('hidden');
+                this.state.currentScreen = screenId;
+            }
+        } else {
+            // Other screens (group-detail-screen, etc.)
+            document.querySelectorAll('#main-screens > .screen').forEach(s => s.classList.add('hidden'));
+            const target = document.getElementById(screenId);
+            if (target) {
+                target.classList.remove('hidden');
+                this.state.currentScreen = screenId;
+            }
         }
     },
 
@@ -328,13 +477,179 @@ const app = {
         activeItem.classList.add('active');
     },
 
-    // Auth
-    login() {
-        // Simulate Google login
+    // === AUTH METHODS ===
+
+    // Show auth error message
+    showAuthError(msg) {
+        const el = document.getElementById('auth-error');
+        el.textContent = msg;
+        el.classList.remove('hidden');
+        const successEl = document.getElementById('auth-success');
+        if (successEl) successEl.classList.add('hidden');
+    },
+
+    // Show auth success message
+    showAuthSuccess(msg) {
+        const el = document.getElementById('auth-success');
+        el.textContent = msg;
+        el.classList.remove('hidden');
+        const errorEl = document.getElementById('auth-error');
+        if (errorEl) errorEl.classList.add('hidden');
+    },
+
+    // Hide auth messages
+    hideAuthMessages() {
+        const errorEl = document.getElementById('auth-error');
+        const successEl = document.getElementById('auth-success');
+        if (errorEl) errorEl.classList.add('hidden');
+        if (successEl) successEl.classList.add('hidden');
+    },
+
+    // Set button loading state
+    setBtnLoading(btnId, loading) {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        if (loading) {
+            btn.classList.add('btn-loading');
+            btn.disabled = true;
+        } else {
+            btn.classList.remove('btn-loading');
+            btn.disabled = false;
+        }
+    },
+
+    // Login with Google OAuth
+    async loginWithGoogle() {
+        if (!supabaseService.isReady()) {
+            // Mock mode fallback
+            this.loginMock();
+            return;
+        }
+
+        this.hideAuthMessages();
+        const { data, error } = await supabaseService.signInWithGoogle();
+
+        if (error) {
+            const t = this.translations[this.currentLanguage];
+            this.showAuthError(t.auth_error_network || error.message);
+        }
+        // If successful, browser will redirect to Google
+    },
+
+    // Login with email/password
+    async loginWithEmail() {
+        const t = this.translations[this.currentLanguage];
+        const email = document.getElementById('auth-email').value.trim();
+        const password = document.getElementById('auth-password').value;
+
+        if (!email || !password) {
+            this.showAuthError(t.auth_error_fill_fields);
+            return;
+        }
+
+        if (!supabaseService.isReady()) {
+            this.loginMock();
+            return;
+        }
+
+        this.hideAuthMessages();
+        this.setBtnLoading('auth-login-btn', true);
+
+        const { data, error } = await supabaseService.signInWithEmail(email, password);
+
+        this.setBtnLoading('auth-login-btn', false);
+
+        if (error) {
+            if (error.message.includes('Invalid login credentials')) {
+                this.showAuthError(t.auth_error_invalid);
+            } else if (error.message.includes('Email not confirmed')) {
+                this.showAuthError(t.auth_error_not_confirmed);
+            } else {
+                this.showAuthError(t.auth_error_network);
+            }
+            return;
+        }
+
+        // Success — onAuthStateChange will handle the rest
+    },
+
+    // Register with email/password
+    async registerWithEmail() {
+        const t = this.translations[this.currentLanguage];
+        const email = document.getElementById('auth-email').value.trim();
+        const password = document.getElementById('auth-password').value;
+
+        if (!email || !password) {
+            this.showAuthError(t.auth_error_fill_fields);
+            return;
+        }
+
+        if (password.length < 6) {
+            this.showAuthError(t.auth_error_password_short);
+            return;
+        }
+
+        if (!supabaseService.isReady()) {
+            this.loginMock();
+            return;
+        }
+
+        this.hideAuthMessages();
+        this.setBtnLoading('auth-register-btn', true);
+
+        const { data, error } = await supabaseService.signUpWithEmail(email, password);
+
+        this.setBtnLoading('auth-register-btn', false);
+
+        if (error) {
+            if (error.message.includes('already registered')) {
+                this.showAuthError(t.auth_error_exists);
+            } else {
+                this.showAuthError(error.message);
+            }
+            return;
+        }
+
+        // Check if email confirmation is required
+        if (data?.user?.identities?.length === 0) {
+            this.showAuthError(t.auth_error_exists);
+        } else {
+            this.showAuthSuccess(t.auth_check_email);
+        }
+    },
+
+    // Reset password
+    async resetPassword() {
+        const t = this.translations[this.currentLanguage];
+        const email = document.getElementById('auth-email').value.trim();
+
+        if (!email) {
+            this.showAuthError(t.auth_error_enter_email);
+            return;
+        }
+
+        if (!supabaseService.isReady()) {
+            this.showAuthError(t.auth_error_network);
+            return;
+        }
+
+        this.hideAuthMessages();
+
+        const { data, error } = await supabaseService.resetPassword(email);
+
+        if (error) {
+            this.showAuthError(error.message);
+            return;
+        }
+
+        this.showAuthSuccess(t.auth_reset_sent);
+    },
+
+    // Mock login (when Supabase is not configured)
+    loginMock() {
         document.getElementById('auth-screen').classList.add('hidden');
-        
-        // Check if profile is complete
-        if (!this.state.user.firstName) {
+
+        if (!this.state.user || !this.state.user.firstName) {
             document.getElementById('profile-setup-screen').classList.remove('hidden');
         } else {
             document.getElementById('main-screens').classList.remove('hidden');
@@ -342,22 +657,28 @@ const app = {
         }
     },
 
-    saveProfile() {
+    // Legacy login() for backward compatibility
+    login() {
+        this.loginWithGoogle();
+    },
+
+    async saveProfile() {
         const t = this.translations[this.currentLanguage];
-        const firstName = document.getElementById('profile-firstname').value;
-        const lastName = document.getElementById('profile-lastname').value;
-        const phone = document.getElementById('profile-phone').value;
-        const address = document.getElementById('profile-address').value;
-        const apartment = document.getElementById('profile-apartment').value;
+        const firstName = document.getElementById('profile-firstname').value.trim();
+        const lastName = document.getElementById('profile-lastname').value.trim();
+        const phone = document.getElementById('profile-phone').value.trim();
+        const address = document.getElementById('profile-address').value.trim();
+        const apartment = document.getElementById('profile-apartment').value.trim();
 
         if (!firstName || !lastName) {
             alert(t.fill_name_error);
             return;
         }
 
-        // Check if this is first profile save (no apartment field yet)
+        // Check if this is first profile save
         const isFirstSave = !this.state.user || !this.state.user.apartment;
 
+        // Update local state
         this.state.user = {
             ...this.state.user,
             firstName,
@@ -366,6 +687,27 @@ const app = {
             address,
             apartment
         };
+
+        // Save to Supabase if connected
+        if (supabaseService.isReady() && this.state.user.id) {
+            this.setBtnLoading('profile-save-btn', true);
+
+            const { profile, error } = await supabaseService.updateProfile(this.state.user.id, {
+                first_name: firstName,
+                last_name: lastName,
+                phone: phone,
+                address: address,
+                apartment: apartment,
+                profile_completed: true
+            });
+
+            this.setBtnLoading('profile-save-btn', false);
+
+            if (error) {
+                alert(t.auth_error_network);
+                return;
+            }
+        }
 
         // Show Terms on first save
         if (isFirstSave) {
@@ -380,7 +722,6 @@ const app = {
     },
 
     showTermsModal() {
-        // Reset checkbox
         document.getElementById('terms-agree').checked = false;
         this.showModal('terms-modal');
     },
@@ -397,11 +738,28 @@ const app = {
         this.hideModal('terms-modal');
         document.getElementById('profile-setup-screen').classList.add('hidden');
         document.getElementById('main-screens').classList.remove('hidden');
+
+        // Load mock data for groups/votings (Phase 2: real data)
+        if (!this.state.groups.length) {
+            this.loadMockData();
+            // Preserve real user
+            const realUser = { ...this.state.user };
+            this.state.user = realUser;
+        }
+
+        this.setupEventListeners();
+        this.renderVotings();
+        this.renderGroups();
+        this.renderNotifications();
         this.showScreen('voting-screen');
         this.updateProfileDisplay();
     },
 
-    logout() {
+    async logout() {
+        if (supabaseService.isReady()) {
+            await supabaseService.signOut();
+        }
+        // Clear state and reload
         location.reload();
     },
 
@@ -1633,11 +1991,13 @@ const app = {
     },
 
     updateProfileDisplay() {
-        document.getElementById('profile-name').textContent = 
-            `${this.state.user.firstName} ${this.state.user.lastName}`;
-        document.getElementById('profile-phone-display').textContent = this.state.user.phone;
-        document.getElementById('profile-address-display').textContent = 
-            `${this.state.user.address}, кв. ${this.state.user.apartment}`;
+        if (!this.state.user) return;
+        document.getElementById('profile-name').textContent =
+            `${this.state.user.firstName || ''} ${this.state.user.lastName || ''}`.trim();
+        document.getElementById('profile-email').textContent = this.state.user.email || '';
+        document.getElementById('profile-phone-display').textContent = this.state.user.phone || '';
+        document.getElementById('profile-address-display').textContent =
+            this.state.user.address ? `${this.state.user.address}, кв. ${this.state.user.apartment}` : '';
         document.getElementById('profile-groups-count').textContent = this.state.groups.length;
     },
 
@@ -1903,7 +2263,26 @@ const app = {
             no_members_found: 'Учасників не знайдено',
             stats_accepted: 'прийнято',
             stats_rejected: 'відхилено',
-            stats_active: 'в процесі'
+            stats_active: 'в процесі',
+            // Auth
+            auth_subtitle: 'Голосування для ОСГ та кооперативів',
+            auth_email_placeholder: 'Email',
+            auth_password_placeholder: 'Пароль',
+            auth_login_btn: 'Увійти',
+            auth_register_btn: 'Зареєструватися',
+            auth_forgot_password: 'Забули пароль?',
+            auth_or_divider: 'або',
+            auth_google_btn: 'Увійти через Google',
+            auth_hint: 'Автоматична реєстрація при першому вході',
+            auth_error_invalid: 'Невірний email або пароль',
+            auth_error_exists: 'Цей email вже зареєстрований',
+            auth_error_network: 'Помилка мережі. Спробуйте пізніше.',
+            auth_error_fill_fields: 'Заповніть email та пароль',
+            auth_error_password_short: 'Пароль має бути не менше 6 символів',
+            auth_error_not_confirmed: 'Підтвердіть email перш ніж увійти',
+            auth_error_enter_email: 'Введіть email для відновлення пароля',
+            auth_check_email: 'Перевірте пошту для підтвердження реєстрації',
+            auth_reset_sent: 'Лист для відновлення пароля надіслано на вашу пошту'
         },
         en: {
             profile: 'Profile',
@@ -2165,7 +2544,26 @@ const app = {
             no_members_found: 'No members found',
             stats_accepted: 'accepted',
             stats_rejected: 'rejected',
-            stats_active: 'in progress'
+            stats_active: 'in progress',
+            // Auth
+            auth_subtitle: 'Voting for HOA & cooperatives',
+            auth_email_placeholder: 'Email',
+            auth_password_placeholder: 'Password',
+            auth_login_btn: 'Sign In',
+            auth_register_btn: 'Sign Up',
+            auth_forgot_password: 'Forgot password?',
+            auth_or_divider: 'or',
+            auth_google_btn: 'Sign in with Google',
+            auth_hint: 'Automatic registration on first login',
+            auth_error_invalid: 'Invalid email or password',
+            auth_error_exists: 'This email is already registered',
+            auth_error_network: 'Network error. Please try again later.',
+            auth_error_fill_fields: 'Please fill in email and password',
+            auth_error_password_short: 'Password must be at least 6 characters',
+            auth_error_not_confirmed: 'Please confirm your email before signing in',
+            auth_error_enter_email: 'Enter your email to reset password',
+            auth_check_email: 'Check your email to confirm registration',
+            auth_reset_sent: 'Password reset email has been sent'
         },
         ru: {
             profile: 'Профиль',
@@ -2427,7 +2825,26 @@ const app = {
             no_members_found: 'Участников не найдено',
             stats_accepted: 'принято',
             stats_rejected: 'отклонено',
-            stats_active: 'в процессе'
+            stats_active: 'в процессе',
+            // Auth
+            auth_subtitle: 'Голосования для ОСЖ и кооперативов',
+            auth_email_placeholder: 'Email',
+            auth_password_placeholder: 'Пароль',
+            auth_login_btn: 'Войти',
+            auth_register_btn: 'Зарегистрироваться',
+            auth_forgot_password: 'Забыли пароль?',
+            auth_or_divider: 'или',
+            auth_google_btn: 'Войти через Google',
+            auth_hint: 'Автоматическая регистрация при первом входе',
+            auth_error_invalid: 'Неверный email или пароль',
+            auth_error_exists: 'Этот email уже зарегистрирован',
+            auth_error_network: 'Ошибка сети. Попробуйте позже.',
+            auth_error_fill_fields: 'Заполните email и пароль',
+            auth_error_password_short: 'Пароль должен быть не менее 6 символов',
+            auth_error_not_confirmed: 'Подтвердите email перед входом',
+            auth_error_enter_email: 'Введите email для восстановления пароля',
+            auth_check_email: 'Проверьте почту для подтверждения регистрации',
+            auth_reset_sent: 'Письмо для восстановления пароля отправлено на вашу почту'
         }
     },
 
@@ -2943,17 +3360,41 @@ const app = {
         this.showModal('edit-profile-modal');
     },
 
-    saveEditedProfile() {
+    async saveEditedProfile() {
         const t = this.translations[this.currentLanguage];
-        this.state.user.firstName = document.getElementById('edit-firstname').value;
-        this.state.user.lastName = document.getElementById('edit-lastname').value;
-        this.state.user.phone = document.getElementById('edit-phone').value;
-        this.state.user.address = document.getElementById('edit-address').value;
-        this.state.user.apartment = document.getElementById('edit-apartment').value;
-        
+        const firstName = document.getElementById('edit-firstname').value.trim();
+        const lastName = document.getElementById('edit-lastname').value.trim();
+        const phone = document.getElementById('edit-phone').value.trim();
+        const address = document.getElementById('edit-address').value.trim();
+        const apartment = document.getElementById('edit-apartment').value.trim();
+
+        this.state.user = {
+            ...this.state.user,
+            firstName,
+            lastName,
+            phone,
+            address,
+            apartment
+        };
+
+        // Save to Supabase if connected
+        if (supabaseService.isReady() && this.state.user.id) {
+            const { profile, error } = await supabaseService.updateProfile(this.state.user.id, {
+                first_name: firstName,
+                last_name: lastName,
+                phone: phone,
+                address: address,
+                apartment: apartment
+            });
+
+            if (error) {
+                alert(t.auth_error_network);
+                return;
+            }
+        }
+
         this.updateProfileDisplay();
         this.hideModal('edit-profile-modal');
-        
         alert(t.profile_saved);
     },
 
