@@ -2,7 +2,7 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>VoteCoop - Голосування ОСГ</title>
 
     <!-- PWA Meta Tags -->
@@ -74,7 +74,7 @@
             <div class="screen" id="voting-screen">
                 <div class="screen-header">
                     <h2 data-lang="voting">Голосування</h2>
-                    <button class="btn-icon" onclick="app.showCreateVoting()">+</button>
+                    <button class="btn-icon" onclick="app.showCreateVoting()" aria-label="Create new voting">+</button>
                 </div>
                 <div class="screen-content">
                     <div class="segmented-control">
@@ -91,7 +91,7 @@
             <div class="screen hidden" id="groups-screen">
                 <div class="screen-header">
                     <h2 data-lang="groups">Групи</h2>
-                    <button class="btn-icon" onclick="app.showCreateGroup()">+</button>
+                    <button class="btn-icon" onclick="app.showCreateGroup()" aria-label="Create new group">+</button>
                 </div>
                 <div class="screen-content">
                     <div class="join-group-section">
@@ -189,7 +189,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h3 data-lang="new_group">Нова група</h3>
-                    <button class="btn-icon" onclick="app.hideModal('create-group-modal')">✕</button>
+                    <button class="btn-icon" onclick="app.hideModal('create-group-modal')" aria-label="Close">✕</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
@@ -215,7 +215,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h3 data-lang="new_voting">Нове голосування</h3>
-                    <button class="btn-icon" onclick="app.hideModal('create-voting-modal')">✕</button>
+                    <button class="btn-icon" onclick="app.hideModal('create-voting-modal')" aria-label="Close">✕</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
@@ -224,8 +224,8 @@
                     </div>
                     <div class="form-group">
                         <label data-lang="description">Опис</label>
-                        <textarea id="voting-description" data-lang-placeholder="description_placeholder" placeholder="Детальний опис голосування..." maxlength="500" rows="3" style="resize: vertical; min-height: 60px;" oninput="app.updateDescriptionCounter()"></textarea>
-                        <div style="font-size: 12px; color: var(--color-text-tertiary); margin-top: 4px; text-align: right;">
+                        <textarea id="voting-description" data-lang-placeholder="description_placeholder" placeholder="Детальний опис голосування…" maxlength="500" rows="3" oninput="app.updateDescriptionCounter()"></textarea>
+                        <div class="char-counter">
                             <span id="description-counter">0</span> / 500
                         </div>
                     </div>
@@ -247,15 +247,14 @@
                     </div>
                     <div class="form-group hidden" id="freeze-members-group">
                         <label data-lang="freeze_members">Учасники для заморозки</label>
-                        <div class="member-chips-search" style="position: relative;">
-                            <input type="text" id="freeze-search" data-lang-placeholder="search_members" placeholder="Пошук учасників..." 
-                                   style="width: 100%; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 14px;"
-                                   oninput="app.searchFreezeMembers(this.value)">
-                            <div id="freeze-search-results" class="search-results hidden" style="position: absolute; top: 100%; left: 0; right: 0; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-top: 4px; max-height: 200px; overflow-y: auto; z-index: 100;"></div>
+                        <div class="member-chips-search">
+                            <input type="text" id="freeze-search" data-lang-placeholder="search_members" placeholder="Пошук учасників…"
+                                   oninput="app.searchFreezeMembers(this.value)" autocomplete="off">
+                            <div id="freeze-search-results" class="freeze-search-results hidden"></div>
                         </div>
-                        <div id="freeze-selected-members" class="member-chips" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;"></div>
-                        <div style="font-size: 12px; color: var(--color-text-tertiary); margin-top: 8px;">
-                            <i class="ph ph-info"></i> <span data-lang="freeze_info">Заморозка діє 7 днів. Будь-які 2 учасники можуть оскаржити.</span>
+                        <div id="freeze-selected-members" class="member-chips"></div>
+                        <div class="freeze-info">
+                            <i class="ph ph-info" aria-hidden="true"></i> <span data-lang="freeze_info">Заморозка діє 7 днів. Будь-які 2 учасники можуть оскаржити.</span>
                         </div>
                     </div>
                     <div class="form-group hidden" id="target-member-group">
@@ -302,7 +301,7 @@
             <div class="modal-content modal-large">
                 <div class="modal-header">
                     <h3>Голосування</h3>
-                    <button class="btn-icon" onclick="app.hideModal('voting-detail-modal')">✕</button>
+                    <button class="btn-icon" onclick="app.hideModal('voting-detail-modal')" aria-label="Close">✕</button>
                 </div>
                 <div class="modal-body" id="voting-detail-content">
                     <!-- Content will be inserted here -->
@@ -316,16 +315,16 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h3 data-lang="delete_voting_title">Видалити голосування</h3>
-                    <button class="btn-icon" onclick="app.hideModal('delete-voting-modal')">✕</button>
+                    <button class="btn-icon" onclick="app.hideModal('delete-voting-modal')" aria-label="Close">✕</button>
                 </div>
                 <div class="modal-body">
-                    <p data-lang="delete_voting_warning" style="margin-bottom: 16px; color: var(--color-danger);">
+                    <p data-lang="delete_voting_warning" class="delete-warning">
                         ⚠️ Голосування буде видалено безповоротно. Всі учасники отримають повідомлення.
                     </p>
                     <div class="form-group">
                         <label data-lang="delete_reason">Причина видалення</label>
                         <textarea id="delete-reason-text" data-lang-placeholder="delete_reason_placeholder" placeholder="Вкажіть причину (мінімум 5 символів)..."></textarea>
-                        <div style="font-size: 12px; color: var(--color-text-tertiary); margin-top: 4px;">
+                        <div class="char-counter">
                             <span id="delete-reason-counter">0</span> / 200
                         </div>
                     </div>
@@ -340,9 +339,9 @@
         <!-- Group Detail Screen -->
         <div class="screen hidden" id="group-detail-screen">
             <div class="screen-header">
-                <button class="btn-icon back-btn" onclick="app.showScreen('groups-screen')">←</button>
+                <button class="btn-icon back-btn" onclick="app.showScreen('groups-screen')" aria-label="Go back">←</button>
                 <h2 id="group-detail-name">Група</h2>
-                <button class="btn-icon" onclick="app.showGroupMenu()">⋮</button>
+                <button class="btn-icon" onclick="app.showGroupMenu()" aria-label="Group menu">⋮</button>
             </div>
             <div class="screen-content">
                 <div class="group-info-card">
@@ -358,26 +357,26 @@
                     <div class="stat">
                         <span class="stat-value" id="group-members-count">5</span>
                         <span class="stat-label" id="members-label">учасників</span>
-                        <div id="frozen-count-display" style="font-size: 11px; color: #0ea5e9; margin-top: 2px; display: none;">
-                            <i class="ph-fill ph-snowflake"></i> <span id="frozen-count">0</span> <span data-lang="frozen_abbr">замор.</span>
+                        <div id="frozen-count-display" class="frozen-count-display">
+                            <i class="ph-fill ph-snowflake" aria-hidden="true"></i> <span id="frozen-count">0</span> <span data-lang="frozen_abbr">замор.</span>
                         </div>
                     </div>
-                    <div class="stat" style="min-width: 100px;">
-                        <div style="text-align: center;">
-                            <span class="stat-value" id="group-votings-count" style="color: #3b82f6;">5</span>
-                            <div style="display: flex; justify-content: center; gap: 8px; margin-top: 6px; font-size: 20px; font-weight: 600;">
-                                <span id="votings-accepted" style="color: #22c55e;">1</span>
-                                <span id="votings-rejected" style="color: #ef4444;">0</span>
-                                <span style="color: var(--color-text-tertiary); font-weight: 400;">-</span>
-                                <span id="votings-pending" style="color: #0ea5e9;">3</span>
+                    <div class="stat stat-centered">
+                        <div>
+                            <span class="stat-value info" id="group-votings-count">5</span>
+                            <div class="stat-sub-values">
+                                <span id="votings-accepted" class="accepted">1</span>
+                                <span id="votings-rejected" class="rejected">0</span>
+                                <span class="separator">-</span>
+                                <span id="votings-pending" class="pending">3</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="export-section" style="margin: 16px 0; text-align: center;">
-                    <button class="btn btn-secondary" onclick="app.exportGroupHistory()" style="display: inline-flex; align-items: center; gap: 8px;">
-                        <i class="ph ph-download-simple"></i>
+                <div class="export-section">
+                    <button class="btn btn-secondary" onclick="app.exportGroupHistory()">
+                        <i class="ph ph-download-simple" aria-hidden="true"></i>
                         <span data-lang="export_csv">Експорт історії (CSV)</span>
                     </button>
                 </div>
@@ -388,28 +387,20 @@
                 </div>
                 
                 <!-- Members Controls -->
-                <div class="members-controls" style="margin-bottom: 16px; background: var(--color-surface); border-radius: var(--radius-lg); padding: 12px;">
-                    <!-- Search Row with sort buttons -->
-                    <div class="search-row" style="display: flex; gap: 8px; align-items: center;">
-                        <!-- Sort by name (left) -->
-                        <button class="btn-icon sort-btn" onclick="app.sortMembersByName()" title="Сортувати за іменем" style="padding: 8px;">
-                            <i class="ph ph-sort-ascending" id="name-sort-icon" style="font-size: 20px;"></i>
+                <div class="members-controls">
+                    <div class="search-row">
+                        <button class="btn-icon sort-btn" onclick="app.sortMembersByName()" title="Сортувати за іменем" aria-label="Sort by name">
+                            <i class="ph ph-sort-ascending" id="name-sort-icon" aria-hidden="true"></i>
                         </button>
-                        
-                        <!-- Search input -->
-                        <div class="search-input-wrapper" style="position: relative; flex: 1;">
-                            <input type="text" id="member-search" data-lang-placeholder="search_members" placeholder="Пошук за ПІБ або телефоном..." 
-                                   style="width: 100%; padding: 10px 36px 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 14px; background: var(--color-surface-secondary);"
-                                   oninput="app.searchMembers(this.value)">
-                            <button id="clear-search" class="btn-icon" onclick="app.clearMemberSearch()" 
-                                    style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: none; padding: 4px; color: var(--color-text-tertiary);">
-                                <i class="ph ph-x-circle" style="font-size: 18px;"></i>
+                        <div class="search-input-wrapper">
+                            <input type="text" id="member-search" data-lang-placeholder="search_members" placeholder="Пошук за ПІБ або телефоном…"
+                                   oninput="app.searchMembers(this.value)" autocomplete="off">
+                            <button id="clear-search" class="clear-search-btn" onclick="app.clearMemberSearch()" aria-label="Clear search">
+                                <i class="ph ph-x-circle" aria-hidden="true"></i>
                             </button>
                         </div>
-                        
-                        <!-- Sort by participation (right) -->
-                        <button class="btn-icon sort-btn" onclick="app.sortMembersByParticipation()" title="Сортувати за участю" style="padding: 8px;">
-                            <i class="ph ph-sort-descending" id="participation-sort-icon" style="font-size: 20px;"></i>
+                        <button class="btn-icon sort-btn" onclick="app.sortMembersByParticipation()" title="Сортувати за участю" aria-label="Sort by participation">
+                            <i class="ph ph-sort-descending" id="participation-sort-icon" aria-hidden="true"></i>
                         </button>
                     </div>
                 </div>
@@ -425,10 +416,10 @@
                     <!-- Requests will be inserted here -->
                 </div>
 
-                <div class="section-header" id="history-section-header" style="display: none;">
+                <div class="section-header hidden" id="history-section-header">
                     <h3 data-lang="history">Історія змін</h3>
                 </div>
-                <div class="history-list" id="history-list" style="display: none;">
+                <div class="history-list hidden" id="history-list">
                     <!-- History will be inserted here -->
                 </div>
             </div>
@@ -440,7 +431,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h3 data-lang="edit_profile">Редагувати профіль</h3>
-                    <button class="btn-icon" onclick="app.hideModal('edit-profile-modal')">✕</button>
+                    <button class="btn-icon" onclick="app.hideModal('edit-profile-modal')" aria-label="Close">✕</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
@@ -478,31 +469,31 @@
                 <div class="modal-header">
                     <h3 data-lang="terms_title">Умови використання</h3>
                 </div>
-                <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
-                    <div class="terms-content" style="font-size: 14px; line-height: 1.6;">
-                        <p data-lang="terms_intro" style="margin-bottom: 16px;">
+                <div class="modal-body">
+                    <div class="terms-content">
+                        <p data-lang="terms_intro">
                             Для забезпечення повної прозорості та демократії в групі, всі учасники мають право:
                         </p>
-                        <ul style="margin-left: 20px; margin-bottom: 16px;">
-                            <li data-lang="terms_item1" style="margin-bottom: 8px;">
+                        <ul>
+                            <li data-lang="terms_item1">
                                 Брати участь у голосуваннях після вказання номера квартири/ділянки
                             </li>
-                            <li data-lang="terms_item2" style="margin-bottom: 8px;">
+                            <li data-lang="terms_item2">
                                 Експортувати повну історію голосувань групи в форматі CSV
                             </li>
-                            <li data-lang="terms_item3" style="margin-bottom: 8px;">
+                            <li data-lang="terms_item3">
                                 Перевіряти результати голосувань на достовірність
                             </li>
-                            <li data-lang="terms_item4" style="margin-bottom: 8px;">
+                            <li data-lang="terms_item4">
                                 Коментувати свої голоси (якщо це не таємне голосування)
                             </li>
                         </ul>
-                        <p data-lang="terms_export_notice" style="margin-bottom: 16px; padding: 12px; background: var(--color-surface-secondary); border-radius: var(--radius-md);">
+                        <p data-lang="terms_export_notice" class="terms-notice">
                             <strong>Важливо:</strong> Ви розумієте, що будь-який учасник групи може завантажити історію голосувань, де буде видно номер вашої квартири/ділянки та ваші голоси.
                         </p>
-                        <div class="form-group" style="margin-top: 20px;">
-                            <label class="checkbox-label" style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
-                                <input type="checkbox" id="terms-agree" style="margin-top: 2px;">
+                        <div class="form-group">
+                            <label class="terms-checkbox-label">
+                                <input type="checkbox" id="terms-agree">
                                 <span data-lang="terms_agree_text">Я ознайомлений(а) з умовами та погоджуюсь з ними</span>
                             </label>
                         </div>
@@ -520,7 +511,7 @@
             <div class="modal-content modal-large">
                 <div class="modal-header">
                     <h3 data-lang="instructions_title">📖 Як користуватися VoteCoop</h3>
-                    <button class="btn-icon" onclick="app.hideModal('instructions-modal')">✕</button>
+                    <button class="btn-icon" onclick="app.hideModal('instructions-modal')" aria-label="Close">✕</button>
                 </div>
                 <div class="modal-body instructions-body" id="instructions-content">
 

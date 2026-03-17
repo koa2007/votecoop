@@ -440,7 +440,7 @@ const app = {
                         <span><i class="ph ph-users-three"></i> ${voting.groupName}</span>
                         ${voting.status === 'active' 
                             ? `<span><i class="ph ph-scales"></i> ${voting.type === 'secret' ? t.secret_voting : t.open_voting}</span><span><i class="ph ph-clock"></i> ${timeLeft}</span>`
-                            : `<span>${voting.result === 'accepted' ? '<i class="ph-fill ph-check-circle" style="color: #22c55e;"></i> ' + t.result_accepted : '<i class="ph-fill ph-x-circle" style="color: #ef4444;"></i> ' + t.result_rejected}</span>`
+                            : `<span>${voting.result === 'accepted' ? '<i class="ph-fill ph-check-circle text-success"></i> ' + t.result_accepted : '<i class="ph-fill ph-x-circle text-danger"></i> ' + t.result_rejected}</span>`
                         }
                     </div>
                     <div class="voting-date" style="font-size: 12px; color: var(--color-text-tertiary); margin-bottom: 8px;">
@@ -913,7 +913,7 @@ const app = {
         if (voting.comments && voting.comments.length > 0) {
             const commentsList = voting.comments.map(c => {
                 const voteLabel = c.vote === 'yes' ? t.vote_yes : c.vote === 'no' ? t.vote_no : t.vote_abstain;
-                const voteEmoji = c.vote === 'yes' ? '<i class="ph-fill ph-check-circle" style="color: #22c55e;"></i>' : c.vote === 'no' ? '<i class="ph-fill ph-x-circle" style="color: #ef4444;"></i>' : '<i class="ph-fill ph-minus-circle" style="color: #6b7280;"></i>';
+                const voteEmoji = c.vote === 'yes' ? '<i class="ph-fill ph-check-circle text-success"></i>' : c.vote === 'no' ? '<i class="ph-fill ph-x-circle text-danger"></i>' : '<i class="ph-fill ph-minus-circle text-muted"></i>';
                 return `
                     <div class="comment-item" style="padding: 12px; border-bottom: 1px solid var(--color-border);">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
@@ -973,19 +973,19 @@ const app = {
         if (isFreeze) {
             // Freeze members chips
             const freezeMembersChips = voting.freezeMembers ? voting.freezeMembers.map(m => 
-                `<span class="member-chip" style="background: #0ea5e9;">${m.name} (${m.address})</span>`
+                `<span class="member-chip bg-info">${m.name} (${m.address})</span>`
             ).join('') : '';
             
             freezeInfo = `
-                <div style="margin-top: 16px; padding: 16px; background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%); border-radius: var(--radius-md); border: 1px solid #7dd3fc;">
-                    <div style="font-weight: 600; margin-bottom: 12px; color: #0369a1;">
-                        <i class="ph ph-snowflake" style="color: #0ea5e9;"></i> ${t.freeze_proposal}
+                <div class="freeze-proposal-card">
+                    <div class="freeze-heading">
+                        <i class="ph ph-snowflake text-info" aria-hidden="true"></i> ${t.freeze_proposal}
                     </div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+                    <div class="member-chips">
                         ${freezeMembersChips}
                     </div>
-                    <div style="font-size: 13px; color: #0369a1;">
-                        <i class="ph ph-info"></i> ${t.freeze_duration_info}
+                    <div class="freeze-subtext">
+                        <i class="ph ph-info" aria-hidden="true"></i> ${t.freeze_duration_info}
                     </div>
                 </div>
             `;
@@ -995,7 +995,7 @@ const app = {
             if (voting.objections && voting.objections.length > 0) {
                 objectionsList = voting.objections.map(o => 
                     `<div style="padding: 8px 0; border-bottom: 1px solid var(--color-border); font-size: 14px;">
-                        <i class="ph-fill ph-x-circle" style="color: #ef4444;"></i> ${o.userName}
+                        <i class="ph-fill ph-x-circle text-danger"></i> ${o.userName}
                         <span style="color: var(--color-text-tertiary); font-size: 12px;">(${new Date(o.time).toLocaleDateString()})</span>
                     </div>`
                 ).join('');
@@ -1007,7 +1007,7 @@ const app = {
                 <div style="margin-top: 20px; padding: 16px; background: var(--color-surface-secondary); border-radius: var(--radius-md);">
                     <div style="font-weight: 600; margin-bottom: 12px;">
                         <i class="ph ph-users"></i> ${t.objections_title}: ${objectionCount}/${objectionThreshold}
-                        ${objectionCount >= objectionThreshold ? `<span style="color: #ef4444; margin-left: 8px;">(${t.auto_rejected})</span>` : ''}
+                        ${objectionCount >= objectionThreshold ? `<span class="text-danger" style="margin-left: 8px;">(${t.auto_rejected})</span>` : ''}
                     </div>
                     <div>${objectionsList}</div>
                     ${objectionCount < objectionThreshold ? `
@@ -1022,7 +1022,7 @@ const app = {
             if (isActive && !hasObjected) {
                 freezeActions = `
                     <div class="voting-actions" style="flex-direction: column; gap: 12px;">
-                        <button class="btn btn-secondary" style="background: #fee2e2; color: #dc2626; border-color: #fecaca;" onclick="app.objectToFreeze(${voting.id})">
+                        <button class="btn btn-secondary btn-objection" onclick="app.objectToFreeze(${voting.id})">
                             <i class="ph-fill ph-hand-palm"></i> ${t.i_disagree}
                         </button>
                         <div style="font-size: 13px; color: var(--color-text-secondary); text-align: center;">
@@ -1033,7 +1033,7 @@ const app = {
             } else if (isActive && hasObjected) {
                 freezeActions = `
                     <div style="text-align: center; padding: 20px; color: var(--color-text-secondary);">
-                        <i class="ph ph-check" style="color: #22c55e;"></i> ${t.you_objected}
+                        <i class="ph ph-check text-success"></i> ${t.you_objected}
                     </div>
                 `;
             }
@@ -1042,7 +1042,7 @@ const app = {
         content.innerHTML = `
             <div class="voting-detail-header">
                 <div class="voting-detail-status ${isActive ? 'active' : 'completed'}">
-                    ${isActive ? `<i class="ph-fill ph-circle" style="color: #ef4444;"></i> ${t.active_votings}` : `<i class="ph-fill ph-check-circle" style="color: #22c55e;"></i> ${t.completed}`}
+                    ${isActive ? `<i class="ph-fill ph-circle text-danger"></i> ${t.active_votings}` : `<i class="ph-fill ph-check-circle text-success"></i> ${t.completed}`}
                 </div>
                 <h2 class="voting-detail-title">${voting.title}</h2>
                 ${voting.description ? `<div style="font-size: 15px; color: var(--color-text); margin: 12px 0; padding: 12px; background: var(--color-surface-secondary); border-radius: var(--radius-md); line-height: 1.5;">${voting.description}</div>` : ''}
@@ -1054,7 +1054,7 @@ const app = {
                     <span><i class="ph ph-users-three"></i> ${voting.groupName}</span>
                     ${isActive 
                         ? `<span><i class="ph ph-scales"></i> ${voting.type === 'secret' ? t.secret_voting : voting.type === 'freeze' ? t.freeze_voting : t.open_voting}</span><span><i class="ph ph-clock"></i> ${this.getTimeLeft(voting.endsAt)}</span>`
-                        : `<span>${voting.result === 'accepted' ? '<i class="ph-fill ph-check-circle" style="color: #22c55e;"></i> ' + t.result_accepted : '<i class="ph-fill ph-x-circle" style="color: #ef4444;"></i> ' + t.result_rejected}</span>`
+                        : `<span>${voting.result === 'accepted' ? '<i class="ph-fill ph-check-circle text-success"></i> ' + t.result_accepted : '<i class="ph-fill ph-x-circle text-danger"></i> ' + t.result_rejected}</span>`
                     }
                 </div>
                 ${voting.link ? `<a href="${voting.link}" target="_blank" class="btn btn-secondary" style="margin-top: 16px;"><i class="ph ph-paperclip"></i> ${t.materials_link}</a>` : ''}
@@ -1064,7 +1064,7 @@ const app = {
             ${!isFreeze ? `
             <div class="voting-results">
                 <div class="result-item">
-                    <span class="result-label"><i class="ph-fill ph-check-circle" style="color: #22c55e;"></i> ${t.yes}</span>
+                    <span class="result-label"><i class="ph-fill ph-check-circle text-success"></i> ${t.yes}</span>
                     <span class="result-value">${voting.yesVotes} (${yesPercent}%)</span>
                 </div>
                 <div class="result-bar">
@@ -1072,7 +1072,7 @@ const app = {
                 </div>
                 
                 <div class="result-item" style="margin-top: 16px;">
-                    <span class="result-label"><i class="ph-fill ph-x-circle" style="color: #ef4444;"></i> ${t.no}</span>
+                    <span class="result-label"><i class="ph-fill ph-x-circle text-danger"></i> ${t.no}</span>
                     <span class="result-value">${voting.noVotes} (${noPercent}%)</span>
                 </div>
                 <div class="result-bar">
@@ -1080,7 +1080,7 @@ const app = {
                 </div>
 
                 <div class="result-item" style="margin-top: 16px;">
-                    <span class="result-label"><i class="ph-fill ph-minus-circle" style="color: #6b7280;"></i> ${t.abstain}</span>
+                    <span class="result-label"><i class="ph-fill ph-minus-circle text-muted"></i> ${t.abstain}</span>
                     <span class="result-value">${abstainVotes} (${abstainPercent}%)</span>
                 </div>
 
@@ -1382,16 +1382,16 @@ const app = {
             const participationText = `${member.participation.participated}/${member.participation.total}`;
             const frozenIndicator = member.frozen ? `<i class="ph-fill ph-snowflake frozen-indicator" title="${t.frozen_badge}"></i>` : '';
             return `
-            <div class="member-card ${member.frozen ? 'frozen' : ''}" style="display: flex; align-items: center; padding: 12px 16px; background: var(--color-surface); border-radius: var(--radius-md); margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); ${member.frozen ? 'opacity: 0.7; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);' : ''}">
-                <div class="member-avatar" style="width: 44px; height: 44px; border-radius: 50%; background: ${member.frozen ? '#bae6fd' : 'var(--color-surface-secondary)'}; display: flex; align-items: center; justify-content: center; margin-right: 12px; flex-shrink: 0;">
-                    <i class="ph ph-user" style="font-size: 24px; color: ${member.frozen ? '#0ea5e9' : 'var(--color-text-secondary)'};"></i>
+            <div class="member-card ${member.frozen ? 'frozen' : ''}">
+                <div class="member-avatar">
+                    <i class="ph ph-user ${member.frozen ? 'text-info' : ''}" aria-hidden="true"></i>
                 </div>
-                <div class="member-info" style="flex: 1; min-width: 0;">
-                    <div class="member-name" style="font-weight: 500; font-size: 15px; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${member.name} ${frozenIndicator}</div>
-                    <div class="member-address" style="font-size: 13px; color: var(--color-text-secondary); margin-top: 2px;">${member.address || 'кв. -'}</div>
+                <div class="member-info">
+                    <div class="member-name">${member.name} ${frozenIndicator}</div>
+                    <div class="member-address">${member.address || 'кв. -'}</div>
                 </div>
-                <div class="member-participation" style="font-size: 15px; font-weight: 600; color: ${member.frozen ? '#0ea5e9' : 'var(--color-text)'}; padding-left: 12px;">
-                    ${member.frozen ? `<i class="ph-fill ph-snowflake"></i> ${t.frozen_badge}` : participationText}
+                <div class="member-participation ${member.frozen ? 'text-info' : ''}">
+                    ${member.frozen ? `<i class="ph-fill ph-snowflake" aria-hidden="true"></i> ${t.frozen_badge}` : participationText}
                 </div>
             </div>
         `}).join('');
@@ -1427,9 +1427,9 @@ const app = {
             historyList.innerHTML = group.history.map(item => {
                 let actionText = '';
                 if (item.action === 'admin_change') {
-                    actionText = `<i class="ph-fill ph-crown" style="color: #f59e0b;"></i> ${t.history_admin_change}: ${item.from} → ${item.to}`;
+                    actionText = `<i class="ph-fill ph-crown text-warning" aria-hidden="true"></i> ${t.history_admin_change}: ${item.from} → ${item.to}`;
                 } else if (item.action === 'member_removed') {
-                    actionText = `<i class="ph-fill ph-prohibit" style="color: #ef4444;"></i> ${t.history_member_removed}: ${item.member}`;
+                    actionText = `<i class="ph-fill ph-prohibit text-danger"></i> ${t.history_member_removed}: ${item.member}`;
                     if (item.reason) actionText += ` (${item.reason})`;
                 }
                 
