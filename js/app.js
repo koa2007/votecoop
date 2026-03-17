@@ -234,6 +234,19 @@ const app = {
 
     // === AUTH METHODS ===
 
+    // Toggle password visibility
+    togglePasswordVisibility() {
+        const input = document.getElementById('auth-password');
+        const icon = document.getElementById('password-toggle-icon');
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'ph ph-eye-slash';
+        } else {
+            input.type = 'password';
+            icon.className = 'ph ph-eye';
+        }
+    },
+
     // Show auth error message
     showAuthError(msg) {
         const el = document.getElementById('auth-error');

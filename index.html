@@ -60,8 +60,11 @@
                     <div class="form-group">
                         <input type="email" id="auth-email" data-lang-placeholder="auth_email_placeholder" placeholder="Email" required autocomplete="email">
                     </div>
-                    <div class="form-group">
+                    <div class="form-group password-group">
                         <input type="password" id="auth-password" data-lang-placeholder="auth_password_placeholder" placeholder="Пароль" required minlength="6" autocomplete="current-password">
+                        <button type="button" class="password-toggle" onclick="app.togglePasswordVisibility()" aria-label="Show password">
+                            <i class="ph ph-eye" id="password-toggle-icon" aria-hidden="true"></i>
+                        </button>
                     </div>
                     <button class="btn btn-primary" id="auth-login-btn" type="button" onclick="app.loginWithEmail()">
                         <span data-lang="auth_login_btn">Увійти</span>
@@ -155,8 +158,10 @@
                 </div>
                 <div class="screen-content">
                     <div class="join-group-section">
-                        <input type="text" id="join-group-id" data-lang-placeholder="enter_group_id" placeholder="Введіть ID групи (6 цифр)">
-                        <button class="btn btn-secondary" onclick="app.joinGroup()" data-lang="join">Приєднатися</button>
+                        <input type="text" id="join-group-id" data-lang-placeholder="enter_group_id" placeholder="Введіть ID групи (6 цифр)" maxlength="6" inputmode="numeric" pattern="[0-9]{6}">
+                        <button class="btn btn-primary join-group-btn" onclick="app.joinGroup()" aria-label="Join group">
+                            <i class="ph ph-sign-in" aria-hidden="true"></i>
+                        </button>
                     </div>
                     <div class="groups-list" id="groups-list">
                         <!-- Group cards will be inserted here -->
