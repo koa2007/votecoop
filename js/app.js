@@ -112,12 +112,22 @@ const app = {
             };
 
             this.setupEventListeners();
-            this.renderVotings();
-            this.renderGroups();
-            this.renderNotifications();
             this.updateProfileDisplay();
-
             this.showScreen('main-screens');
+
+            // Load data from Supabase in parallel
+            await Promise.all([
+                this.loadMyGroups(),
+                this.loadMyVotings(),
+                this.loadMyNotifications()
+            ]);
+
+            // Check expired votings (non-blocking)
+            this.checkExpiredVotingsServer();
+
+            // Periodic check every 60 seconds
+            if (this._expiryInterval) clearInterval(this._expiryInterval);
+            this._expiryInterval = setInterval(() => this.checkExpiredVotingsServer(), 60000);
         } else {
             // Profile not completed — show setup screen
             this.state.user = {
@@ -142,6 +152,7 @@ const app = {
 
     // Handle sign out — reset state, show auth screen
     handleSignOut() {
+        if (this._expiryInterval) clearInterval(this._expiryInterval);
         this.state.user = null;
         this.state.groups = [];
         this.state.votings = [];
@@ -502,7 +513,7 @@ const app = {
         this.showModal('terms-modal');
     },
 
-    acceptTerms() {
+    async acceptTerms() {
         const t = this.translations[this.currentLanguage];
         const agreed = document.getElementById('terms-agree').checked;
 
@@ -516,11 +527,19 @@ const app = {
         document.getElementById('main-screens').classList.remove('hidden');
 
         this.setupEventListeners();
-        this.renderVotings();
-        this.renderGroups();
-        this.renderNotifications();
         this.showScreen('voting-screen');
         this.updateProfileDisplay();
+
+        // Load data from Supabase
+        await Promise.all([
+            this.loadMyGroups(),
+            this.loadMyVotings(),
+            this.loadMyNotifications()
+        ]);
+
+        // Start periodic check
+        if (this._expiryInterval) clearInterval(this._expiryInterval);
+        this._expiryInterval = setInterval(() => this.checkExpiredVotingsServer(), 60000);
     },
 
     async logout() {
@@ -529,6 +548,119 @@ const app = {
         }
         // Clear state and reload
         location.reload();
+    },
+
+    // === DATA LOADING FROM SUPABASE ===
+
+    async loadMyGroups() {
+        const { data, error } = await supabaseService.getMyGroups();
+        if (error || !data) return;
+
+        this.state.groups = data.map(item => ({
+            id: item.group.id,
+            name: item.group.name,
+            description: item.group.description,
+            groupId: item.group.group_code,
+            isAdmin: item.role === 'admin',
+            membersCount: 0,
+            votingsCount: 0,
+            members: [],
+            requests: [],
+            history: []
+        }));
+
+        this.renderGroups();
+    },
+
+    async loadMyVotings() {
+        const { data: votings, error } = await supabaseService.getMyVotings();
+        if (error || !votings) return;
+
+        const votingIds = votings.map(v => v.id);
+        const { data: results } = await supabaseService.getVotingResults(votingIds);
+        const resultsMap = {};
+        (results || []).forEach(r => { resultsMap[r.voting_id] = r; });
+
+        // Check which votings user has voted on
+        const userId = this.state.user.id;
+        let votedSet = new Set();
+        if (votingIds.length > 0) {
+            const { data: myVotes } = await supabaseService.client.from('votes')
+                .select('voting_id')
+                .eq('user_id', userId)
+                .in('voting_id', votingIds);
+            votedSet = new Set((myVotes || []).map(mv => mv.voting_id));
+        }
+
+        this.state.votings = votings.map(v => {
+            const r = resultsMap[v.id] || { yes_votes: 0, no_votes: 0, abstain_votes: 0, total_votes: 0 };
+            return {
+                id: v.id,
+                title: v.title,
+                description: v.description,
+                groupId: v.group_id,
+                groupName: v.group?.name || '',
+                type: v.type,
+                status: v.status,
+                result: v.result,
+                createdAt: v.created_at,
+                endsAt: new Date(v.ends_at),
+                endedAt: v.completed_at,
+                yesVotes: r.yes_votes,
+                noVotes: r.no_votes,
+                abstainVotes: r.abstain_votes,
+                totalMembers: 0,
+                link: v.link,
+                hasVoted: votedSet.has(v.id),
+                targetMemberId: v.target_member_id,
+                targetMemberName: v.target ? `${v.target.first_name} ${v.target.last_name}`.trim() : null,
+                removalReason: v.removal_reason,
+                initiatorId: v.created_by,
+                initiatorName: v.creator ? `${v.creator.first_name} ${v.creator.last_name}`.trim() : '',
+                freezeMembers: [],
+                objections: [],
+                comments: []
+            };
+        });
+
+        // Populate totalMembers from group_stats
+        const groupIds = [...new Set(votings.map(v => v.group_id))];
+        if (groupIds.length > 0) {
+            const { data: allStats } = await supabaseService.client.from('group_stats')
+                .select('group_id, members_count')
+                .in('group_id', groupIds);
+            const statsMap = {};
+            (allStats || []).forEach(s => { statsMap[s.group_id] = s.members_count; });
+            this.state.votings.forEach(v => {
+                v.totalMembers = statsMap[v.groupId] || 1;
+            });
+        }
+
+        this.renderVotings();
+    },
+
+    async loadMyNotifications() {
+        const { data, error } = await supabaseService.getMyNotifications();
+        if (error || !data) return;
+
+        this.state.notifications = data.map(n => ({
+            id: n.id,
+            type: n.type,
+            text: n.text,
+            time: new Date(n.created_at).toLocaleString(),
+            read: n.is_read
+        }));
+
+        this.renderNotifications();
+    },
+
+    async checkExpiredVotingsServer() {
+        try {
+            await supabaseService.checkExpiredVotings();
+            await this.loadMyVotings();
+        } catch (err) {
+            // Silently ignore — not critical
+        }
     },
 
     // Render votings
@@ -579,7 +711,7 @@ const app = {
             const authorName = voting.initiatorName || t.unknown_author;
 
             return `
-                <div class="voting-card" role="button" tabindex="0" onclick="app.showVotingDetail(${voting.id})" onkeydown="if(event.key==='Enter')app.showVotingDetail(${voting.id})">
+                <div class="voting-card" role="button" tabindex="0" onclick="app.showVotingDetail('${voting.id}')" onkeydown="if(event.key==='Enter')app.showVotingDetail('${voting.id}')">
                     <div class="voting-header">
                         <div class="voting-title">${this.escapeHTML(voting.title)}</div>
                         <div class="voting-status ${statusClass}"></div>
@@ -634,7 +766,7 @@ const app = {
         }
 
         list.innerHTML = this.state.groups.map(group => `
-            <div class="group-card" role="button" tabindex="0" onclick="app.showGroupDetail(${group.id})" onkeydown="if(event.key==='Enter')app.showGroupDetail(${group.id})">
+            <div class="group-card" role="button" tabindex="0" onclick="app.showGroupDetail('${group.id}')" onkeydown="if(event.key==='Enter')app.showGroupDetail('${group.id}')">
                 <div class="group-card-header">
                     <div class="group-card-title">${this.escapeHTML(group.name)}</div>
                     <div class="group-card-role ${group.isAdmin ? '' : 'member'}">
@@ -675,7 +807,7 @@ const app = {
             };
 
             return `
-                <div class="notification-item ${notif.read ? 'read' : 'unread'}" role="button" tabindex="0" onclick="app.markRead(${notif.id})" onkeydown="if(event.key==='Enter')app.markRead(${notif.id})">
+                <div class="notification-item ${notif.read ? 'read' : 'unread'}" role="button" tabindex="0" onclick="app.markRead('${notif.id}')" onkeydown="if(event.key==='Enter')app.markRead('${notif.id}')">
                     <div class="notification-icon">${icons[notif.type] || '🔔'}</div>
                     <div class="notification-content">
                         <div class="notification-text">${this.escapeHTML(notif.text)}</div>
@@ -687,17 +819,19 @@ const app = {
         }).join('');
     },
 
-    markRead(id) {
+    async markRead(id) {
         const notif = this.state.notifications.find(n => n.id === id);
-        if (notif) {
+        if (notif && !notif.read) {
             notif.read = true;
             this.renderNotifications();
+            await supabaseService.markNotificationRead(id);
         }
     },
 
-    markAllRead() {
+    async markAllRead() {
         this.state.notifications.forEach(n => n.read = true);
         this.renderNotifications();
+        await supabaseService.markAllNotificationsRead();
     },
 
     // Modals
@@ -731,7 +865,7 @@ const app = {
     onVotingTypeChange() {
         const t = this.translations[this.currentLanguage];
         const type = document.getElementById('voting-type').value;
-        const groupId = parseInt(document.getElementById('voting-group').value);
+        const groupId = document.getElementById('voting-group').value;
         const targetGroup = document.getElementById('target-member-group');
         const reasonGroup = document.getElementById('removal-reason-group');
         const durationGroup = document.getElementById('duration-group');
@@ -801,7 +935,7 @@ const app = {
     },
 
     // Create actions
-    createGroup() {
+    async createGroup() {
         const t = this.translations[this.currentLanguage];
         const name = document.getElementById('group-name').value.trim();
         const description = document.getElementById('group-description').value.trim();
@@ -816,15 +950,21 @@ const app = {
             return;
         }
 
+        const btn = document.querySelector('#create-group-modal .btn-primary');
+        if (btn) { btn.classList.add('btn-loading'); btn.disabled = true; }
+
         try {
+            const { data, error } = await supabaseService.createGroup(name, description);
+            if (error) throw new Error(error.message);
+
             const userName = [this.state.user.firstName, this.state.user.lastName]
                 .filter(Boolean).join(' ') || 'User';
 
             const newGroup = {
-                id: Date.now(),
+                id: data.group_id,
                 name,
                 description,
-                groupId: Math.random().toString().slice(2, 8),
+                groupId: data.group_code,
                 isAdmin: true,
                 membersCount: 1,
                 votingsCount: 0,
@@ -836,17 +976,17 @@ const app = {
             this.state.groups.push(newGroup);
             this.renderGroups();
 
-            // Clear form
             document.getElementById('group-name').value = '';
             document.getElementById('group-description').value = '';
+            this.hideModal('create-group-modal');
         } catch (err) {
             alert(t.auth_error_network || 'Error creating group');
+        } finally {
+            if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
         }
-
-        this.hideModal('create-group-modal');
     },
 
-    createVoting() {
+    async createVoting() {
         const t = this.translations[this.currentLanguage];
 
         if (!this.state.user) {
@@ -854,15 +994,14 @@ const app = {
             return;
         }
 
-        // Check if user has apartment specified
         if (!this.state.user.apartment) {
             alert(t.apartment_required);
             return;
         }
-        
+
         const title = document.getElementById('voting-title').value;
         const description = document.getElementById('voting-description').value;
-        const groupId = parseInt(document.getElementById('voting-group').value);
+        const groupId = document.getElementById('voting-group').value;
         const type = document.getElementById('voting-type').value;
         const duration = parseInt(document.getElementById('voting-duration').value);
         const link = document.getElementById('voting-link').value;
@@ -876,8 +1015,8 @@ const app = {
         }
 
         const group = this.state.groups.find(g => g.id === groupId);
-        
-        // Check daily limit for non-admin users (1 voting per 24 hours)
+
+        // Check daily limit for non-admin users
         if (!group.isAdmin) {
             const lastVotingTime = this.state.userVotingHistory[groupId];
             if (lastVotingTime) {
@@ -888,20 +1027,17 @@ const app = {
                 }
             }
         }
-        
-        // Check minimum members for admin-change and remove-member
+
         if ((type === 'admin-change' || type === 'remove-member') && group.membersCount < 3) {
             alert(t.min_3_members_required);
             return;
         }
-        
-        // Check for target member in admin-change and remove-member
+
         if ((type === 'admin-change' || type === 'remove-member') && !targetMemberId) {
             alert(t.select_member);
             return;
         }
-        
-        // Check for reason in remove-member
+
         let removalReason = '';
         if (type === 'remove-member') {
             if (!reasonSelect.value) {
@@ -910,10 +1046,9 @@ const app = {
             }
             removalReason = reasonSelect.value === 'other' ? reasonText.value : t[`reason_${reasonSelect.value}`];
         }
-        
-        // Check if admin-change already active
+
         if (type === 'admin-change') {
-            const existingAdminChange = this.state.votings.find(v => 
+            const existingAdminChange = this.state.votings.find(v =>
                 v.groupId === groupId && v.type === 'admin-change' && v.status === 'active'
             );
             if (existingAdminChange) {
@@ -922,7 +1057,6 @@ const app = {
             }
         }
 
-        // Check freeze voting requirements (only admin can create)
         if (type === 'freeze') {
             if (!group.isAdmin) {
                 alert(t.only_admin_can_freeze);
@@ -934,61 +1068,82 @@ const app = {
             }
         }
 
-        try {
-            const targetMember = targetMemberId ? group.members.find(m => m.id === parseInt(targetMemberId)) : null;
+        const btn = document.querySelector('#create-voting-modal .btn-primary');
+        if (btn) { btn.classList.add('btn-loading'); btn.disabled = true; }
 
-            // Build freeze members data if freeze type
-            let freezeMembersData = null;
-            if (type === 'freeze') {
-                freezeMembersData = this.state.freezeSelectedMembers.map(m => ({
-                    id: m.id,
-                    name: m.name,
-                    address: m.address
-                }));
+        try {
+            const endsAt = new Date(Date.now() + duration * 3600000).toISOString();
+            const { data: newVotingRow, error } = await supabaseService.createVoting({
+                groupId,
+                title,
+                description,
+                type,
+                endsAt,
+                link,
+                targetMemberId: targetMemberId || null,
+                removalReason,
+                freezeDurationDays: type === 'freeze' ? 7 : null
+            });
+
+            if (error) throw new Error(error.message);
+
+            // Insert freeze targets if freeze type
+            if (type === 'freeze' && this.state.freezeSelectedMembers.length > 0) {
+                const targetIds = this.state.freezeSelectedMembers.map(m => m.id);
+                await supabaseService.addFreezeTargets(newVotingRow.id, targetIds);
             }
 
+            const targetMember = targetMemberId ? group.members.find(m => m.id === targetMemberId) : null;
             const userName = [this.state.user.firstName, this.state.user.lastName]
                 .filter(Boolean).join(' ') || 'User';
 
             const newVoting = {
-                id: Date.now(),
+                id: newVotingRow.id,
                 title,
                 description,
                 groupId,
                 groupName: group.name,
                 type,
                 status: 'active',
-                createdAt: new Date(),
-                endsAt: new Date(Date.now() + duration * 3600000),
+                createdAt: newVotingRow.created_at,
+                endsAt: new Date(newVotingRow.ends_at),
                 yesVotes: 0,
                 noVotes: 0,
                 totalMembers: group.membersCount,
                 link,
                 hasVoted: false,
-                targetMemberId: targetMemberId ? parseInt(targetMemberId) : null,
+                targetMemberId: targetMemberId || null,
                 targetMemberName: targetMember ? targetMember.name : null,
-                removalReason: removalReason,
+                removalReason,
                 initiatorId: this.state.user.id,
                 initiatorName: userName,
-                freezeMembers: freezeMembersData,
+                freezeMembers: type === 'freeze' ? this.state.freezeSelectedMembers.map(m => ({
+                    id: m.id, name: m.name, address: m.address
+                })) : [],
                 objections: [],
-                frozenMembers: []
+                comments: []
             };
 
             this.state.votings.unshift(newVoting);
 
-            // Track voting creation time for non-admin users
             if (!group.isAdmin) {
                 this.state.userVotingHistory[groupId] = Date.now();
             }
 
             this.renderVotings();
+            this.hideModal('create-voting-modal');
+
+            // Notify group members
+            await supabaseService.notifyGroupMembers(
+                groupId, 'voting',
+                `${t.new_voting || 'Нове голосування'}: "${title}"`
+            );
         } catch (err) {
             alert(t.auth_error_network || 'Error creating voting');
+        } finally {
+            if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
         }
 
-        this.hideModal('create-voting-modal');
-        
         // Clear form
         document.getElementById('voting-title').value = '';
         document.getElementById('voting-description').value = '';
@@ -999,63 +1154,131 @@ const app = {
         document.getElementById('removal-reason-text').value = '';
         document.getElementById('target-member-group').classList.add('hidden');
         document.getElementById('removal-reason-group').classList.add('hidden');
-        // Clear freeze form
         this.state.freezeSelectedMembers = [];
         this.renderFreezeMemberChips();
         const freezeGroup = document.getElementById('freeze-members-group');
         if (freezeGroup) freezeGroup.classList.add('hidden');
     },
 
-    joinGroup() {
-        const groupId = document.getElementById('join-group-id').value;
-        if (!groupId || groupId.length !== 6) {
-            alert('Введіть коректний ID групи (6 цифр)');
+    async joinGroup() {
+        const t = this.translations[this.currentLanguage];
+        const code = document.getElementById('join-group-id').value.trim();
+        if (!code || code.length !== 6) {
+            alert(t.enter_group_id_error || 'Введіть коректний ID групи (6 цифр)');
             return;
         }
 
-        // Check if already member
-        const existing = this.state.groups.find(g => g.groupId === groupId);
+        // Check if already member locally
+        const existing = this.state.groups.find(g => g.groupId === code);
         if (existing) {
-            alert('Ви вже є учасником цієї групи');
+            alert(t.already_member || 'Ви вже є учасником цієї групи');
             return;
         }
 
-        // TODO: Phase 2 — send join request via Supabase
-        const newGroup = {
-            id: Date.now(),
-            name: `Група ${groupId}`,
-            description: 'Нова група',
-            groupId,
-            isAdmin: false,
-            membersCount: 5,
-            votingsCount: 0,
-            members: [],
-            requests: []
-        };
+        try {
+            // Find group by code
+            const { data: group, error: findErr } = await supabaseService.findGroupByCode(code);
+            if (findErr || !group) {
+                alert(t.group_not_found || 'Групу не знайдено');
+                return;
+            }
 
-        this.state.groups.push(newGroup);
-        this.renderGroups();
-        document.getElementById('join-group-id').value = '';
-        
-        // Add notification
-        this.state.notifications.unshift({
-            id: Date.now(),
-            type: 'system',
-            text: `Запит на приєднання до групи ${groupId} надіслано адміністратору`,
-            time: 'Щойно',
-            read: false
-        });
-        this.renderNotifications();
+            // Send join request
+            const { data: request, error: reqErr } = await supabaseService.sendJoinRequest(group.id);
+            if (reqErr) {
+                if (reqErr.code === '23505') {
+                    alert(t.already_requested || 'Запит вже надіслано');
+                } else {
+                    throw new Error(reqErr.message);
+                }
+                return;
+            }
+
+            document.getElementById('join-group-id').value = '';
+
+            // Create notification in DB
+            await supabaseService.createNotification(
+                this.state.user.id,
+                'system',
+                `${t.join_request_sent || 'Запит на приєднання надіслано'}: ${group.name}`
+            );
+
+            // Add notification locally for instant display
+            this.state.notifications.unshift({
+                id: request.id,
+                type: 'system',
+                text: `${t.join_request_sent || 'Запит на приєднання надіслано'}: ${group.name}`,
+                time: new Date().toLocaleString(),
+                read: false
+            });
+            this.renderNotifications();
+
+            alert(t.join_request_sent || 'Запит на приєднання надіслано');
+        } catch (err) {
+            alert(t.auth_error_network || 'Помилка мережі');
+        }
     },
 
     // Voting detail
-    showVotingDetail(votingId) {
+    async showVotingDetail(votingId) {
         const t = this.translations[this.currentLanguage];
         const voting = this.state.votings.find(v => v.id === votingId);
         if (!voting) return;
 
         // Save current voting ID for delete modal
         this.state.currentVotingToDelete = votingId;
+
+        // Fetch fresh vote data from DB
+        try {
+            const [votesRes, resultsRes] = await Promise.all([
+                supabaseService.getVotingVotes(votingId),
+                supabaseService.getVotingResults([votingId])
+            ]);
+
+            if (votesRes.data) {
+                voting.comments = votesRes.data
+                    .filter(() => voting.type !== 'secret')
+                    .map(v => ({
+                        userId: v.user_id,
+                        userName: v.voter ? `${v.voter.first_name} ${v.voter.last_name}`.trim() : '',
+                        vote: v.choice,
+                        comment: v.comment,
+                        time: new Date(v.created_at).toLocaleString()
+                    }));
+                const myVote = votesRes.data.find(v => v.user_id === this.state.user.id);
+                voting.hasVoted = !!myVote;
+            }
+
+            if (resultsRes.data && resultsRes.data.length > 0) {
+                const r = resultsRes.data[0];
+                voting.yesVotes = r.yes_votes;
+                voting.noVotes = r.no_votes;
+                voting.abstainVotes = r.abstain_votes;
+            }
+
+            // Fetch freeze data if applicable
+            if (voting.type === 'freeze') {
+                const [objRes, targetsRes] = await Promise.all([
+                    supabaseService.getFreezeObjections(votingId),
+                    supabaseService.getFreezeTargets(votingId)
+                ]);
+                if (objRes.data) {
+                    voting.objections = objRes.data.map(o => ({
+                        userId: o.user_id,
+                        userName: o.user ? `${o.user.first_name} ${o.user.last_name}`.trim() : ''
+                    }));
+                }
+                if (targetsRes.data) {
+                    voting.freezeMembers = targetsRes.data.map(ft => ({
+                        id: ft.user_id,
+                        name: ft.user ? `${ft.user.first_name} ${ft.user.last_name}`.trim() : '',
+                        address: ft.user ? `${ft.user.address || ''}, кв. ${ft.user.apartment || ''}` : ''
+                    }));
+                }
+            }
+        } catch (err) {
+            // Continue with cached data if fetch fails
+        }
 
         const content = document.getElementById('voting-detail-content');
         const isActive = voting.status === 'active';
@@ -1200,7 +1423,7 @@ const app = {
             if (isActive && !hasObjected) {
                 freezeActions = `
                     <div class="voting-actions-column">
-                        <button class="btn btn-secondary btn-objection" onclick="app.objectToFreeze(${voting.id})">
+                        <button class="btn btn-secondary btn-objection" onclick="app.objectToFreeze('${voting.id}')">
                             <i class="ph-fill ph-hand-palm" aria-hidden="true"></i> ${t.i_disagree}
                         </button>
                         <div class="disagree-info">
@@ -1271,9 +1494,9 @@ const app = {
             ${!isFreeze && isActive && !voting.hasVoted ? `
                 <div class="voting-actions-column">
                     <div class="vote-buttons">
-                        <button class="btn btn-secondary" onclick="app.vote(${voting.id}, false)"><i class="ph-fill ph-x-circle" aria-hidden="true"></i> ${t.vote_against}</button>
-                        <button class="btn btn-secondary" onclick="app.vote(${voting.id}, 'abstain')"><i class="ph-fill ph-minus-circle" aria-hidden="true"></i> ${t.abstain}</button>
-                        <button class="btn btn-primary" onclick="app.vote(${voting.id}, true)"><i class="ph-fill ph-check-circle" aria-hidden="true"></i> ${t.vote_for}</button>
+                        <button class="btn btn-secondary" onclick="app.vote('${voting.id}', false)"><i class="ph-fill ph-x-circle" aria-hidden="true"></i> ${t.vote_against}</button>
+                        <button class="btn btn-secondary" onclick="app.vote('${voting.id}', 'abstain')"><i class="ph-fill ph-minus-circle" aria-hidden="true"></i> ${t.abstain}</button>
+                        <button class="btn btn-primary" onclick="app.vote('${voting.id}', true)"><i class="ph-fill ph-check-circle" aria-hidden="true"></i> ${t.vote_for}</button>
                     </div>
                     <div class="form-group-compact">
                         <textarea id="vote-comment" class="vote-comment-textarea" data-lang-placeholder="comment_placeholder" placeholder="${t.comment_placeholder}" maxlength="500"></textarea>
@@ -1292,7 +1515,7 @@ const app = {
 
             ${isActive && isAuthor ? `
                 <div class="delete-section">
-                    <button class="btn btn-danger" onclick="app.showDeleteVotingModal(${voting.id})">🗑️ ${t.delete}</button>
+                    <button class="btn btn-danger" onclick="app.showDeleteVotingModal('${voting.id}')">🗑️ ${t.delete}</button>
                 </div>
             ` : ''}
 
@@ -1311,49 +1534,59 @@ const app = {
         this.showModal('voting-detail-modal');
     },
 
-    vote(votingId, voteType) {
+    async vote(votingId, voteType) {
         const t = this.translations[this.currentLanguage];
-        
-        // Check if user has apartment specified
+
         if (!this.state.user.apartment) {
             alert(t.apartment_required);
             return;
         }
-        
-        // Check if user is frozen
+
         if (this.state.user.frozen) {
             alert(t.frozen_cannot_vote);
             return;
         }
-        
-        const voting = this.state.votings.find(v => v.id === votingId);
-        if (voting && !voting.hasVoted) {
-            // Get comment if exists
-            const commentField = document.getElementById('vote-comment');
-            const comment = commentField ? commentField.value.trim().substring(0, 500) : '';
 
-            // Count vote
-            if (voteType === true || voteType === 'yes') {
-                voting.yesVotes++;
-            } else if (voteType === false || voteType === 'no') {
-                voting.noVotes++;
-            } else if (voteType === 'abstain') {
-                voting.abstainVotes = (voting.abstainVotes || 0) + 1;
+        const voting = this.state.votings.find(v => v.id === votingId);
+        if (!voting || voting.hasVoted) return;
+
+        const commentField = document.getElementById('vote-comment');
+        const comment = commentField ? commentField.value.trim().substring(0, 500) : '';
+
+        const choiceMap = { true: 'yes', yes: 'yes', false: 'no', no: 'no', abstain: 'abstain' };
+        const choice = choiceMap[String(voteType)] || 'abstain';
+
+        try {
+            const { data, error } = await supabaseService.castVote(votingId, choice, comment);
+            if (error) {
+                if (error.code === '23505') {
+                    alert(t.already_voted || 'Ви вже проголосували');
+                    voting.hasVoted = true;
+                } else {
+                    throw new Error(error.message);
+                }
+                return;
             }
 
-            // Add comment to voting
+            // Optimistic local update
+            if (choice === 'yes') voting.yesVotes++;
+            else if (choice === 'no') voting.noVotes++;
+            else voting.abstainVotes = (voting.abstainVotes || 0) + 1;
+
             if (!voting.comments) voting.comments = [];
             voting.comments.push({
                 userId: this.state.user.id,
                 userName: `${this.state.user.firstName} ${this.state.user.lastName}`,
-                vote: voteType === true || voteType === 'yes' ? 'yes' : voteType === false || voteType === 'no' ? 'no' : 'abstain',
-                comment: comment,
-                time: t.just_now
+                vote: choice,
+                comment,
+                time: new Date().toLocaleString()
             });
 
             voting.hasVoted = true;
             this.renderVotings();
             this.showVotingDetail(votingId);
+        } catch (err) {
+            alert(t.auth_error_network || 'Помилка голосування');
         }
     },
 
@@ -1391,52 +1624,50 @@ const app = {
     },
 
     // Confirm and delete voting
-    confirmDeleteVoting() {
+    async confirmDeleteVoting() {
         const t = this.translations[this.currentLanguage];
         const votingId = this.state.currentVotingToDelete;
         const voting = this.state.votings.find(v => v.id === votingId);
-        
+
         if (!voting) {
             this.hideModal('delete-voting-modal');
             return;
         }
 
         const reason = document.getElementById('delete-reason-text').value.trim();
-        
-        // Validate reason length
+
         if (reason.length < 5) {
             alert(t.delete_reason_short);
             return;
         }
 
-        // Check max length (200 chars)
         if (reason.length > 200) {
             alert('Причина занадто довга (макс. 200 символів)');
             return;
         }
 
-        // Delete voting
-        this.state.votings = this.state.votings.filter(v => v.id !== votingId);
+        try {
+            const { error } = await supabaseService.deleteVoting(votingId, reason);
+            if (error) throw new Error(error.message);
 
-        // Send notification to all group members
-        this.state.notifications.unshift({
-            id: Date.now(),
-            type: 'system',
-            text: `${t.voting_deleted_by}: "${voting.title}". ${t.reason_label}: ${reason}`,
-            time: t.just_now,
-            read: false
-        });
+            this.state.votings = this.state.votings.filter(v => v.id !== votingId);
 
-        this.hideModal('delete-voting-modal');
-        this.hideModal('voting-detail-modal');
-        this.renderVotings();
-        this.renderNotifications();
-        
-        alert(t.voting_deleted);
+            // Notify group members
+            const notifText = `${t.voting_deleted_by || 'Голосування видалено'}: "${voting.title}". ${t.reason_label || 'Причина'}: ${reason}`;
+            await supabaseService.notifyGroupMembers(voting.groupId, 'system', notifText);
+
+            this.hideModal('delete-voting-modal');
+            this.hideModal('voting-detail-modal');
+            this.renderVotings();
+
+            alert(t.voting_deleted);
+        } catch (err) {
+            alert(t.auth_error_network || 'Помилка');
+        }
     },
 
     // Group detail
-    showGroupDetail(groupId) {
+    async showGroupDetail(groupId) {
         const t = this.translations[this.currentLanguage];
         const group = this.state.groups.find(g => g.id === groupId);
         if (!group) return;
@@ -1446,16 +1677,48 @@ const app = {
         this.state.membersSort = { by: 'name', order: 'asc' };
         this.state.membersFilter = '';
 
+        // Show screen immediately with cached data
         document.getElementById('group-detail-name').textContent = group.name;
         document.getElementById('group-detail-id').textContent = group.groupId;
         document.getElementById('group-detail-description').textContent = group.description || '';
+        this.showScreen('group-detail-screen');
+
+        // Fetch fresh data from Supabase
+        const { data, error } = await supabaseService.getGroupDetail(groupId);
+        if (data) {
+            group.members = (data.members || []).map(m => ({
+                id: m.user_id,
+                name: `${m.user.first_name} ${m.user.last_name}`.trim(),
+                role: m.role,
+                phone: m.user.phone,
+                address: m.user.address ? `${m.user.address}, кв. ${m.user.apartment}` : `кв. ${m.user.apartment || '-'}`,
+                frozen: m.is_frozen,
+                frozenUntil: m.frozen_until
+            }));
+
+            group.requests = (data.requests || []).map(r => ({
+                id: r.id,
+                userId: r.user_id,
+                name: `${r.user.first_name} ${r.user.last_name}`.trim(),
+                address: r.user.address ? `${r.user.address}, кв. ${r.user.apartment}` : `кв. ${r.user.apartment || '-'}`
+            }));
+
+            group.history = (data.history || []).map(h => ({
+                date: new Date(h.created_at).toLocaleString(),
+                action: h.action,
+                details: h.details || {}
+            }));
+
+            group.membersCount = data.stats?.members_count || group.members.length;
+            group.votingsCount = data.stats?.total_votings_count || 0;
+        }
+
         // Count frozen members
         const members = group.members || [];
         const frozenCount = members.filter(m => m.frozen).length;
-        const activeMembersCount = group.membersCount - frozenCount;
-        
+
         document.getElementById('group-members-count').textContent = group.membersCount;
-        
+
         // Show frozen count if any
         const frozenDisplay = document.getElementById('frozen-count-display');
         if (frozenCount > 0) {
@@ -1464,19 +1727,19 @@ const app = {
         } else {
             frozenDisplay.style.display = 'none';
         }
-        
+
         // Calculate voting stats
         const groupVotings = this.state.votings.filter(v => v.groupId === group.id);
         const totalVotings = groupVotings.length;
         const acceptedVotings = groupVotings.filter(v => v.status === 'completed' && v.result === 'accepted').length;
         const rejectedVotings = groupVotings.filter(v => v.status === 'completed' && v.result === 'rejected').length;
         const activeVotings = groupVotings.filter(v => v.status === 'active').length;
-        
+
         document.getElementById('group-votings-count').textContent = totalVotings;
         document.getElementById('votings-accepted').textContent = acceptedVotings;
         document.getElementById('votings-rejected').textContent = rejectedVotings;
         document.getElementById('votings-pending').textContent = activeVotings;
-        
+
         document.getElementById('group-admin-badge').style.display = group.isAdmin ? 'inline-block' : 'none';
 
         // Clear search
@@ -1586,8 +1849,8 @@ const app = {
                         <div class="request-address">${this.escapeHTML(request.address)}</div>
                     </div>
                     <div class="request-actions">
-                        <button class="btn-small btn-approve" onclick="app.approveRequest(${group.id}, ${request.id})" aria-label="${t.approve || 'Approve'}"><i class="ph ph-check" aria-hidden="true"></i></button>
-                        <button class="btn-small btn-reject" onclick="app.rejectRequest(${group.id}, ${request.id})" aria-label="${t.reject || 'Reject'}"><i class="ph ph-x" aria-hidden="true"></i></button>
+                        <button class="btn-small btn-approve" onclick="app.approveRequest('${group.id}', '${request.id}')" aria-label="${t.approve || 'Approve'}"><i class="ph ph-check" aria-hidden="true"></i></button>
+                        <button class="btn-small btn-reject" onclick="app.rejectRequest('${group.id}', '${request.id}')" aria-label="${t.reject || 'Reject'}"><i class="ph ph-x" aria-hidden="true"></i></button>
                     </div>
                 </div>
             `).join('');
@@ -1633,8 +1896,8 @@ const app = {
 
     exportGroupHistory() {
         const t = this.translations[this.currentLanguage];
-        const groupId = parseInt(document.getElementById('group-detail-id').textContent);
-        const group = this.state.groups.find(g => g.groupId === groupId);
+        const groupCode = document.getElementById('group-detail-id').textContent;
+        const group = this.state.groups.find(g => g.groupId === groupCode);
         
         if (!group) return;
 
@@ -1754,22 +2017,25 @@ const app = {
         }
     },
 
-    approveRequest(groupId, requestId) {
-        const group = this.state.groups.find(g => g.id === groupId);
-        const request = group.requests.find(r => r.id === requestId);
-        if (group && request) {
-            group.members.push({ ...request, role: 'member' });
-            group.requests = group.requests.filter(r => r.id !== requestId);
-            group.membersCount++;
-            this.showGroupDetail(groupId);
+    async approveRequest(groupId, requestId) {
+        const t = this.translations[this.currentLanguage];
+        try {
+            const { error } = await supabaseService.approveJoinRequest(requestId);
+            if (error) throw new Error(error.message);
+            await this.showGroupDetail(groupId);
+        } catch (err) {
+            alert(t.auth_error_network || 'Помилка');
         }
     },
 
-    rejectRequest(groupId, requestId) {
-        const group = this.state.groups.find(g => g.id === groupId);
-        if (group) {
-            group.requests = group.requests.filter(r => r.id !== requestId);
-            this.showGroupDetail(groupId);
+    async rejectRequest(groupId, requestId) {
+        const t = this.translations[this.currentLanguage];
+        try {
+            const { error } = await supabaseService.rejectJoinRequest(requestId);
+            if (error) throw new Error(error.message);
+            await this.showGroupDetail(groupId);
+        } catch (err) {
+            alert(t.auth_error_network || 'Помилка');
         }
     },
 
@@ -1872,6 +2138,11 @@ const app = {
             members: 'учасників',
             votings: 'голосувань',
             empty_groups: 'Ви ще не приєдналися до жодної групи',
+            group_not_found: 'Групу не знайдено',
+            already_requested: 'Запит вже надіслано',
+            join_request_sent: 'Запит на приєднання надіслано',
+            already_member: 'Ви вже є учасником цієї групи',
+            enter_group_id_error: 'Введіть коректний ID групи (6 цифр)',
             empty_votings: 'Немає голосувань',
             empty_notifications: 'Немає сповіщень',
             select_group: 'Виберіть групу',
@@ -2153,6 +2424,11 @@ const app = {
             members: 'members',
             votings: 'votings',
             empty_groups: 'You have not joined any groups yet',
+            group_not_found: 'Group not found',
+            already_requested: 'Request already sent',
+            join_request_sent: 'Join request sent',
+            already_member: 'You are already a member of this group',
+            enter_group_id_error: 'Enter a valid group ID (6 digits)',
             empty_votings: 'No votings',
             empty_notifications: 'No notifications',
             select_group: 'Select group',
@@ -2434,6 +2710,11 @@ const app = {
             members: 'участников',
             votings: 'голосований',
             empty_groups: 'Вы ещё не присоединились ни к одной группе',
+            group_not_found: 'Группа не найдена',
+            already_requested: 'Запрос уже отправлен',
+            join_request_sent: 'Запрос на присоединение отправлен',
+            already_member: 'Вы уже являетесь участником этой группы',
+            enter_group_id_error: 'Введите корректный ID группы (6 цифр)',
             empty_votings: 'Нет голосований',
             empty_notifications: 'Нет уведомлений',
             select_group: 'Выберите группу',
@@ -2661,7 +2942,7 @@ const app = {
             return;
         }
         
-        const groupId = parseInt(document.getElementById('voting-group').value);
+        const groupId = document.getElementById('voting-group').value;
         if (!groupId) return;
         
         const group = this.state.groups.find(g => g.id === groupId);
@@ -2683,7 +2964,7 @@ const app = {
             resultsContainer.innerHTML = `<div class="freeze-search-empty">${t.nothing_found || 'Нічого не знайдено'}</div>`;
         } else {
             resultsContainer.innerHTML = matches.map(m => `
-                <div class="search-result-item" role="option" onclick="app.selectFreezeMember(${m.id}, '${m.name.replace(/'/g, "\\'")}')">
+                <div class="search-result-item" role="option" onclick="app.selectFreezeMember('${m.id}', '${m.name.replace(/'/g, "\\'")}')">
                     ${this.escapeHTML(m.name)} (${this.escapeHTML(m.address)})
                 </div>
             `).join('');
@@ -2693,9 +2974,9 @@ const app = {
     },
 
     selectFreezeMember(id, name) {
-        const groupId = parseInt(document.getElementById('voting-group').value);
+        const groupId = document.getElementById('voting-group').value;
         const group = this.state.groups.find(g => g.id === groupId);
-        const member = group.members.find(m => m.id === id);
+        const member = group ? group.members.find(m => m.id === id) : null;
         
         if (member) {
             this.state.freezeSelectedMembers.push(member);
@@ -2723,7 +3004,7 @@ const app = {
         container.innerHTML = this.state.freezeSelectedMembers.map(m => `
             <div class="member-chip">
                 ${this.escapeHTML(m.name)}
-                <button onclick="app.removeFreezeMember(${m.id})" type="button" aria-label="${this.escapeHTML(m.name)}">
+                <button onclick="app.removeFreezeMember('${m.id}')" type="button" aria-label="${this.escapeHTML(m.name)}">
                     <i class="ph ph-x" aria-hidden="true"></i>
                 </button>
             </div>
@@ -2731,47 +3012,41 @@ const app = {
     },
 
     // Object to freeze voting
-    objectToFreeze(votingId) {
+    async objectToFreeze(votingId) {
         const t = this.translations[this.currentLanguage];
         const voting = this.state.votings.find(v => v.id === votingId);
         if (!voting || voting.type !== 'freeze' || voting.status !== 'active') return;
-        
-        // Check if already objected
+
         if (voting.objections && voting.objections.some(o => o.userId === this.state.user.id)) {
             alert(t.already_objected);
             return;
         }
-        
-        // Add objection
-        if (!voting.objections) voting.objections = [];
-        voting.objections.push({
-            userId: this.state.user.id,
-            userName: `${this.state.user.firstName} ${this.state.user.lastName}`,
-            time: new Date().toISOString()
-        });
-        
-        // Check if threshold reached (2 objections = auto rejection)
-        if (voting.objections.length >= 2) {
-            voting.status = 'completed';
-            voting.result = 'rejected';
-            voting.endedAt = new Date().toISOString();
-            
-            // Add notification
-            this.state.notifications.unshift({
-                id: Date.now(),
-                type: 'system',
-                text: `${t.freeze_rejected}: "${voting.title}"`,
-                time: t.just_now,
-                read: false
-            });
-            
-            alert(t.freeze_auto_rejected);
-        } else {
-            alert(t.objection_added);
+
+        try {
+            const { error } = await supabaseService.addFreezeObjection(votingId);
+            if (error) {
+                if (error.code === '23505') {
+                    alert(t.already_objected);
+                } else {
+                    throw new Error(error.message);
+                }
+                return;
+            }
+
+            // Reload votings to get fresh status (DB trigger may have auto-rejected)
+            await this.loadMyVotings();
+
+            const refreshedVoting = this.state.votings.find(v => v.id === votingId);
+            if (refreshedVoting && refreshedVoting.status === 'completed') {
+                alert(t.freeze_auto_rejected);
+            } else {
+                alert(t.objection_added);
+            }
+
+            this.showVotingDetail(votingId);
+        } catch (err) {
+            alert(t.auth_error_network || 'Помилка');
         }
-        
-        this.renderVotings();
-        this.showVotingDetail(votingId);
     },
 
     changeLanguage(lang) {
