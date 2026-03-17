@@ -3,4 +3,3 @@ generate-icons.js
 package-lock.json
 .env
 .env.local
-js/config.js

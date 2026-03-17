@@ -191,6 +191,11 @@ html, body {
     width: 100%;
 }
 
+.auth-language-selector {
+    align-self: flex-end;
+    margin-bottom: 8px;
+}
+
 .logo {
     margin-bottom: 32px;
 }

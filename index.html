@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>VoteCoop - Голосування ОСГ</title>
+    <title>VoteCoop - Голосування для спільнот</title>
 
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#007aff">
@@ -35,10 +35,19 @@
         <!-- Auth Screen -->
         <div class="screen hidden" id="auth-screen">
             <div class="auth-container">
+                <div class="auth-language-selector">
+                    <div class="language-selector">
+                        <select id="auth-language-select" onchange="app.changeLanguage(this.value)">
+                            <option value="uk">Українська</option>
+                            <option value="en">English</option>
+                            <option value="ru">Русский</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="logo">
                     <div class="logo-icon"><i class="ph ph-scales"></i></div>
                     <h1>VoteCoop</h1>
-                    <p data-lang="auth_subtitle">Голосування для ОСГ та кооперативів</p>
+                    <p data-lang="auth_subtitle">Голосування для спільнот</p>
                 </div>
 
                 <!-- Auth error message -->

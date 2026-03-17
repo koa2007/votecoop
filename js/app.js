@@ -41,7 +41,9 @@ const app = {
         // Load saved language preference first (for error messages)
         const savedLang = localStorage.getItem('votecoop-language') || 'uk';
         if (savedLang !== 'uk') {
-            document.getElementById('language-select').value = savedLang;
+            document.querySelectorAll('#language-select, #auth-language-select').forEach(sel => {
+                sel.value = savedLang;
+            });
             this.changeLanguage(savedLang);
         }
 
@@ -96,7 +98,7 @@ const app = {
 
         if (profile && profile.profile_completed) {
             // Profile complete — show main app
-            this.state.user = {
+            const realUser = {
                 id: profile.id,
                 firstName: profile.first_name,
                 lastName: profile.last_name,
@@ -109,15 +111,7 @@ const app = {
             // Load mock data for groups/votings (Phase 2 will replace with real data)
             this.loadMockData();
             // Restore real user data over mock
-            this.state.user = {
-                id: profile.id,
-                firstName: profile.first_name,
-                lastName: profile.last_name,
-                email: userEmail,
-                phone: profile.phone || '',
-                address: profile.address || '',
-                apartment: profile.apartment || ''
-            };
+            this.state.user = realUser;
 
             this.setupEventListeners();
             this.renderVotings();
@@ -741,9 +735,8 @@ const app = {
 
         // Load mock data for groups/votings (Phase 2: real data)
         if (!this.state.groups.length) {
-            this.loadMockData();
-            // Preserve real user
             const realUser = { ...this.state.user };
+            this.loadMockData();
             this.state.user = realUser;
         }
 
@@ -2265,7 +2258,7 @@ const app = {
             stats_rejected: 'відхилено',
             stats_active: 'в процесі',
             // Auth
-            auth_subtitle: 'Голосування для ОСГ та кооперативів',
+            auth_subtitle: 'Голосування для спільнот',
             auth_email_placeholder: 'Email',
             auth_password_placeholder: 'Пароль',
             auth_login_btn: 'Увійти',
@@ -2546,7 +2539,7 @@ const app = {
             stats_rejected: 'rejected',
             stats_active: 'in progress',
             // Auth
-            auth_subtitle: 'Voting for HOA & cooperatives',
+            auth_subtitle: 'Voting for communities',
             auth_email_placeholder: 'Email',
             auth_password_placeholder: 'Password',
             auth_login_btn: 'Sign In',
@@ -2827,7 +2820,7 @@ const app = {
             stats_rejected: 'отклонено',
             stats_active: 'в процессе',
             // Auth
-            auth_subtitle: 'Голосования для ОСЖ и кооперативов',
+            auth_subtitle: 'Голосования для сообществ',
             auth_email_placeholder: 'Email',
             auth_password_placeholder: 'Пароль',
             auth_login_btn: 'Войти',
@@ -3003,14 +2996,19 @@ const app = {
             }
         });
         
+        // Sync all language selectors
+        document.querySelectorAll('#language-select, #auth-language-select').forEach(sel => {
+            sel.value = lang;
+        });
+
         // Update document title
         const titles = {
-            uk: 'VoteCoop - Голосування ОСГ',
-            en: 'VoteCoop - HOA Voting',
-            ru: 'VoteCoop - Голосование ОСГ'
+            uk: 'VoteCoop - Голосування для спільнот',
+            en: 'VoteCoop - Voting for communities',
+            ru: 'VoteCoop - Голосования для сообществ'
         };
         document.title = titles[lang];
-        
+
         // Update nav labels
         const navLabels = document.querySelectorAll('.nav-label');
         if (navLabels[0]) navLabels[0].textContent = t.voting;
