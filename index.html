@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VoteCoop - Голосування ОСГ</title>
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#007aff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="VoteCoop">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-512.png">
+
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+<body>
+    <!-- App Container -->
+    <div id="app">
+        
+        <!-- Auth Screen -->
+        <div class="screen" id="auth-screen">
+            <div class="auth-container">
+                <div class="logo">
+                    <div class="logo-icon"><i class="ph ph-scales"></i></div>
+                    <h1>VoteCoop</h1>
+                    <p>Голосування для ОСГ та кооперативів</p>
+                </div>
+                <button class="btn btn-primary btn-google" onclick="app.login()">
+                    <span class="icon">G</span>
+                    Увійти через Google
+                </button>
+                <p class="auth-hint">Автоматична реєстрація при першому вході</p>
+            </div>
+        </div>
+
+        <!-- Profile Setup Screen -->
+        <div class="screen hidden" id="profile-setup-screen">
+            <div class="screen-header">
+                <h2 data-lang="complete_profile">Заповніть профіль</h2>
+            </div>
+            <div class="screen-content">
+                <div class="form-group">
+                    <label data-lang="firstname">Ім'я</label>
+                    <input type="text" id="profile-firstname" data-lang-placeholder="firstname_placeholder" placeholder="Ваше ім'я">
+                </div>
+                <div class="form-group">
+                    <label data-lang="lastname">Прізвище</label>
+                    <input type="text" id="profile-lastname" data-lang-placeholder="lastname_placeholder" placeholder="Ваше прізвище">
+                </div>
+                <div class="form-group">
+                    <label data-lang="phone">Телефон</label>
+                    <input type="tel" id="profile-phone" data-lang-placeholder="phone_placeholder" placeholder="+380 XX XXX XXXX">
+                </div>
+                <div class="form-group">
+                    <label data-lang="address">Адреса об'єкта</label>
+                    <input type="text" id="profile-address" data-lang-placeholder="address_placeholder" placeholder="вул. Шевченка, буд. 61">
+                </div>
+                <div class="form-group">
+                    <label data-lang="apartment">Квартира/офіс</label>
+                    <input type="text" id="profile-apartment" data-lang-placeholder="apartment_placeholder" placeholder="№ 15">
+                </div>
+                <button class="btn btn-primary" onclick="app.saveProfile()" data-lang="save">Зберегти</button>
+            </div>
+        </div>
+
+        <!-- Main Screens with Bottom Nav -->
+        <div class="main-screens hidden" id="main-screens">
+            
+            <!-- Voting List Screen -->
+            <div class="screen" id="voting-screen">
+                <div class="screen-header">
+                    <h2 data-lang="voting">Голосування</h2>
+                    <button class="btn-icon" onclick="app.showCreateVoting()">+</button>
+                </div>
+                <div class="screen-content">
+                    <div class="segmented-control">
+                        <button class="segment active" data-filter="active" data-lang="active_votings">Активні</button>
+                        <button class="segment" data-filter="completed" data-lang="completed_votings">Завершені</button>
+                    </div>
+                    <div class="voting-list" id="voting-list">
+                        <!-- Voting cards will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Groups List Screen -->
+            <div class="screen hidden" id="groups-screen">
+                <div class="screen-header">
+                    <h2 data-lang="groups">Групи</h2>
+                    <button class="btn-icon" onclick="app.showCreateGroup()">+</button>
+                </div>
+                <div class="screen-content">
+                    <div class="join-group-section">
+                        <input type="text" id="join-group-id" data-lang-placeholder="enter_group_id" placeholder="Введіть ID групи (6 цифр)">
+                        <button class="btn btn-secondary" onclick="app.joinGroup()" data-lang="join">Приєднатися</button>
+                    </div>
+                    <div class="groups-list" id="groups-list">
+                        <!-- Group cards will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notifications Screen -->
+            <div class="screen hidden" id="notifications-screen">
+                <div class="screen-header">
+                    <h2 data-lang="notifications">Сповіщення</h2>
+                    <button class="btn-text" onclick="app.markAllRead()" data-lang="mark_all_read">Прочитано все</button>
+                </div>
+                <div class="screen-content">
+                    <div class="notifications-list" id="notifications-list">
+                        <!-- Notifications will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Screen -->
+            <div class="screen hidden" id="profile-screen">
+                <div class="screen-header">
+                    <h2 data-lang="profile">Профіль</h2>
+                    <div class="language-selector">
+                        <select id="language-select" onchange="app.changeLanguage(this.value)">
+                            <option value="uk">🇺🇦 Українська</option>
+                            <option value="en">🇬🇧 English</option>
+                            <option value="ru">🇷🇺 Русский</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="screen-content">
+                    <div class="profile-card">
+                        <div class="profile-avatar"><i class="ph ph-user-circle"></i></div>
+                        <div class="profile-info">
+                            <h3 id="profile-name">Олександр Петренко</h3>
+                            <p id="profile-email">oleksandr@example.com</p>
+                            <p id="profile-phone-display">+380 50 123 4567</p>
+                        </div>
+                    </div>
+                    <div class="profile-details">
+                        <div class="detail-row">
+                            <span class="detail-label" data-lang="address">Адреса</span>
+                            <span class="detail-value" id="profile-address-display">вул. Шевченка, 61, кв. 15</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label" data-lang="groups_count">Груп</span>
+                            <span class="detail-value" id="profile-groups-count">2</span>
+                        </div>
+                    </div>
+                    <div class="profile-actions">
+                        <button class="btn btn-secondary" onclick="app.showEditProfile()">
+                            <span class="icon">✏️</span>
+                            <span data-lang="edit_profile">Редагувати профіль</span>
+                        </button>
+                        <button class="btn btn-secondary" onclick="app.showInstructions()">
+                            <span class="icon">📖</span>
+                            <span data-lang="instructions">Інструкції</span>
+                        </button>
+                    </div>
+                    <button class="btn btn-danger" onclick="app.logout()" data-lang="logout">Вийти</button>
+                </div>
+            </div>
+
+            <!-- Bottom Navigation -->
+            <nav class="bottom-nav">
+                <button class="nav-item active" data-screen="voting-screen">
+                    <span class="nav-icon"><i class="ph ph-scales"></i></span>
+                    <span class="nav-label" data-lang="voting">Голосування</span>
+                </button>
+                <button class="nav-item" data-screen="groups-screen">
+                    <span class="nav-icon"><i class="ph ph-users-three"></i></span>
+                    <span class="nav-label" data-lang="groups">Групи</span>
+                </button>
+                <button class="nav-item" data-screen="notifications-screen">
+                    <span class="nav-icon"><i class="ph ph-bell"></i></span>
+                    <span class="nav-label" data-lang="notifications" id="nav-notifications">Сповіщення</span>
+                </button>
+                <button class="nav-item" data-screen="profile-screen">
+                    <span class="nav-icon"><i class="ph ph-user-circle"></i></span>
+                    <span class="nav-label" data-lang="profile">Профіль</span>
+                </button>
+            </nav>
+        </div>
+
+        <!-- Create Group Modal -->
+        <div class="modal hidden" id="create-group-modal">
+            <div class="modal-overlay" onclick="app.hideModal('create-group-modal')"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 data-lang="new_group">Нова група</h3>
+                    <button class="btn-icon" onclick="app.hideModal('create-group-modal')">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label data-lang="group_name">Назва групи</label>
+                        <input type="text" id="group-name" data-lang-placeholder="group_name_placeholder" placeholder="Наприклад: Будинок 61">
+                    </div>
+                    <div class="form-group">
+                        <label data-lang="group_description">Опис (необов'язково)</label>
+                        <textarea id="group-description" data-lang-placeholder="group_desc_placeholder" placeholder="Короткий опис групи..."></textarea>
+                    </div>
+                    <p class="hint" data-lang="group_hint">Після створення ви отримаєте унікальний ID для запрошення учасників</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="app.hideModal('create-group-modal')" data-lang="cancel">Скасувати</button>
+                    <button class="btn btn-primary" onclick="app.createGroup()" data-lang="create">Створити</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Create Voting Modal -->
+        <div class="modal hidden" id="create-voting-modal">
+            <div class="modal-overlay" onclick="app.hideModal('create-voting-modal')"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 data-lang="new_voting">Нове голосування</h3>
+                    <button class="btn-icon" onclick="app.hideModal('create-voting-modal')">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label data-lang="question">Питання</label>
+                        <input type="text" id="voting-title" data-lang-placeholder="question_placeholder" placeholder="Текст питання для голосування">
+                    </div>
+                    <div class="form-group">
+                        <label data-lang="description">Опис</label>
+                        <textarea id="voting-description" data-lang-placeholder="description_placeholder" placeholder="Детальний опис голосування..." maxlength="500" rows="3" style="resize: vertical; min-height: 60px;" oninput="app.updateDescriptionCounter()"></textarea>
+                        <div style="font-size: 12px; color: var(--color-text-tertiary); margin-top: 4px; text-align: right;">
+                            <span id="description-counter">0</span> / 500
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label data-lang="group">Група</label>
+                        <select id="voting-group">
+                            <option value="" data-lang="select_group">Виберіть групу</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label data-lang="voting_type">Тип голосування</label>
+                        <select id="voting-type" onchange="app.onVotingTypeChange()">
+                            <option value="simple" data-lang="type_simple">Звичайне (за/проти)</option>
+                            <option value="secret" data-lang="type_secret">Тайне голосування</option>
+                            <option value="admin-change" data-lang="type_admin">Зміна адміністратора</option>
+                            <option value="remove-member" data-lang="type_remove">Видалення учасника</option>
+                            <option value="freeze" data-lang="type_freeze">Заморозка учасників</option>
+                        </select>
+                    </div>
+                    <div class="form-group hidden" id="freeze-members-group">
+                        <label data-lang="freeze_members">Учасники для заморозки</label>
+                        <div class="member-chips-search" style="position: relative;">
+                            <input type="text" id="freeze-search" data-lang-placeholder="search_members" placeholder="Пошук учасників..." 
+                                   style="width: 100%; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 14px;"
+                                   oninput="app.searchFreezeMembers(this.value)">
+                            <div id="freeze-search-results" class="search-results hidden" style="position: absolute; top: 100%; left: 0; right: 0; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-top: 4px; max-height: 200px; overflow-y: auto; z-index: 100;"></div>
+                        </div>
+                        <div id="freeze-selected-members" class="member-chips" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;"></div>
+                        <div style="font-size: 12px; color: var(--color-text-tertiary); margin-top: 8px;">
+                            <i class="ph ph-info"></i> <span data-lang="freeze_info">Заморозка діє 7 днів. Будь-які 2 учасники можуть оскаржити.</span>
+                        </div>
+                    </div>
+                    <div class="form-group hidden" id="target-member-group">
+                        <label data-lang="target_member">Учасник</label>
+                        <select id="target-member">
+                            <option value="" data-lang="select_member">Виберіть учасника</option>
+                        </select>
+                    </div>
+                    <div class="form-group hidden" id="removal-reason-group">
+                        <label data-lang="removal_reason">Причина видалення</label>
+                        <select id="removal-reason-select" onchange="app.onReasonChange()">
+                            <option value="" data-lang="select_reason">Виберіть причину</option>
+                            <option value="dues" data-lang="reason_dues">Не платить внески</option>
+                            <option value="rules" data-lang="reason_rules">Порушує правила</option>
+                            <option value="sold" data-lang="reason_sold">Продав квартиру/приміщення</option>
+                            <option value="other" data-lang="reason_other">Інше</option>
+                        </select>
+                        <textarea id="removal-reason-text" class="hidden" data-lang-placeholder="reason_details" placeholder="Детальний опис причини..."></textarea>
+                    </div>
+                    <div class="form-group" id="duration-group">
+                        <label data-lang="duration">Тривалість</label>
+                        <select id="voting-duration">
+                            <option value="1">1 <span data-lang="hour">година</span></option>
+                            <option value="24">24 <span data-lang="hours">години</span></option>
+                            <option value="72" selected>3 <span data-lang="days">дні</span></option>
+                            <option value="120">5 <span data-lang="days">днів</span></option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label data-lang="materials_link">Посилання на матеріали</label>
+                        <input type="url" id="voting-link" data-lang-placeholder="link_placeholder" placeholder="Google Drive, Dropbox...">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="app.hideModal('create-voting-modal')" data-lang="cancel">Скасувати</button>
+                    <button class="btn btn-primary" onclick="app.createVoting()" data-lang="create">Створити</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Voting Detail Modal -->
+        <div class="modal hidden" id="voting-detail-modal">
+            <div class="modal-overlay" onclick="app.hideModal('voting-detail-modal')"></div>
+            <div class="modal-content modal-large">
+                <div class="modal-header">
+                    <h3>Голосування</h3>
+                    <button class="btn-icon" onclick="app.hideModal('voting-detail-modal')">✕</button>
+                </div>
+                <div class="modal-body" id="voting-detail-content">
+                    <!-- Content will be inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Delete Voting Modal -->
+        <div class="modal hidden" id="delete-voting-modal">
+            <div class="modal-overlay" onclick="app.hideModal('delete-voting-modal')"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 data-lang="delete_voting_title">Видалити голосування</h3>
+                    <button class="btn-icon" onclick="app.hideModal('delete-voting-modal')">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p data-lang="delete_voting_warning" style="margin-bottom: 16px; color: var(--color-danger);">
+                        ⚠️ Голосування буде видалено безповоротно. Всі учасники отримають повідомлення.
+                    </p>
+                    <div class="form-group">
+                        <label data-lang="delete_reason">Причина видалення</label>
+                        <textarea id="delete-reason-text" data-lang-placeholder="delete_reason_placeholder" placeholder="Вкажіть причину (мінімум 5 символів)..."></textarea>
+                        <div style="font-size: 12px; color: var(--color-text-tertiary); margin-top: 4px;">
+                            <span id="delete-reason-counter">0</span> / 200
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="app.hideModal('delete-voting-modal')" data-lang="cancel">Скасувати</button>
+                    <button class="btn btn-danger" onclick="app.confirmDeleteVoting()" data-lang="delete">Видалити</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Group Detail Screen -->
+        <div class="screen hidden" id="group-detail-screen">
+            <div class="screen-header">
+                <button class="btn-icon back-btn" onclick="app.showScreen('groups-screen')">←</button>
+                <h2 id="group-detail-name">Група</h2>
+                <button class="btn-icon" onclick="app.showGroupMenu()">⋮</button>
+            </div>
+            <div class="screen-content">
+                <div class="group-info-card">
+                    <div class="group-id-section">
+                        <span class="label">ID групи:</span>
+                        <span class="group-id" id="group-detail-id">123456</span>
+                        <button class="btn-text" onclick="app.copyGroupId()">Копіювати</button>
+                    </div>
+                    <p class="group-description" id="group-detail-description"></p>
+                </div>
+                
+                <div class="group-stats">
+                    <div class="stat">
+                        <span class="stat-value" id="group-members-count">5</span>
+                        <span class="stat-label" id="members-label">учасників</span>
+                        <div id="frozen-count-display" style="font-size: 11px; color: #0ea5e9; margin-top: 2px; display: none;">
+                            <i class="ph-fill ph-snowflake"></i> <span id="frozen-count">0</span> <span data-lang="frozen_abbr">замор.</span>
+                        </div>
+                    </div>
+                    <div class="stat" style="min-width: 100px;">
+                        <div style="text-align: center;">
+                            <span class="stat-value" id="group-votings-count" style="color: #3b82f6;">5</span>
+                            <div style="display: flex; justify-content: center; gap: 8px; margin-top: 6px; font-size: 20px; font-weight: 600;">
+                                <span id="votings-accepted" style="color: #22c55e;">1</span>
+                                <span id="votings-rejected" style="color: #ef4444;">0</span>
+                                <span style="color: var(--color-text-tertiary); font-weight: 400;">-</span>
+                                <span id="votings-pending" style="color: #0ea5e9;">3</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="export-section" style="margin: 16px 0; text-align: center;">
+                    <button class="btn btn-secondary" onclick="app.exportGroupHistory()" style="display: inline-flex; align-items: center; gap: 8px;">
+                        <i class="ph ph-download-simple"></i>
+                        <span data-lang="export_csv">Експорт історії (CSV)</span>
+                    </button>
+                </div>
+
+                <div class="section-header">
+                    <h3>Учасники</h3>
+                    <span class="admin-badge" id="group-admin-badge">Адмін</span>
+                </div>
+                
+                <!-- Members Controls -->
+                <div class="members-controls" style="margin-bottom: 16px; background: var(--color-surface); border-radius: var(--radius-lg); padding: 12px;">
+                    <!-- Search Row with sort buttons -->
+                    <div class="search-row" style="display: flex; gap: 8px; align-items: center;">
+                        <!-- Sort by name (left) -->
+                        <button class="btn-icon sort-btn" onclick="app.sortMembersByName()" title="Сортувати за іменем" style="padding: 8px;">
+                            <i class="ph ph-sort-ascending" id="name-sort-icon" style="font-size: 20px;"></i>
+                        </button>
+                        
+                        <!-- Search input -->
+                        <div class="search-input-wrapper" style="position: relative; flex: 1;">
+                            <input type="text" id="member-search" data-lang-placeholder="search_members" placeholder="Пошук за ПІБ або телефоном..." 
+                                   style="width: 100%; padding: 10px 36px 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 14px; background: var(--color-surface-secondary);"
+                                   oninput="app.searchMembers(this.value)">
+                            <button id="clear-search" class="btn-icon" onclick="app.clearMemberSearch()" 
+                                    style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: none; padding: 4px; color: var(--color-text-tertiary);">
+                                <i class="ph ph-x-circle" style="font-size: 18px;"></i>
+                            </button>
+                        </div>
+                        
+                        <!-- Sort by participation (right) -->
+                        <button class="btn-icon sort-btn" onclick="app.sortMembersByParticipation()" title="Сортувати за участю" style="padding: 8px;">
+                            <i class="ph ph-sort-descending" id="participation-sort-icon" style="font-size: 20px;"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="members-list" id="members-list">
+                    <!-- Members will be inserted here -->
+                </div>
+
+                <div class="section-header">
+                    <h3 data-lang="join_requests">Запити на вступ</h3>
+                </div>
+                <div class="requests-list" id="requests-list">
+                    <!-- Requests will be inserted here -->
+                </div>
+
+                <div class="section-header" id="history-section-header" style="display: none;">
+                    <h3 data-lang="history">Історія змін</h3>
+                </div>
+                <div class="history-list" id="history-list" style="display: none;">
+                    <!-- History will be inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Profile Modal -->
+        <div class="modal hidden" id="edit-profile-modal">
+            <div class="modal-overlay" onclick="app.hideModal('edit-profile-modal')"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 data-lang="edit_profile">Редагувати профіль</h3>
+                    <button class="btn-icon" onclick="app.hideModal('edit-profile-modal')">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label data-lang="firstname">Ім'я</label>
+                        <input type="text" id="edit-firstname" placeholder="Ваше ім'я">
+                    </div>
+                    <div class="form-group">
+                        <label data-lang="lastname">Прізвище</label>
+                        <input type="text" id="edit-lastname" placeholder="Ваше прізвище">
+                    </div>
+                    <div class="form-group">
+                        <label data-lang="phone">Телефон</label>
+                        <input type="tel" id="edit-phone" placeholder="+380 XX XXX XXXX">
+                    </div>
+                    <div class="form-group">
+                        <label data-lang="address">Адреса об'єкта</label>
+                        <input type="text" id="edit-address" placeholder="вул. Шевченка, буд. 61">
+                    </div>
+                    <div class="form-group">
+                        <label data-lang="apartment">Квартира/офіс</label>
+                        <input type="text" id="edit-apartment" placeholder="№ 15">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="app.hideModal('edit-profile-modal')" data-lang="cancel">Скасувати</button>
+                    <button class="btn btn-primary" onclick="app.saveEditedProfile()" data-lang="save">Зберегти</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Terms Modal (shown on first profile save) -->
+        <div class="modal hidden" id="terms-modal">
+            <div class="modal-overlay"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 data-lang="terms_title">Умови використання</h3>
+                </div>
+                <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                    <div class="terms-content" style="font-size: 14px; line-height: 1.6;">
+                        <p data-lang="terms_intro" style="margin-bottom: 16px;">
+                            Для забезпечення повної прозорості та демократії в групі, всі учасники мають право:
+                        </p>
+                        <ul style="margin-left: 20px; margin-bottom: 16px;">
+                            <li data-lang="terms_item1" style="margin-bottom: 8px;">
+                                Брати участь у голосуваннях після вказання номера квартири/ділянки
+                            </li>
+                            <li data-lang="terms_item2" style="margin-bottom: 8px;">
+                                Експортувати повну історію голосувань групи в форматі CSV
+                            </li>
+                            <li data-lang="terms_item3" style="margin-bottom: 8px;">
+                                Перевіряти результати голосувань на достовірність
+                            </li>
+                            <li data-lang="terms_item4" style="margin-bottom: 8px;">
+                                Коментувати свої голоси (якщо це не таємне голосування)
+                            </li>
+                        </ul>
+                        <p data-lang="terms_export_notice" style="margin-bottom: 16px; padding: 12px; background: var(--color-surface-secondary); border-radius: var(--radius-md);">
+                            <strong>Важливо:</strong> Ви розумієте, що будь-який учасник групи може завантажити історію голосувань, де буде видно номер вашої квартири/ділянки та ваші голоси.
+                        </p>
+                        <div class="form-group" style="margin-top: 20px;">
+                            <label class="checkbox-label" style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="terms-agree" style="margin-top: 2px;">
+                                <span data-lang="terms_agree_text">Я ознайомлений(а) з умовами та погоджуюсь з ними</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" onclick="app.acceptTerms()" data-lang="accept">Погодитись та продовжити</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instructions Modal -->
+        <div class="modal hidden" id="instructions-modal">
+            <div class="modal-overlay" onclick="app.hideModal('instructions-modal')"></div>
+            <div class="modal-content modal-large">
+                <div class="modal-header">
+                    <h3 data-lang="instructions_title">📖 Інструкції з використання</h3>
+                    <button class="btn-icon" onclick="app.hideModal('instructions-modal')">✕</button>
+                </div>
+                <div class="modal-body instructions-body" id="instructions-content">
+                    <div class="instruction-section" data-instr-section="voting_types">
+                        <h4 data-lang="instr_voting_types"><i class="ph ph-scales"></i> Типи голосування</h4>
+                        <div class="instruction-item" data-instr-item="simple">
+                            <h5 data-lang="instr_simple_title">Звичайне голосування</h5>
+                            <p data-lang="instr_simple_desc">Відкрите голосування, де всі бачать, хто і як проголосував після свого вибору. Підходить для загальних питань ОСГ.</p>
+                        </div>
+                        <div class="instruction-item" data-instr-item="secret">
+                            <h5 data-lang="instr_secret_title">Тайне голосування</h5>
+                            <p data-lang="instr_secret_desc">Приховане голосування — після голосування ви бачите тільки загальну кількість «за» та «проти», без імен. Використовується для чутливих питань.</p>
+                        </div>
+                        <div class="instruction-item" data-instr-item="admin">
+                            <h5 data-lang="instr_admin_title">Зміна адміністратора</h5>
+                            <p data-lang="instr_admin_desc">Спеціальне голосування для зміни керівника групи. Вимагає мінімум 3 учасників. Триває 72 години. Для прийняття рішення потрібно 50%+1 голос. Поки йде голосування, адмін не може видаляти учасників.</p>
+                        </div>
+                        <div class="instruction-item" data-instr-item="remove">
+                            <h5 data-lang="instr_remove_title">Видалення учасника</h5>
+                            <p data-lang="instr_remove_desc">Голосування про виключення учасника з групи. Рішення приймається більшістю 50%+1 голос. Тривалість — 72 години.</p>
+                        </div>
+                    </div>
+
+                    <div class="instruction-section" data-instr-section="group_mgmt">
+                        <h4 data-lang="instr_group_mgmt"><i class="ph ph-users-three"></i> Управління групою</h4>
+                        <div class="instruction-item" data-instr-item="create_group">
+                            <h5 data-lang="instr_create_group_title">Створення групи</h5>
+                            <p data-lang="instr_create_group_desc">Будь-який користувач може створити групу. Система автоматично генерує унікальний 6-значний ID для запрошення.</p>
+                        </div>
+                        <div class="instruction-item" data-instr-item="join_group">
+                            <h5 data-lang="instr_join_group_title">Вступ до групи</h5>
+                            <p data-lang="instr_join_group_desc">Введіть 6-значний ID групи в поле пошуку. Адміністратор отримає запит на підтвердження.</p>
+                        </div>
+                        <div class="instruction-item" data-instr-item="decision">
+                            <h5 data-lang="instr_decision_title">Прийняття рішень</h5>
+                            <p data-lang="instr_decision_desc">Для прийняття будь-якого рішення потрібно мінімум 50%+1 голос від усіх учасників групи. Якщо набрано менше — голосування вважається «не відбулися» (🟡).</p>
+                        </div>
+                        <div class="instruction-item" data-instr-item="delete_group">
+                            <h5 data-lang="instr_delete_group_title">Видалення групи</h5>
+                            <p data-lang="instr_delete_group_desc">Якщо в групі 3+ учасників, адміністратор не може видалити групу без голосування. Усім учасникам надсилається запит на підтвердження.</p>
+                        </div>
+                    </div>
+
+                    <div class="instruction-section" data-instr-section="badges">
+                        <h4 data-lang="instr_badges"><i class="ph ph-paint-brush"></i> Позначення голосувань</h4>
+                        <div class="instruction-item">
+                            <p><span class="badge-example yellow">🟡</span> — <span data-lang="instr_badge_yellow">Голосування не відбулося (менше 50%+1 голосів)</span></p>
+                            <p><span class="badge-example green">🟢</span> — <span data-lang="instr_badge_green">Прийнято «за» (більшість проголосувала позитивно)</span></p>
+                            <p><span class="badge-example red">🔴</span> — <span data-lang="instr_badge_red">Прийнято «проти» (більшість проголосувала негативно)</span></p>
+                        </div>
+                    </div>
+
+                    <div class="instruction-section" data-instr-section="duration">
+                        <h4 data-lang="instr_duration"><i class="ph ph-clock"></i> Тривалість голосування</h4>
+                        <div class="instruction-item">
+                            <p data-lang="instr_duration_1">• Звичайні голосування: від 1 години до 5 днів</p>
+                            <p data-lang="instr_duration_2">• Управлінські голосування (зміна адміна, видалення): фіксовано 72 години</p>
+                            <p data-lang="instr_duration_3">Результат визначається автоматично по закінченню терміну.</p>
+                        </div>
+                    </div>
+
+                    <div class="instruction-section" data-instr-section="archive">
+                        <h4 data-lang="instr_archive"><i class="ph ph-archive"></i> Архівування</h4>
+                        <div class="instruction-item">
+                            <p data-lang="instr_archive_desc">Адміністратор може експортувати історію голосувань групи до Google Sheets. У таблиці зберігаються: дата, питання, опис, результат, кількість учасників.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(function(reg) { console.log('SW registered:', reg.scope); })
+                .catch(function(err) { console.log('SW error:', err); });
+        }
+    </script>
+</body>
+</html>
