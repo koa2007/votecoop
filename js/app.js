@@ -11,6 +11,31 @@ const app = {
         currentVotingToDelete: null // For delete modal
     },
 
+    // Escape HTML to prevent XSS injection
+    escapeHTML(str) {
+        if (str == null) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    },
+
+    // Sanitize URL — allow only http(s) protocols
+    sanitizeURL(url) {
+        if (!url) return '';
+        try {
+            const parsed = new URL(url, window.location.origin);
+            if (['http:', 'https:'].includes(parsed.protocol)) {
+                return this.escapeHTML(url);
+            }
+            return '';
+        } catch {
+            return '';
+        }
+    },
+
     // Initialize app
     init() {
         this.loadMockData();
@@ -428,26 +453,26 @@ const app = {
             const authorName = voting.initiatorName || t.unknown_author;
 
             return `
-                <div class="voting-card" onclick="app.showVotingDetail(${voting.id})">
+                <div class="voting-card" role="button" tabindex="0" onclick="app.showVotingDetail(${voting.id})" onkeydown="if(event.key==='Enter')app.showVotingDetail(${voting.id})">
                     <div class="voting-header">
-                        <div class="voting-title">${voting.title}</div>
+                        <div class="voting-title">${this.escapeHTML(voting.title)}</div>
                         <div class="voting-status ${statusClass}"></div>
                     </div>
-                    <div class="voting-author" style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px;">
-                        <i class="ph ph-user"></i> ${authorName}
+                    <div class="voting-author">
+                        <i class="ph ph-user" aria-hidden="true"></i> ${this.escapeHTML(authorName)}
                     </div>
                     <div class="voting-meta">
-                        <span><i class="ph ph-users-three"></i> ${voting.groupName}</span>
-                        ${voting.status === 'active' 
-                            ? `<span><i class="ph ph-scales"></i> ${voting.type === 'secret' ? t.secret_voting : t.open_voting}</span><span><i class="ph ph-clock"></i> ${timeLeft}</span>`
-                            : `<span>${voting.result === 'accepted' ? '<i class="ph-fill ph-check-circle text-success"></i> ' + t.result_accepted : '<i class="ph-fill ph-x-circle text-danger"></i> ' + t.result_rejected}</span>`
+                        <span><i class="ph ph-users-three" aria-hidden="true"></i> ${this.escapeHTML(voting.groupName)}</span>
+                        ${voting.status === 'active'
+                            ? `<span><i class="ph ph-scales" aria-hidden="true"></i> ${voting.type === 'secret' ? t.secret_voting : t.open_voting}</span><span><i class="ph ph-clock" aria-hidden="true"></i> ${timeLeft}</span>`
+                            : `<span>${voting.result === 'accepted' ? '<i class="ph-fill ph-check-circle text-success" aria-hidden="true"></i> ' + t.result_accepted : '<i class="ph-fill ph-x-circle text-danger" aria-hidden="true"></i> ' + t.result_rejected}</span>`
                         }
                     </div>
-                    <div class="voting-date" style="font-size: 12px; color: var(--color-text-tertiary); margin-bottom: 8px;">
-                        <i class="ph ph-calendar-blank"></i> ${dateRangeStr}
+                    <div class="voting-date">
+                        <i class="ph ph-calendar-blank" aria-hidden="true"></i> ${this.escapeHTML(dateRangeStr)}
                     </div>
                     <div class="voting-progress">
-                        <div class="progress-bar">
+                        <div class="progress-bar" role="progressbar" aria-valuenow="${yesPercent}" aria-valuemin="0" aria-valuemax="100">
                             <div class="progress-fill ${statusClass}" style="width: ${yesPercent}%"></div>
                         </div>
                         <div class="progress-text">
@@ -483,18 +508,18 @@ const app = {
         }
 
         list.innerHTML = this.state.groups.map(group => `
-            <div class="group-card" onclick="app.showGroupDetail(${group.id})">
+            <div class="group-card" role="button" tabindex="0" onclick="app.showGroupDetail(${group.id})" onkeydown="if(event.key==='Enter')app.showGroupDetail(${group.id})">
                 <div class="group-card-header">
-                    <div class="group-card-title">${group.name}</div>
+                    <div class="group-card-title">${this.escapeHTML(group.name)}</div>
                     <div class="group-card-role ${group.isAdmin ? '' : 'member'}">
                         ${group.isAdmin ? t.admin : t.member}
                     </div>
                 </div>
                 <div class="group-card-meta">
-                    <i class="ph ph-users-three"></i> ${group.membersCount} ${t.members} • <i class="ph ph-scales"></i> ${group.votingsCount} ${t.votings}
+                    <i class="ph ph-users-three" aria-hidden="true"></i> ${group.membersCount} ${t.members} • <i class="ph ph-scales" aria-hidden="true"></i> ${group.votingsCount} ${t.votings}
                 </div>
                 <div class="group-id-badge">
-                    <i class="ph ph-key"></i> ${group.groupId}
+                    <i class="ph ph-key" aria-hidden="true"></i> ${this.escapeHTML(group.groupId)}
                 </div>
             </div>
         `).join('');
@@ -524,11 +549,11 @@ const app = {
             };
 
             return `
-                <div class="notification-item ${notif.read ? 'read' : 'unread'}" onclick="app.markRead(${notif.id})">
+                <div class="notification-item ${notif.read ? 'read' : 'unread'}" role="button" tabindex="0" onclick="app.markRead(${notif.id})" onkeydown="if(event.key==='Enter')app.markRead(${notif.id})">
                     <div class="notification-icon">${icons[notif.type] || '🔔'}</div>
                     <div class="notification-content">
-                        <div class="notification-text">${notif.text}</div>
-                        <div class="notification-time">${notif.time}</div>
+                        <div class="notification-text">${this.escapeHTML(notif.text)}</div>
+                        <div class="notification-time">${this.escapeHTML(notif.time)}</div>
                     </div>
                     ${!notif.read ? '<div class="notification-dot"></div>' : ''}
                 </div>
@@ -567,7 +592,7 @@ const app = {
         // Populate group select
         const select = document.getElementById('voting-group');
         select.innerHTML = `<option value="">${t.select_group}</option>` +
-            this.state.groups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+            this.state.groups.map(g => `<option value="${g.id}">${this.escapeHTML(g.name)}</option>`).join('');
         
         // Reset type-specific fields
         document.getElementById('target-member-group').classList.add('hidden');
@@ -615,7 +640,7 @@ const app = {
                     );
                     
                     targetSelect.innerHTML = `<option value="">${t.select_member}</option>` +
-                        eligibleMembers.map(m => `<option value="${m.id}">${m.name} (${m.address})</option>`).join('');
+                        eligibleMembers.map(m => `<option value="${m.id}">${this.escapeHTML(m.name)} (${this.escapeHTML(m.address)})</option>`).join('');
                 }
             }
         } else if (type === 'freeze') {
@@ -893,17 +918,17 @@ const app = {
         let targetInfo = '';
         if (voting.type === 'admin-change' && voting.targetMemberName) {
             targetInfo = `
-                <div class="target-info" style="margin-top: 16px; padding: 12px; background: var(--color-surface-secondary); border-radius: var(--radius-md);">
-                    <div style="font-weight: 600; margin-bottom: 4px;"><i class="ph ph-user"></i> ${t.target_admin_candidate}</div>
-                    <div style="color: var(--color-text-secondary);">${voting.targetMemberName}</div>
+                <div class="target-info">
+                    <div class="target-info-label"><i class="ph ph-user" aria-hidden="true"></i> ${t.target_admin_candidate}</div>
+                    <div class="target-info-value">${this.escapeHTML(voting.targetMemberName)}</div>
                 </div>
             `;
         } else if (voting.type === 'remove-member' && voting.targetMemberName) {
             targetInfo = `
-                <div class="target-info" style="margin-top: 16px; padding: 12px; background: var(--color-surface-secondary); border-radius: var(--radius-md);">
-                    <div style="font-weight: 600; margin-bottom: 4px;"><i class="ph ph-user"></i> ${t.target_member_remove}</div>
-                    <div style="color: var(--color-text-secondary);">${voting.targetMemberName}</div>
-                    ${voting.removalReason ? `<div style="margin-top: 8px; font-size: 14px;"><strong>${t.removal_reason_label}:</strong> ${voting.removalReason}</div>` : ''}
+                <div class="target-info">
+                    <div class="target-info-label"><i class="ph ph-user" aria-hidden="true"></i> ${t.target_member_remove}</div>
+                    <div class="target-info-value">${this.escapeHTML(voting.targetMemberName)}</div>
+                    ${voting.removalReason ? `<div class="removal-reason"><strong>${t.removal_reason_label}:</strong> ${this.escapeHTML(voting.removalReason)}</div>` : ''}
                 </div>
             `;
         }
@@ -913,30 +938,30 @@ const app = {
         if (voting.comments && voting.comments.length > 0) {
             const commentsList = voting.comments.map(c => {
                 const voteLabel = c.vote === 'yes' ? t.vote_yes : c.vote === 'no' ? t.vote_no : t.vote_abstain;
-                const voteEmoji = c.vote === 'yes' ? '<i class="ph-fill ph-check-circle text-success"></i>' : c.vote === 'no' ? '<i class="ph-fill ph-x-circle text-danger"></i>' : '<i class="ph-fill ph-minus-circle text-muted"></i>';
+                const voteEmoji = c.vote === 'yes' ? '<i class="ph-fill ph-check-circle text-success" aria-hidden="true"></i>' : c.vote === 'no' ? '<i class="ph-fill ph-x-circle text-danger" aria-hidden="true"></i>' : '<i class="ph-fill ph-minus-circle text-muted" aria-hidden="true"></i>';
                 return `
-                    <div class="comment-item" style="padding: 12px; border-bottom: 1px solid var(--color-border);">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                            <span style="font-weight: 600;">${c.userName}</span>
-                            <span style="color: var(--color-text-tertiary); font-size: 12px;">${c.time}</span>
+                    <div class="comment-item">
+                        <div class="comment-header">
+                            <span class="comment-author">${this.escapeHTML(c.userName)}</span>
+                            <span class="comment-time">${this.escapeHTML(c.time)}</span>
                         </div>
-                        <div style="font-size: 14px; margin-bottom: 4px;">${voteEmoji} ${voteLabel}</div>
-                        ${c.comment ? `<div style="font-size: 14px; color: var(--color-text-secondary);">${c.comment}</div>` : ''}
+                        <div class="comment-vote">${voteEmoji} ${voteLabel}</div>
+                        ${c.comment ? `<div class="comment-text">${this.escapeHTML(c.comment)}</div>` : ''}
                     </div>
                 `;
             }).join('');
-            
+
             commentsSection = `
-                <div class="comments-section" style="margin-top: 24px; border-top: 1px solid var(--color-border); padding-top: 16px;">
-                    <h4 style="margin-bottom: 12px;"><i class="ph ph-chat-circle-text"></i> ${t.comments}</h4>
+                <div class="comments-section">
+                    <h4><i class="ph ph-chat-circle-text" aria-hidden="true"></i> ${t.comments}</h4>
                     <div class="comments-list">${commentsList}</div>
                 </div>
             `;
         } else {
             commentsSection = `
-                <div class="comments-section" style="margin-top: 24px; border-top: 1px solid var(--color-border); padding-top: 16px;">
-                    <h4 style="margin-bottom: 12px;"><i class="ph ph-chat-circle-text"></i> ${t.comments}</h4>
-                    <div style="padding: 20px; text-align: center; color: var(--color-text-tertiary);">${t.no_comments}</div>
+                <div class="comments-section">
+                    <h4><i class="ph ph-chat-circle-text" aria-hidden="true"></i> ${t.comments}</h4>
+                    <div class="empty-state-inline">${t.no_comments}</div>
                 </div>
             `;
         }
@@ -950,11 +975,11 @@ const app = {
         if (voting.status === 'completed' && voting.endedAt) {
             const endDate = new Date(voting.endedAt);
             const endDateStr = endDate.toLocaleDateString();
-            dateRangeHtml = `<div style="font-size: 14px; color: var(--color-text-secondary); margin-top: 4px;"><i class="ph ph-calendar-blank"></i> ${createdDateStr} ${createdTimeStr} — ${endDateStr}</div>`;
+            dateRangeHtml = `<div class="date-range"><i class="ph ph-calendar-blank" aria-hidden="true"></i> ${this.escapeHTML(createdDateStr)} ${this.escapeHTML(createdTimeStr)} — ${this.escapeHTML(endDateStr)}</div>`;
         } else {
             const endsAt = new Date(voting.endsAt);
             const endsDateStr = endsAt.toLocaleDateString();
-            dateRangeHtml = `<div style="font-size: 14px; color: var(--color-text-secondary); margin-top: 4px;"><i class="ph ph-calendar-blank"></i> ${createdDateStr} ${createdTimeStr} — ${endsDateStr} (${t.opened})</div>`;
+            dateRangeHtml = `<div class="date-range"><i class="ph ph-calendar-blank" aria-hidden="true"></i> ${this.escapeHTML(createdDateStr)} ${this.escapeHTML(createdTimeStr)} — ${this.escapeHTML(endsDateStr)} (${t.opened})</div>`;
         }
         
         const authorName = voting.initiatorName || t.unknown_author;
@@ -972,8 +997,8 @@ const app = {
         
         if (isFreeze) {
             // Freeze members chips
-            const freezeMembersChips = voting.freezeMembers ? voting.freezeMembers.map(m => 
-                `<span class="member-chip bg-info">${m.name} (${m.address})</span>`
+            const freezeMembersChips = voting.freezeMembers ? voting.freezeMembers.map(m =>
+                `<span class="member-chip bg-info">${this.escapeHTML(m.name)} (${this.escapeHTML(m.address)})</span>`
             ).join('') : '';
             
             freezeInfo = `
@@ -993,25 +1018,25 @@ const app = {
             // Objections section
             let objectionsList = '';
             if (voting.objections && voting.objections.length > 0) {
-                objectionsList = voting.objections.map(o => 
-                    `<div style="padding: 8px 0; border-bottom: 1px solid var(--color-border); font-size: 14px;">
-                        <i class="ph-fill ph-x-circle text-danger"></i> ${o.userName}
-                        <span style="color: var(--color-text-tertiary); font-size: 12px;">(${new Date(o.time).toLocaleDateString()})</span>
+                objectionsList = voting.objections.map(o =>
+                    `<div class="objection-item">
+                        <i class="ph-fill ph-x-circle text-danger" aria-hidden="true"></i> ${this.escapeHTML(o.userName)}
+                        <span class="objection-date">(${this.escapeHTML(new Date(o.time).toLocaleDateString())})</span>
                     </div>`
                 ).join('');
             } else {
-                objectionsList = `<div style="padding: 12px; text-align: center; color: var(--color-text-tertiary); font-size: 14px;">${t.no_objections}</div>`;
+                objectionsList = `<div class="empty-state-inline small">${t.no_objections}</div>`;
             }
-            
+
             freezeResults = `
-                <div style="margin-top: 20px; padding: 16px; background: var(--color-surface-secondary); border-radius: var(--radius-md);">
-                    <div style="font-weight: 600; margin-bottom: 12px;">
-                        <i class="ph ph-users"></i> ${t.objections_title}: ${objectionCount}/${objectionThreshold}
-                        ${objectionCount >= objectionThreshold ? `<span class="text-danger" style="margin-left: 8px;">(${t.auto_rejected})</span>` : ''}
+                <div class="objections-panel">
+                    <div class="objections-heading">
+                        <i class="ph ph-users" aria-hidden="true"></i> ${t.objections_title}: ${objectionCount}/${objectionThreshold}
+                        ${objectionCount >= objectionThreshold ? `<span class="text-danger auto-rejected-badge">(${t.auto_rejected})</span>` : ''}
                     </div>
                     <div>${objectionsList}</div>
                     ${objectionCount < objectionThreshold ? `
-                        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-border); font-size: 13px; color: var(--color-text-secondary);">
+                        <div class="objections-needed">
                             ${t.objections_needed.replace('{count}', objectionThreshold - objectionCount)}
                         </div>
                     ` : ''}
@@ -1021,19 +1046,19 @@ const app = {
             // Freeze voting actions - "I disagree" button
             if (isActive && !hasObjected) {
                 freezeActions = `
-                    <div class="voting-actions" style="flex-direction: column; gap: 12px;">
+                    <div class="voting-actions-column">
                         <button class="btn btn-secondary btn-objection" onclick="app.objectToFreeze(${voting.id})">
-                            <i class="ph-fill ph-hand-palm"></i> ${t.i_disagree}
+                            <i class="ph-fill ph-hand-palm" aria-hidden="true"></i> ${t.i_disagree}
                         </button>
-                        <div style="font-size: 13px; color: var(--color-text-secondary); text-align: center;">
+                        <div class="disagree-info">
                             ${t.disagree_info}
                         </div>
                     </div>
                 `;
             } else if (isActive && hasObjected) {
                 freezeActions = `
-                    <div style="text-align: center; padding: 20px; color: var(--color-text-secondary);">
-                        <i class="ph ph-check text-success"></i> ${t.you_objected}
+                    <div class="voted-message">
+                        <i class="ph ph-check text-success" aria-hidden="true"></i> ${t.you_objected}
                     </div>
                 `;
             }
@@ -1042,79 +1067,79 @@ const app = {
         content.innerHTML = `
             <div class="voting-detail-header">
                 <div class="voting-detail-status ${isActive ? 'active' : 'completed'}">
-                    ${isActive ? `<i class="ph-fill ph-circle text-danger"></i> ${t.active_votings}` : `<i class="ph-fill ph-check-circle text-success"></i> ${t.completed}`}
+                    ${isActive ? `<i class="ph-fill ph-circle text-danger" aria-hidden="true"></i> ${t.active_votings}` : `<i class="ph-fill ph-check-circle text-success" aria-hidden="true"></i> ${t.completed}`}
                 </div>
-                <h2 class="voting-detail-title">${voting.title}</h2>
-                ${voting.description ? `<div style="font-size: 15px; color: var(--color-text); margin: 12px 0; padding: 12px; background: var(--color-surface-secondary); border-radius: var(--radius-md); line-height: 1.5;">${voting.description}</div>` : ''}
-                <div style="font-size: 14px; color: var(--color-text-secondary); margin-bottom: 8px;">
-                    <i class="ph ph-user"></i> ${t.author}: ${authorName}
+                <h2 class="voting-detail-title">${this.escapeHTML(voting.title)}</h2>
+                ${voting.description ? `<div class="voting-description">${this.escapeHTML(voting.description)}</div>` : ''}
+                <div class="voting-author-info">
+                    <i class="ph ph-user" aria-hidden="true"></i> ${t.author}: ${this.escapeHTML(authorName)}
                 </div>
                 ${dateRangeHtml}
-                <div class="voting-detail-meta" style="margin-top: 12px;">
-                    <span><i class="ph ph-users-three"></i> ${voting.groupName}</span>
-                    ${isActive 
-                        ? `<span><i class="ph ph-scales"></i> ${voting.type === 'secret' ? t.secret_voting : voting.type === 'freeze' ? t.freeze_voting : t.open_voting}</span><span><i class="ph ph-clock"></i> ${this.getTimeLeft(voting.endsAt)}</span>`
-                        : `<span>${voting.result === 'accepted' ? '<i class="ph-fill ph-check-circle text-success"></i> ' + t.result_accepted : '<i class="ph-fill ph-x-circle text-danger"></i> ' + t.result_rejected}</span>`
+                <div class="voting-detail-meta">
+                    <span><i class="ph ph-users-three" aria-hidden="true"></i> ${this.escapeHTML(voting.groupName)}</span>
+                    ${isActive
+                        ? `<span><i class="ph ph-scales" aria-hidden="true"></i> ${voting.type === 'secret' ? t.secret_voting : voting.type === 'freeze' ? t.freeze_voting : t.open_voting}</span><span><i class="ph ph-clock" aria-hidden="true"></i> ${this.getTimeLeft(voting.endsAt)}</span>`
+                        : `<span>${voting.result === 'accepted' ? '<i class="ph-fill ph-check-circle text-success" aria-hidden="true"></i> ' + t.result_accepted : '<i class="ph-fill ph-x-circle text-danger" aria-hidden="true"></i> ' + t.result_rejected}</span>`
                     }
                 </div>
-                ${voting.link ? `<a href="${voting.link}" target="_blank" class="btn btn-secondary" style="margin-top: 16px;"><i class="ph ph-paperclip"></i> ${t.materials_link}</a>` : ''}
+                ${voting.link ? `<a href="${this.sanitizeURL(voting.link)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary materials-link"><i class="ph ph-paperclip" aria-hidden="true"></i> ${t.materials_link}</a>` : ''}
                 ${isFreeze ? freezeInfo : targetInfo}
             </div>
 
             ${!isFreeze ? `
-            <div class="voting-results">
+            <div class="voting-results" role="region" aria-label="${t.yes}: ${yesPercent}%, ${t.no}: ${noPercent}%">
                 <div class="result-item">
-                    <span class="result-label"><i class="ph-fill ph-check-circle text-success"></i> ${t.yes}</span>
+                    <span class="result-label"><i class="ph-fill ph-check-circle text-success" aria-hidden="true"></i> ${t.yes}</span>
                     <span class="result-value">${voting.yesVotes} (${yesPercent}%)</span>
                 </div>
-                <div class="result-bar">
+                <div class="result-bar" role="progressbar" aria-valuenow="${yesPercent}" aria-valuemin="0" aria-valuemax="100" aria-label="${t.yes} ${yesPercent}%">
                     <div class="result-bar-fill yes" style="width: ${yesPercent}%"></div>
                 </div>
-                
-                <div class="result-item" style="margin-top: 16px;">
-                    <span class="result-label"><i class="ph-fill ph-x-circle text-danger"></i> ${t.no}</span>
+
+                <div class="result-item">
+                    <span class="result-label"><i class="ph-fill ph-x-circle text-danger" aria-hidden="true"></i> ${t.no}</span>
                     <span class="result-value">${voting.noVotes} (${noPercent}%)</span>
                 </div>
-                <div class="result-bar">
+                <div class="result-bar" role="progressbar" aria-valuenow="${noPercent}" aria-valuemin="0" aria-valuemax="100" aria-label="${t.no} ${noPercent}%">
                     <div class="result-bar-fill no" style="width: ${noPercent}%"></div>
                 </div>
 
-                <div class="result-item" style="margin-top: 16px;">
-                    <span class="result-label"><i class="ph-fill ph-minus-circle text-muted"></i> ${t.abstain}</span>
+                <div class="result-item">
+                    <span class="result-label"><i class="ph-fill ph-minus-circle text-muted" aria-hidden="true"></i> ${t.abstain}</span>
                     <span class="result-value">${abstainVotes} (${abstainPercent}%)</span>
                 </div>
 
-                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--color-border);">
+                <div class="participation-summary">
                     <span class="result-label">${t.participation_label}: ${participation}% (${totalVoted}/${voting.totalMembers})</span>
                 </div>
             </div>
             ` : freezeResults}
 
             ${!isFreeze && isActive && !voting.hasVoted ? `
-                <div class="voting-actions" style="flex-direction: column; gap: 12px;">
-                    <div style="display: flex; gap: 8px;">
-                        <button class="btn btn-secondary" style="flex: 1;" onclick="app.vote(${voting.id}, false)"><i class="ph-fill ph-x-circle"></i> ${t.vote_against}</button>
-                        <button class="btn btn-secondary" style="flex: 1;" onclick="app.vote(${voting.id}, 'abstain')"><i class="ph-fill ph-minus-circle"></i> ${t.abstain}</button>
-                        <button class="btn btn-primary" style="flex: 1;" onclick="app.vote(${voting.id}, true)"><i class="ph-fill ph-check-circle"></i> ${t.vote_for}</button>
+                <div class="voting-actions-column">
+                    <div class="vote-buttons">
+                        <button class="btn btn-secondary" onclick="app.vote(${voting.id}, false)"><i class="ph-fill ph-x-circle" aria-hidden="true"></i> ${t.vote_against}</button>
+                        <button class="btn btn-secondary" onclick="app.vote(${voting.id}, 'abstain')"><i class="ph-fill ph-minus-circle" aria-hidden="true"></i> ${t.abstain}</button>
+                        <button class="btn btn-primary" onclick="app.vote(${voting.id}, true)"><i class="ph-fill ph-check-circle" aria-hidden="true"></i> ${t.vote_for}</button>
                     </div>
-                    <div class="form-group" style="margin: 0;">
-                        <textarea id="vote-comment" data-lang-placeholder="comment_placeholder" placeholder="${t.comment_placeholder}" maxlength="500" style="min-height: 80px;"></textarea>
-                        <div style="font-size: 12px; color: var(--color-text-tertiary); text-align: right; margin-top: 4px;">
+                    <div class="form-group-compact">
+                        <textarea id="vote-comment" class="vote-comment-textarea" data-lang-placeholder="comment_placeholder" placeholder="${t.comment_placeholder}" maxlength="500"></textarea>
+                        <div class="char-counter">
                             <span id="comment-counter">0</span> / 500
                         </div>
                     </div>
                 </div>
             ` : !isFreeze && isActive && voting.hasVoted ? `
-                <div style="text-align: center; padding: 20px; color: var(--color-text-secondary);">
-                    <i class="ph ph-check"></i> ${t.already_voted}
+                <div class="voted-message">
+                    <i class="ph ph-check" aria-hidden="true"></i> ${t.already_voted}
                 </div>
             ` : ''}
 
             ${isFreeze ? freezeActions : ''}
 
             ${isActive && isAuthor ? `
-                <div style="margin-top: 20px; text-align: center;">
-                    <button class="btn btn-danger" onclick="app.showDeleteVotingModal(${voting.id})" style="background: var(--color-danger);">🗑️ ${t.delete}</button>
+                <div class="delete-section">
+                    <button class="btn btn-danger" onclick="app.showDeleteVotingModal(${voting.id})">🗑️ ${t.delete}</button>
                 </div>
             ` : ''}
 
@@ -1371,7 +1396,7 @@ const app = {
         
         // Render
         if (membersWithStats.length === 0) {
-            membersList.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--color-text-tertiary);">${t.no_members_found || 'Учасників не знайдено'}</div>`;
+            membersList.innerHTML = `<div class="empty-state-inline">${t.no_members_found || 'Учасників не знайдено'}</div>`;
             return;
         }
 
@@ -1380,15 +1405,15 @@ const app = {
         
         membersList.innerHTML = membersWithStats.map(member => {
             const participationText = `${member.participation.participated}/${member.participation.total}`;
-            const frozenIndicator = member.frozen ? `<i class="ph-fill ph-snowflake frozen-indicator" title="${t.frozen_badge}"></i>` : '';
+            const frozenIndicator = member.frozen ? `<i class="ph-fill ph-snowflake frozen-indicator" title="${t.frozen_badge}" aria-hidden="true"></i>` : '';
             return `
             <div class="member-card ${member.frozen ? 'frozen' : ''}">
                 <div class="member-avatar">
                     <i class="ph ph-user ${member.frozen ? 'text-info' : ''}" aria-hidden="true"></i>
                 </div>
                 <div class="member-info">
-                    <div class="member-name">${member.name} ${frozenIndicator}</div>
-                    <div class="member-address">${member.address || 'кв. -'}</div>
+                    <div class="member-name">${this.escapeHTML(member.name)} ${frozenIndicator}</div>
+                    <div class="member-address">${this.escapeHTML(member.address || 'кв. -')}</div>
                 </div>
                 <div class="member-participation ${member.frozen ? 'text-info' : ''}">
                     ${member.frozen ? `<i class="ph-fill ph-snowflake" aria-hidden="true"></i> ${t.frozen_badge}` : participationText}
@@ -1401,19 +1426,19 @@ const app = {
         if (group.isAdmin && group.requests.length > 0) {
             requestsList.innerHTML = group.requests.map(request => `
                 <div class="request-item">
-                    <div class="request-avatar"><i class="ph ph-user"></i></div>
+                    <div class="request-avatar"><i class="ph ph-user" aria-hidden="true"></i></div>
                     <div class="request-info">
-                        <div class="request-name">${request.name}</div>
-                        <div class="request-address">${request.address}</div>
+                        <div class="request-name">${this.escapeHTML(request.name)}</div>
+                        <div class="request-address">${this.escapeHTML(request.address)}</div>
                     </div>
                     <div class="request-actions">
-                        <button class="btn-small btn-approve" onclick="app.approveRequest(${group.id}, ${request.id})"><i class="ph ph-check"></i></button>
-                        <button class="btn-small btn-reject" onclick="app.rejectRequest(${group.id}, ${request.id})"><i class="ph ph-x"></i></button>
+                        <button class="btn-small btn-approve" onclick="app.approveRequest(${group.id}, ${request.id})" aria-label="${t.approve || 'Approve'}"><i class="ph ph-check" aria-hidden="true"></i></button>
+                        <button class="btn-small btn-reject" onclick="app.rejectRequest(${group.id}, ${request.id})" aria-label="${t.reject || 'Reject'}"><i class="ph ph-x" aria-hidden="true"></i></button>
                     </div>
                 </div>
             `).join('');
         } else {
-            requestsList.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--color-text-tertiary);">${t.no_requests}</div>`;
+            requestsList.innerHTML = `<div class="empty-state-inline">${t.no_requests}</div>`;
         }
 
         // Render history
@@ -1427,19 +1452,19 @@ const app = {
             historyList.innerHTML = group.history.map(item => {
                 let actionText = '';
                 if (item.action === 'admin_change') {
-                    actionText = `<i class="ph-fill ph-crown text-warning" aria-hidden="true"></i> ${t.history_admin_change}: ${item.from} → ${item.to}`;
+                    actionText = `<i class="ph-fill ph-crown text-warning" aria-hidden="true"></i> ${t.history_admin_change}: ${this.escapeHTML(item.from)} → ${this.escapeHTML(item.to)}`;
                 } else if (item.action === 'member_removed') {
-                    actionText = `<i class="ph-fill ph-prohibit text-danger"></i> ${t.history_member_removed}: ${item.member}`;
-                    if (item.reason) actionText += ` (${item.reason})`;
+                    actionText = `<i class="ph-fill ph-prohibit text-danger" aria-hidden="true"></i> ${t.history_member_removed}: ${this.escapeHTML(item.member)}`;
+                    if (item.reason) actionText += ` (${this.escapeHTML(item.reason)})`;
                 }
-                
+
                 const date = new Date(item.date).toLocaleDateString();
-                
+
                 return `
-                    <div class="history-item" style="padding: 12px; border-bottom: 1px solid var(--color-border);">
-                        <div style="font-size: 14px; margin-bottom: 4px;">${actionText}</div>
-                        <div style="font-size: 12px; color: var(--color-text-tertiary);">
-                            <i class="ph ph-calendar-blank"></i> ${date} • <i class="ph ph-user"></i> ${t.history_initiator}: ${item.initiator}
+                    <div class="history-item">
+                        <div class="history-item-action">${actionText}</div>
+                        <div class="history-item-meta">
+                            <i class="ph ph-calendar-blank" aria-hidden="true"></i> ${this.escapeHTML(date)} • <i class="ph ph-user" aria-hidden="true"></i> ${t.history_initiator}: ${this.escapeHTML(item.initiator)}
                         </div>
                     </div>
                 `;
@@ -2443,11 +2468,11 @@ const app = {
         );
         
         if (matches.length === 0) {
-            resultsContainer.innerHTML = '<div style="padding: 12px; color: var(--color-text-tertiary);">Нічого не знайдено</div>';
+            resultsContainer.innerHTML = `<div class="freeze-search-empty">${t.nothing_found || 'Нічого не знайдено'}</div>`;
         } else {
             resultsContainer.innerHTML = matches.map(m => `
-                <div class="search-result-item" onclick="app.selectFreezeMember(${m.id}, '${m.name.replace(/'/g, "\\'")}')">
-                    ${m.name} (${m.address})
+                <div class="search-result-item" role="option" onclick="app.selectFreezeMember(${m.id}, '${m.name.replace(/'/g, "\\'")}')">
+                    ${this.escapeHTML(m.name)} (${this.escapeHTML(m.address)})
                 </div>
             `).join('');
         }
@@ -2485,9 +2510,9 @@ const app = {
         
         container.innerHTML = this.state.freezeSelectedMembers.map(m => `
             <div class="member-chip">
-                ${m.name}
-                <button onclick="app.removeFreezeMember(${m.id})" type="button">
-                    <i class="ph ph-x"></i>
+                ${this.escapeHTML(m.name)}
+                <button onclick="app.removeFreezeMember(${m.id})" type="button" aria-label="${this.escapeHTML(m.name)}">
+                    <i class="ph ph-x" aria-hidden="true"></i>
                 </button>
             </div>
         `).join('');

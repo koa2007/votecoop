@@ -11,7 +11,7 @@
     --color-surface-secondary: #f0f0f2;
     --color-text: #1c1c1e;
     --color-text-secondary: #6c6c70;
-    --color-text-tertiary: #9c9ca0;
+    --color-text-tertiary: #737378;
     --color-border: #e5e5ea;
     --color-primary: #007aff;
     --color-primary-hover: #0051d5;
@@ -1082,6 +1082,7 @@ html, body {
     gap: 16px;
     font-size: 14px;
     color: var(--color-text-secondary);
+    margin-top: 12px;
 }
 
 .voting-results {
@@ -1637,6 +1638,237 @@ textarea:focus-visible {
 
 .profile-card {
     box-shadow: var(--shadow-sm);
+}
+
+/* Voting Author (in card list) */
+.voting-author {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-bottom: 4px;
+}
+
+/* Voting Detail — Description block */
+.voting-description {
+    font-size: 15px;
+    color: var(--color-text);
+    margin: 12px 0;
+    padding: 12px;
+    background: var(--color-surface-secondary);
+    border-radius: var(--radius-md);
+    line-height: 1.5;
+}
+
+/* Voting Detail — Author info */
+.voting-author-info {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    margin-bottom: 8px;
+}
+
+/* Voting Detail — Date range */
+.date-range {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    margin-top: 4px;
+}
+
+/* Voting Detail — Materials link */
+.materials-link {
+    margin-top: 16px;
+    display: inline-flex;
+}
+
+/* Target Info (admin-change / remove-member) */
+.target-info {
+    margin-top: 16px;
+    padding: 12px;
+    background: var(--color-surface-secondary);
+    border-radius: var(--radius-md);
+}
+
+.target-info-label {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.target-info-value {
+    color: var(--color-text-secondary);
+}
+
+.removal-reason {
+    margin-top: 8px;
+    font-size: 14px;
+}
+
+/* Comments Section */
+.comments-section {
+    margin-top: 24px;
+    border-top: 1px solid var(--color-border);
+    padding-top: 16px;
+}
+
+.comments-section h4 {
+    margin-bottom: 12px;
+}
+
+.comment-item {
+    padding: 12px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.comment-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.comment-author {
+    font-weight: 600;
+}
+
+.comment-time {
+    color: var(--color-text-tertiary);
+    font-size: 12px;
+}
+
+.comment-vote {
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.comment-text {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+}
+
+/* Voting Results — spacing between items already via margin-bottom */
+.result-item + .result-bar {
+    margin-top: 0;
+}
+
+/* Participation Summary */
+.participation-summary {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border);
+}
+
+/* Voting Actions — column layout for detail view */
+.voting-actions-column {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Vote Buttons Row */
+.vote-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.vote-buttons .btn {
+    flex: 1;
+}
+
+/* Compact form group (no margin) */
+.form-group-compact {
+    margin: 0;
+}
+
+/* Vote comment textarea */
+.vote-comment-textarea {
+    min-height: 80px;
+}
+
+/* Voted / status messages */
+.voted-message {
+    text-align: center;
+    padding: 20px;
+    color: var(--color-text-secondary);
+}
+
+/* Delete section in voting detail */
+.delete-section {
+    margin-top: 20px;
+    text-align: center;
+}
+
+/* Objection Item (freeze) */
+.objection-item {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 14px;
+}
+
+.objection-date {
+    color: var(--color-text-tertiary);
+    font-size: 12px;
+}
+
+/* Objections Panel */
+.objections-panel {
+    margin-top: 20px;
+    padding: 16px;
+    background: var(--color-surface-secondary);
+    border-radius: var(--radius-md);
+}
+
+.objections-heading {
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.auto-rejected-badge {
+    margin-left: 8px;
+}
+
+.objections-needed {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border);
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+
+/* Disagree info text */
+.disagree-info {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    text-align: center;
+}
+
+/* Empty state inline (used in dynamic lists) */
+.empty-state-inline {
+    padding: 20px;
+    text-align: center;
+    color: var(--color-text-tertiary);
+}
+
+.empty-state-inline.small {
+    padding: 12px;
+    font-size: 14px;
+}
+
+/* History Item */
+.history-item {
+    padding: 12px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.history-item-action {
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.history-item-meta {
+    font-size: 12px;
+    color: var(--color-text-tertiary);
+}
+
+/* Freeze search empty result */
+.freeze-search-empty {
+    padding: 12px;
+    color: var(--color-text-tertiary);
 }
 
 /* Reduced motion */
