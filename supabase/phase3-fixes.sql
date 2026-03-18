@@ -4,6 +4,18 @@
 -- ============================================
 
 -- =====================
+-- 0. Add missing email column to profiles
+-- =====================
+
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS email TEXT DEFAULT '';
+
+-- Backfill email from auth.users
+UPDATE profiles p
+SET email = u.email
+FROM auth.users u
+WHERE p.id = u.id AND (p.email IS NULL OR p.email = '');
+
+-- =====================
 -- 1. SECURITY DEFINER helper functions for RLS
 -- These bypass RLS to check membership without recursion
 -- =====================
