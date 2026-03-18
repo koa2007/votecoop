@@ -31,6 +31,17 @@ const supabaseService = {
         return this.initialized && this.client !== null;
     },
 
+    // Safe helper to get current user ID (returns null if not authenticated)
+    async _getUserId() {
+        try {
+            const { data, error } = await this.client.auth.getUser();
+            if (error || !data?.user) return null;
+            return data.user.id;
+        } catch {
+            return null;
+        }
+    },
+
     // === AUTH ===
 
     // Sign in with Google OAuth (redirects to Google)
@@ -208,6 +219,9 @@ const supabaseService = {
             return { data: null, error: null };
         }
 
+        const userId = await this._getUserId();
+        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
+
         const { data, error } = await this.client.from('group_members')
             .select(`
                 role,
@@ -215,7 +229,7 @@ const supabaseService = {
                     id, name, description, group_code, created_by, created_at
                 )
             `)
-            .eq('user_id', (await this.client.auth.getUser()).data.user.id);
+            .eq('user_id', userId);
 
         return { data, error };
     },
@@ -274,7 +288,8 @@ const supabaseService = {
             return { data: null, error: { message: 'Supabase not configured' } };
         }
 
-        const userId = (await this.client.auth.getUser()).data.user.id;
+        const userId = await this._getUserId();
+        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
 
         const { data, error } = await this.client.from('join_requests')
             .insert({ group_id: groupId, user_id: userId })
@@ -303,7 +318,8 @@ const supabaseService = {
             return { data: null, error: { message: 'Supabase not configured' } };
         }
 
-        const userId = (await this.client.auth.getUser()).data.user.id;
+        const userId = await this._getUserId();
+        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
 
         const { data, error } = await this.client.from('join_requests')
             .update({
@@ -326,7 +342,8 @@ const supabaseService = {
             return { data: null, error: { message: 'Supabase not configured' } };
         }
 
-        const userId = (await this.client.auth.getUser()).data.user.id;
+        const userId = await this._getUserId();
+        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
 
         const { data, error } = await this.client.from('votings')
             .insert({
@@ -368,7 +385,8 @@ const supabaseService = {
             return { data: null, error: null };
         }
 
-        const userId = (await this.client.auth.getUser()).data.user.id;
+        const userId = await this._getUserId();
+        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
 
         // Get group IDs
         const { data: memberships } = await this.client.from('group_members')
@@ -432,7 +450,8 @@ const supabaseService = {
             return { data: null, error: { message: 'Supabase not configured' } };
         }
 
-        const userId = (await this.client.auth.getUser()).data.user.id;
+        const userId = await this._getUserId();
+        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
 
         const { data, error } = await this.client.from('votes')
             .insert({
@@ -472,7 +491,8 @@ const supabaseService = {
             return { data: null, error: { message: 'Supabase not configured' } };
         }
 
-        const userId = (await this.client.auth.getUser()).data.user.id;
+        const userId = await this._getUserId();
+        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
 
         const { data, error } = await this.client.from('freeze_objections')
             .insert({ voting_id: votingId, user_id: userId })
@@ -553,7 +573,8 @@ const supabaseService = {
             return { error: null };
         }
 
-        const userId = (await this.client.auth.getUser()).data.user.id;
+        const userId = await this._getUserId();
+        if (!userId) return { error: { message: 'User not authenticated' } };
 
         const { error } = await this.client.from('notifications')
             .update({ is_read: true })
@@ -583,7 +604,8 @@ const supabaseService = {
             return { error: { message: 'Supabase not configured' } };
         }
 
-        const userId = (await this.client.auth.getUser()).data.user.id;
+        const userId = await this._getUserId();
+        if (!userId) return { error: { message: 'User not authenticated' } };
 
         const { error } = await this.client.rpc('notify_group_members', {
             p_group_id: groupId,

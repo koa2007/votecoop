@@ -117,12 +117,16 @@ const app = {
 
             // Load data from Supabase in parallel
             console.log('[DEBUG] handleAuthSession: starting data load');
-            await Promise.all([
-                this.loadMyGroups(),
-                this.loadMyVotings(),
-                this.loadMyNotifications()
-            ]);
-            console.log('[DEBUG] handleAuthSession: data load complete');
+            try {
+                await Promise.all([
+                    this.loadMyGroups(),
+                    this.loadMyVotings(),
+                    this.loadMyNotifications()
+                ]);
+                console.log('[DEBUG] handleAuthSession: data load complete');
+            } catch (loadErr) {
+                console.error('[DEBUG] handleAuthSession: data load FAILED:', loadErr);
+            }
 
             // Check expired votings (non-blocking)
             this.checkExpiredVotingsServer();
