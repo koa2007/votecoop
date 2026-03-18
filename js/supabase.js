@@ -234,6 +234,16 @@ const supabaseService = {
         return { data, error };
     },
 
+    async getGroupsStats(groupIds) {
+        if (!this.isReady() || !groupIds.length) {
+            return { data: [], error: null };
+        }
+        const { data, error } = await this.client.from('group_stats')
+            .select('group_id, members_count, active_votings_count, total_votings_count')
+            .in('group_id', groupIds);
+        return { data: data || [], error };
+    },
+
     // Update group name/description (admin only)
     async updateGroup(groupId, updates) {
         const userId = await this._getUserId();

@@ -566,20 +566,29 @@ const app = {
         const { data, error } = await supabaseService.getMyGroups();
         if (error || !data) return;
 
-        this.state.groups = data.map(item => ({
-            id: item.group.id,
-            name: item.group.name,
-            description: item.group.description,
-            groupId: item.group.group_code,
-            isAdmin: item.role === 'admin',
-            membersCount: 0,
-            votingsCount: 0,
-            members: [],
-            requests: [],
-            history: []
-        }));
+        const groupIds = data.map(item => item.group.id);
+        const { data: stats } = await supabaseService.getGroupsStats(groupIds);
+        const statsMap = {};
+        (stats || []).forEach(s => { statsMap[s.group_id] = s; });
+
+        this.state.groups = data.map(item => {
+            const s = statsMap[item.group.id] || {};
+            return {
+                id: item.group.id,
+                name: item.group.name,
+                description: item.group.description,
+                groupId: item.group.group_code,
+                isAdmin: item.role === 'admin',
+                membersCount: s.members_count || 0,
+                votingsCount: s.total_votings_count || 0,
+                members: [],
+                requests: [],
+                history: []
+            };
+        });
 
         this.renderGroups();
+        this.updateProfileDisplay();
     },
 
     async loadMyVotings() {
