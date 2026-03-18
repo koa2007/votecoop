@@ -314,6 +314,7 @@
                             <option value="admin-change" data-lang="type_admin">Зміна адміністратора</option>
                             <option value="remove-member" data-lang="type_remove">Видалення учасника</option>
                             <option value="freeze" data-lang="type_freeze">Заморозка учасників</option>
+                            <option value="delete-group" data-lang="type_delete_group">Видалення групи</option>
                         </select>
                     </div>
                     <div class="form-group hidden" id="freeze-members-group">
@@ -546,6 +547,10 @@
                         <span class="action-icon">✏️</span>
                         <span data-lang="edit_group">Редагувати групу</span>
                     </button>
+                    <button class="action-sheet-item action-leave" id="group-menu-leave-btn" onclick="app.leaveGroup()">
+                        <span class="action-icon">🚪</span>
+                        <span data-lang="leave_group">Покинути групу</span>
+                    </button>
                     <button class="action-sheet-item action-danger" id="group-menu-delete-btn" onclick="app.confirmDeleteGroup()">
                         <span class="action-icon">🗑️</span>
                         <span data-lang="delete_group">Видалити групу</span>
@@ -596,6 +601,24 @@
                 <div class="modal-footer">
                     <button class="btn btn-secondary" onclick="app.hideModal('delete-group-modal')" data-lang="cancel">Скасувати</button>
                     <button class="btn btn-primary" style="background: var(--color-danger);" onclick="app.deleteGroup()" data-lang="delete">Видалити</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Leave Group Confirmation Modal -->
+        <div class="modal hidden" id="leave-group-modal">
+            <div class="modal-overlay" onclick="app.hideModal('leave-group-modal')"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 data-lang="leave_group">Покинути групу</h3>
+                    <button class="btn-icon" onclick="app.hideModal('leave-group-modal')" aria-label="Close">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p data-lang="leave_group_confirm">Ви впевнені, що хочете покинути цю групу? Ви втратите доступ до голосувань та історії групи.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="app.hideModal('leave-group-modal')" data-lang="cancel">Скасувати</button>
+                    <button class="btn btn-primary" style="background: var(--color-warning, #f59e0b);" onclick="app.confirmLeaveGroup()" data-lang="leave">Покинути</button>
                 </div>
             </div>
         </div>
@@ -705,6 +728,14 @@
                             <h5 data-lang="instr_requests_title">Запити на вступ</h5>
                             <p data-lang="instr_requests_desc">Адміністратор бачить вхідні запити та може схвалити або відхилити кожного кандидата. Учаснику надійде сповіщення про рішення.</p>
                         </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_leave_group_title"><i class="ph ph-sign-out"></i> Вихід із групи</h5>
+                            <p data-lang="instr_leave_group_desc">Будь-який учасник (крім адміністратора) може покинути групу через меню (⋮). Адміністратор повинен спочатку передати свою роль через голосування «Зміна адміністратора».</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_delete_group_admin_title"><i class="ph ph-trash"></i> Видалення групи (адмін)</h5>
+                            <p data-lang="instr_delete_group_admin_desc">Адміністратор може видалити групу напряму тільки якщо він єдиний учасник. Якщо в групі 2+ учасників — потрібно створити голосування «Видалення групи».</p>
+                        </div>
                     </div>
 
                     <!-- 4. Voting Types -->
@@ -729,6 +760,10 @@
                         <div class="instruction-item">
                             <h5 data-lang="instr_freeze_title"><i class="ph ph-snowflake"></i> Заморозка учасника (BETA)</h5>
                             <p data-lang="instr_freeze_desc">Тільки адміністратор може створити. Обирає учасників для заморозки на 7 днів. Заморожений учасник не може голосувати. Якщо 2+ учасники натиснуть «Не згоден» — заморозка автоматично скасовується.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_delete_group_title"><i class="ph ph-trash"></i> Видалення групи</h5>
+                            <p data-lang="instr_delete_group_desc">Будь-який учасник може створити голосування за видалення групи. Мінімальна тривалість — 24 години. Якщо 50%+1 проголосувало «за» — група видаляється автоматично, а всі учасники отримують сповіщення.</p>
                         </div>
                     </div>
 
@@ -782,6 +817,7 @@
                             <p data-lang="instr_duration_1">• Звичайні/тайні голосування: від 1 години до 5 днів</p>
                             <p data-lang="instr_duration_2">• Зміна адміна / Видалення учасника: фіксовано 72 години</p>
                             <p data-lang="instr_duration_3">• Заморозка: 7 днів дії після прийняття</p>
+                            <p data-lang="instr_duration_4">• Видалення групи: від 24 годин</p>
                         </div>
                         <div class="instruction-item">
                             <h5 data-lang="instr_decision_title">Прийняття рішень</h5>

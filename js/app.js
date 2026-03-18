@@ -930,6 +930,10 @@ const app = {
             // Store selected members for freeze
             this.state.freezeSelectedMembers = [];
             this.renderFreezeMemberChips();
+        } else if (type === 'delete-group') {
+            // Show duration selector (min 24 hours)
+            durationGroup.classList.remove('hidden');
+            document.getElementById('voting-duration').value = '24';
         }
     },
 
@@ -1075,6 +1079,20 @@ const app = {
             }
             if (!this.state.freezeSelectedMembers || this.state.freezeSelectedMembers.length === 0) {
                 alert(t.select_freeze_members);
+                return;
+            }
+        }
+
+        if (type === 'delete-group') {
+            const existingDeleteGroup = this.state.votings.find(v =>
+                v.groupId === groupId && v.type === 'delete-group' && v.status === 'active'
+            );
+            if (existingDeleteGroup) {
+                alert(t.one_delete_group_at_time);
+                return;
+            }
+            if (duration < 24) {
+                alert(t.min_duration_24h);
                 return;
             }
         }
@@ -1317,6 +1335,12 @@ const app = {
                     <div class="target-info-label"><i class="ph ph-user" aria-hidden="true"></i> ${t.target_member_remove}</div>
                     <div class="target-info-value">${this.escapeHTML(voting.targetMemberName)}</div>
                     ${voting.removalReason ? `<div class="removal-reason"><strong>${t.removal_reason_label}:</strong> ${this.escapeHTML(voting.removalReason)}</div>` : ''}
+                </div>
+            `;
+        } else if (voting.type === 'delete-group') {
+            targetInfo = `
+                <div class="delete-group-warning">
+                    <i class="ph ph-warning" aria-hidden="true"></i> ${t.delete_group_warning}
                 </div>
             `;
         }
@@ -2067,10 +2091,17 @@ const app = {
     showGroupMenu() {
         const group = this.state.groups.find(g => g.id === this.state.currentGroupId);
         const isAdmin = group && group.isAdmin;
+
         const deleteBtn = document.getElementById('group-menu-delete-btn');
         if (deleteBtn) {
             deleteBtn.style.display = isAdmin ? 'flex' : 'none';
         }
+
+        const leaveBtn = document.getElementById('group-menu-leave-btn');
+        if (leaveBtn) {
+            leaveBtn.style.display = isAdmin ? 'none' : 'flex';
+        }
+
         this.showModal('group-menu-modal');
     },
 
@@ -2123,6 +2154,14 @@ const app = {
 
     confirmDeleteGroup() {
         this.hideModal('group-menu-modal');
+        const t = this.translations[this.currentLanguage];
+        const group = this.state.groups.find(g => g.id === this.state.currentGroupId);
+        if (!group) return;
+
+        if (group.membersCount >= 2) {
+            alert(t.delete_group_need_voting);
+            return;
+        }
         this.showModal('delete-group-modal');
     },
 
@@ -2145,6 +2184,48 @@ const app = {
             this.hideModal('delete-group-modal');
             this.showScreen('groups-screen');
             this.renderGroups();
+        } catch (err) {
+            alert(t.auth_error_network || err.message);
+        } finally {
+            if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
+        }
+    },
+
+    leaveGroup() {
+        this.hideModal('group-menu-modal');
+        this.showModal('leave-group-modal');
+    },
+
+    async confirmLeaveGroup() {
+        const t = this.translations[this.currentLanguage];
+        const groupId = this.state.currentGroupId;
+        if (!groupId) return;
+
+        const btn = document.querySelector('#leave-group-modal .btn-primary, #leave-group-modal .btn[style]');
+        if (btn) { btn.classList.add('btn-loading'); btn.disabled = true; }
+
+        try {
+            const { error } = await supabaseService.leaveGroup(groupId);
+            if (error) throw new Error(error.message);
+
+            const group = this.state.groups.find(g => g.id === groupId);
+            const groupName = group ? group.name : '';
+
+            this.state.groups = this.state.groups.filter(g => g.id !== groupId);
+            this.state.currentGroupId = null;
+
+            this.hideModal('leave-group-modal');
+            this.showScreen('groups-screen');
+            this.renderGroups();
+
+            this.state.notifications.unshift({
+                id: Date.now(),
+                type: 'system',
+                text: `${t.leave_group_success}: "${groupName}"`,
+                time: t.just_now,
+                read: false
+            });
+            this.renderNotifications();
         } catch (err) {
             alert(t.auth_error_network || err.message);
         } finally {
@@ -2291,6 +2372,13 @@ const app = {
             instr_remove_desc: 'Голосування за виключення учасника. Потрібно вказати причину. Вимоги: мін. 3 учасники, 72 години, 50%+1 для прийняття. При успіху — учасник видаляється автоматично.',
             instr_freeze_title: 'Заморозка учасника (BETA)',
             instr_freeze_desc: 'Тільки адміністратор може створити. Обирає учасників для заморозки на 7 днів. Заморожений учасник не може голосувати. Якщо 2+ учасники натиснуть «Не згоден» — заморозка автоматично скасовується.',
+            instr_delete_group_title: 'Видалення групи',
+            instr_delete_group_desc: 'Будь-який учасник може створити голосування за видалення групи. Мінімальна тривалість — 24 години. Якщо 50%+1 проголосувало «за» — група видаляється автоматично, а всі учасники отримують сповіщення.',
+            instr_leave_group_title: 'Вихід із групи',
+            instr_leave_group_desc: 'Будь-який учасник (крім адміністратора) може покинути групу через меню (⋮). Адміністратор повинен спочатку передати свою роль через голосування «Зміна адміністратора».',
+            instr_delete_group_admin_title: 'Видалення групи (адмін)',
+            instr_delete_group_admin_desc: 'Адміністратор може видалити групу напряму тільки якщо він єдиний учасник. Якщо в групі 2+ учасників — потрібно створити голосування «Видалення групи».',
+            instr_duration_4: '• Видалення групи: від 24 годин',
             instr_how_to_vote: 'Як голосувати',
             instr_cast_vote_title: 'Процес голосування',
             instr_cast_vote_desc: 'Відкрийте активне голосування → оберіть «За», «Проти» або «Утримуюсь» → за бажанням додайте коментар (до 500 символів) → голос зараховано.',
@@ -2456,7 +2544,18 @@ const app = {
             delete_group_confirm: 'Ви впевнені, що хочете видалити цю групу? Всі голосування та історія будуть втрачені. Цю дію не можна скасувати.',
             group_name_required: 'Введіть назву групи',
             group_updated: 'Групу оновлено',
-            group_deleted: 'Групу видалено'
+            group_deleted: 'Групу видалено',
+            leave_group: 'Покинути групу',
+            leave_group_confirm: 'Ви впевнені, що хочете покинути цю групу? Ви втратите доступ до голосувань та історії групи.',
+            leave_group_success: 'Ви покинули групу',
+            leave: 'Покинути',
+            admin_cannot_leave: 'Адміністратор не може покинути групу. Спочатку передайте роль адміністратора іншому учаснику.',
+            delete_group_need_voting: 'У групі є інші учасники. Для видалення групи створіть голосування типу «Видалення групи».',
+            type_delete_group: 'Видалення групи',
+            group_deleted_by_voting: 'Групу видалено за результатами голосування',
+            delete_group_warning: 'Якщо голосування буде прийнято — групу буде видалено автоматично разом з усіма голосуваннями та історією.',
+            one_delete_group_at_time: 'Вже існує активне голосування за видалення цієї групи.',
+            min_duration_24h: 'Мінімальна тривалість для цього типу голосування — 24 години.'
         },
         en: {
             profile: 'Profile',
@@ -2584,6 +2683,13 @@ const app = {
             instr_remove_desc: 'Vote to exclude a member. A reason must be provided. Requirements: min. 3 members, 72 hours, 50%+1 to accept. On success — the member is removed automatically.',
             instr_freeze_title: 'Freeze Member (BETA)',
             instr_freeze_desc: 'Only the administrator can create this. Select members to freeze for 7 days. Frozen members cannot vote. If 2+ members click "I Disagree" — the freeze is automatically cancelled.',
+            instr_delete_group_title: 'Delete Group',
+            instr_delete_group_desc: 'Any member can create a vote to delete the group. Minimum duration is 24 hours. If 50%+1 vote "yes" — the group is automatically deleted and all members are notified.',
+            instr_leave_group_title: 'Leave Group',
+            instr_leave_group_desc: 'Any member (except the administrator) can leave the group via the menu (⋮). The administrator must first transfer their role through a "Change Administrator" voting.',
+            instr_delete_group_admin_title: 'Delete Group (Admin)',
+            instr_delete_group_admin_desc: 'The administrator can delete the group directly only if they are the only member. If there are 2+ members — a "Delete Group" voting must be created.',
+            instr_duration_4: '• Group deletion: from 24 hours',
             instr_how_to_vote: 'How to Vote',
             instr_cast_vote_title: 'Voting Process',
             instr_cast_vote_desc: 'Open an active voting → choose "Yes", "No", or "Abstain" → optionally add a comment (up to 500 characters) → your vote is recorded.',
@@ -2749,7 +2855,18 @@ const app = {
             delete_group_confirm: 'Are you sure you want to delete this group? All votings and history will be lost. This action cannot be undone.',
             group_name_required: 'Enter group name',
             group_updated: 'Group updated',
-            group_deleted: 'Group deleted'
+            group_deleted: 'Group deleted',
+            leave_group: 'Leave group',
+            leave_group_confirm: 'Are you sure you want to leave this group? You will lose access to votings and group history.',
+            leave_group_success: 'You left the group',
+            leave: 'Leave',
+            admin_cannot_leave: 'Administrator cannot leave the group. Transfer the admin role to another member first.',
+            delete_group_need_voting: 'There are other members in the group. To delete the group, create a "Delete group" voting.',
+            type_delete_group: 'Delete group',
+            group_deleted_by_voting: 'Group deleted by voting result',
+            delete_group_warning: 'If the vote passes — the group will be automatically deleted along with all votings and history.',
+            one_delete_group_at_time: 'There is already an active voting to delete this group.',
+            min_duration_24h: 'Minimum duration for this voting type is 24 hours.'
         },
         ru: {
             profile: 'Профиль',
@@ -2877,6 +2994,13 @@ const app = {
             instr_remove_desc: 'Голосование за исключение участника. Нужно указать причину. Требования: мин. 3 участника, 72 часа, 50%+1 для принятия. При успехе — участник удаляется автоматически.',
             instr_freeze_title: 'Заморозка участника (BETA)',
             instr_freeze_desc: 'Только администратор может создать. Выбирает участников для заморозки на 7 дней. Замороженный участник не может голосовать. Если 2+ участника нажмут «Не согласен» — заморозка автоматически отменяется.',
+            instr_delete_group_title: 'Удаление группы',
+            instr_delete_group_desc: 'Любой участник может создать голосование за удаление группы. Минимальная длительность — 24 часа. Если 50%+1 проголосовало «за» — группа удаляется автоматически, а все участники получают уведомление.',
+            instr_leave_group_title: 'Выход из группы',
+            instr_leave_group_desc: 'Любой участник (кроме администратора) может покинуть группу через меню (⋮). Администратор должен сначала передать свою роль через голосование «Смена администратора».',
+            instr_delete_group_admin_title: 'Удаление группы (админ)',
+            instr_delete_group_admin_desc: 'Администратор может удалить группу напрямую только если он единственный участник. Если в группе 2+ участников — нужно создать голосование «Удаление группы».',
+            instr_duration_4: '• Удаление группы: от 24 часов',
             instr_how_to_vote: 'Как голосовать',
             instr_cast_vote_title: 'Процесс голосования',
             instr_cast_vote_desc: 'Откройте активное голосование → выберите «За», «Против» или «Воздержусь» → по желанию добавьте комментарий (до 500 символов) → голос засчитан.',
@@ -3042,7 +3166,18 @@ const app = {
             delete_group_confirm: 'Вы уверены, что хотите удалить эту группу? Все голосования и история будут потеряны. Это действие нельзя отменить.',
             group_name_required: 'Введите название группы',
             group_updated: 'Группа обновлена',
-            group_deleted: 'Группа удалена'
+            group_deleted: 'Группа удалена',
+            leave_group: 'Покинуть группу',
+            leave_group_confirm: 'Вы уверены, что хотите покинуть эту группу? Вы потеряете доступ к голосованиям и истории группы.',
+            leave_group_success: 'Вы покинули группу',
+            leave: 'Покинуть',
+            admin_cannot_leave: 'Администратор не может покинуть группу. Сначала передайте роль администратора другому участнику.',
+            delete_group_need_voting: 'В группе есть другие участники. Для удаления группы создайте голосование типа «Удаление группы».',
+            type_delete_group: 'Удаление группы',
+            group_deleted_by_voting: 'Группа удалена по результатам голосования',
+            delete_group_warning: 'Если голосование будет принято — группа будет удалена автоматически вместе со всеми голосованиями и историей.',
+            one_delete_group_at_time: 'Уже существует активное голосование за удаление этой группы.',
+            min_duration_24h: 'Минимальная длительность для этого типа голосования — 24 часа.'
         }
     },
 
@@ -3404,6 +3539,26 @@ const app = {
                         read: false
                     });
                 }
+            } else if (voting.type === 'delete-group') {
+                const groupName = group ? group.name : voting.groupName;
+
+                // Remove group from local state
+                this.state.groups = this.state.groups.filter(g => g.id !== voting.groupId);
+
+                // Notify user
+                this.state.notifications.unshift({
+                    id: Date.now(),
+                    type: 'system',
+                    text: `${t.group_deleted_by_voting}: "${groupName}"`,
+                    time: t.just_now,
+                    read: false
+                });
+
+                // If viewing this group, navigate away
+                if (this.state.currentGroupId === voting.groupId) {
+                    this.state.currentGroupId = null;
+                    this.showScreen('groups-screen');
+                }
             }
         }
 
@@ -3442,11 +3597,15 @@ const app = {
             decision_title: 'Прийняття рішень',
             decision_desc: 'Для прийняття будь-якого рішення потрібно мінімум 50%+1 голос від усіх учасників групи. Якщо набрано менше — голосування вважається «не відбулися» (🟡).',
             delete_group_title: 'Видалення групи',
-            delete_group_desc: 'Якщо в групі 3+ учасників, адміністратор не може видалити групу без голосування. Усім учасникам надсилається запит на підтвердження.',
+            delete_group_desc: 'Якщо адміністратор єдиний учасник групи — він може видалити її напряму. Якщо в групі 2 або більше учасників — видалення можливе тільки через голосування типу «Видалення групи».',
+            delete_group_voting_title: 'Голосування «Видалення групи»',
+            delete_group_voting_desc: 'Будь-який учасник може створити голосування за видалення групи. Мінімальна тривалість — 24 години. Якщо 50%+1 проголосувало «за» — група видаляється автоматично, а всі учасники отримують сповіщення.',
+            leave_group_title: 'Вихід із групи',
+            leave_group_desc: 'Будь-який учасник (крім адміністратора) може добровільно покинути групу через меню групи (⋮). Адміністратор повинен спочатку передати свою роль через голосування «Зміна адміністратора».',
             badges_title: '🎨 Позначення голосувань',
             badges_desc: '🟡 — Голосування не відбулося (менше 50%+1 голосів)\n🟢 — Прийнято «за» (більшість проголосувала позитивно)\n🔴 — Прийнято «проти» (більшість проголосувала негативно)',
             duration_title: '⏱️ Тривалість голосування',
-            duration_desc: '• Звичайні голосування: від 1 години до 5 днів\n• Управлінські голосування (зміна адміна, видалення): фіксовано 72 години\nРезультат визначається автоматично по закінченню терміну.',
+            duration_desc: '• Звичайні голосування: від 1 години до 5 днів\n• Управлінські голосування (зміна адміна, видалення учасника): фіксовано 72 години\n• Видалення групи: від 24 годин\nРезультат визначається автоматично по закінченню терміну.',
             archive_title: '📋 Архівування',
             archive_desc: 'Адміністратор може експортувати історію голосувань групи до Google Sheets. У таблиці зберігаються: дата, питання, опис, результат, кількість учасників.'
         },
@@ -3468,11 +3627,15 @@ const app = {
             decision_title: 'Decision Making',
             decision_desc: 'To make any decision, at least 50%+1 vote from all group members is required. If fewer votes are cast — the voting is considered "did not take place" (🟡).',
             delete_group_title: 'Deleting a Group',
-            delete_group_desc: 'If there are 3+ members in the group, the administrator cannot delete the group without voting. All members receive a request for confirmation.',
+            delete_group_desc: 'If the administrator is the only member — they can delete the group directly. If there are 2 or more members — deletion is only possible through a "Delete group" voting.',
+            delete_group_voting_title: '"Delete Group" Voting',
+            delete_group_voting_desc: 'Any member can create a vote to delete the group. Minimum duration is 24 hours. If 50%+1 vote "yes" — the group is automatically deleted and all members are notified.',
+            leave_group_title: 'Leaving a Group',
+            leave_group_desc: 'Any member (except the administrator) can voluntarily leave the group via the group menu (⋮). The administrator must first transfer their role through a "Change Administrator" voting.',
             badges_title: '🎨 Voting Badges',
             badges_desc: '🟡 — Voting did not take place (less than 50%+1 votes)\n🟢 — Accepted "for" (majority voted positively)\n🔴 — Accepted "against" (majority voted negatively)',
             duration_title: '⏱️ Voting Duration',
-            duration_desc: '• Standard voting: from 1 hour to 5 days\n• Administrative voting (change admin, removal): fixed 72 hours\nResult is determined automatically at the end of the term.',
+            duration_desc: '• Standard voting: from 1 hour to 5 days\n• Administrative voting (change admin, member removal): fixed 72 hours\n• Group deletion: from 24 hours\nResult is determined automatically at the end of the term.',
             archive_title: '📋 Archiving',
             archive_desc: 'The administrator can export the group\'s voting history to Google Sheets. The table contains: date, question, description, result, number of participants.'
         },
@@ -3494,11 +3657,15 @@ const app = {
             decision_title: 'Принятие решений',
             decision_desc: 'Для принятия любого решения требуется минимум 50%+1 голос от всех участников группы. Если набрано меньше — голосование считается «не состоявшимся» (🟡).',
             delete_group_title: 'Удаление группы',
-            delete_group_desc: 'Если в группе 3+ участников, администратор не может удалить группу без голосования. Всем участникам отправляется запрос на подтверждение.',
+            delete_group_desc: 'Если администратор единственный участник группы — он может удалить её напрямую. Если в группе 2 или более участников — удаление возможно только через голосование типа «Удаление группы».',
+            delete_group_voting_title: 'Голосование «Удаление группы»',
+            delete_group_voting_desc: 'Любой участник может создать голосование за удаление группы. Минимальная длительность — 24 часа. Если 50%+1 проголосовало «за» — группа удаляется автоматически, а все участники получают уведомление.',
+            leave_group_title: 'Выход из группы',
+            leave_group_desc: 'Любой участник (кроме администратора) может добровольно покинуть группу через меню группы (⋮). Администратор должен сначала передать свою роль через голосование «Смена администратора».',
             badges_title: '🎨 Обозначения голосований',
             badges_desc: '🟡 — Голосование не состоялось (меньше 50%+1 голосов)\n🟢 — Принято «за» (большинство проголосовало положительно)\n🔴 — Принято «против» (большинство проголосовало отрицательно)',
             duration_title: '⏱️ Длительность голосования',
-            duration_desc: '• Обычные голосования: от 1 часа до 5 дней\n• Административные голосования (смена админа, удаление): фиксировано 72 часа\nРезультат определяется автоматически по окончании срока.',
+            duration_desc: '• Обычные голосования: от 1 часа до 5 дней\n• Административные голосования (смена админа, удаление участника): фиксировано 72 часа\n• Удаление группы: от 24 часов\nРезультат определяется автоматически по окончании срока.',
             archive_title: '📋 Архивирование',
             archive_desc: 'Администратор может экспортировать историю голосований группы в Google Sheets. В таблице сохраняются: дата, вопрос, описание, результат, количество участников.'
         }

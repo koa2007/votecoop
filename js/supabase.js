@@ -267,6 +267,14 @@ const supabaseService = {
         return { error };
     },
 
+    async leaveGroup(groupId) {
+        if (!this.isReady()) {
+            return { error: { message: 'Supabase not configured' } };
+        }
+        const { error } = await this.client.rpc('leave_group', { p_group_id: groupId });
+        return { error };
+    },
+
     // Get detailed group info (members, requests, history, stats)
     async getGroupDetail(groupId) {
         if (!this.isReady()) {

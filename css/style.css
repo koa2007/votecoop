@@ -1302,6 +1302,10 @@ html, body {
     color: var(--color-danger);
 }
 
+.action-sheet-item.action-leave {
+    color: var(--color-warning, #f59e0b);
+}
+
 .action-icon {
     font-size: 20px;
     width: 28px;
@@ -1973,6 +1977,25 @@ textarea:focus-visible {
 .removal-reason {
     margin-top: 8px;
     font-size: 14px;
+}
+
+.delete-group-warning {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid var(--color-danger);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    margin-top: 16px;
+    font-size: 14px;
+    color: var(--color-danger);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.delete-group-warning i {
+    font-size: 18px;
+    flex-shrink: 0;
+    margin-top: 1px;
 }
 
 /* Comments Section */
