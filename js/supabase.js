@@ -389,9 +389,13 @@ const supabaseService = {
         if (!userId) return { data: null, error: { message: 'User not authenticated' } };
 
         // Get group IDs
-        const { data: memberships } = await this.client.from('group_members')
+        const { data: memberships, error: membershipError } = await this.client.from('group_members')
             .select('group_id')
             .eq('user_id', userId);
+
+        if (membershipError) {
+            return { data: null, error: membershipError };
+        }
 
         if (!memberships || memberships.length === 0) {
             return { data: [], error: null };
@@ -466,11 +470,14 @@ const supabaseService = {
         return { data, error };
     },
 
-    // Delete (soft) a voting
+    // Delete (soft) a voting — only the author can delete
     async deleteVoting(votingId, reason) {
         if (!this.isReady()) {
             return { data: null, error: { message: 'Supabase not configured' } };
         }
+
+        const userId = await this._getUserId();
+        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
 
         const { data, error } = await this.client.from('votings')
             .update({
@@ -479,6 +486,7 @@ const supabaseService = {
                 deleted_reason: reason
             })
             .eq('id', votingId)
+            .eq('created_by', userId)
             .select()
             .single();
 
@@ -546,8 +554,12 @@ const supabaseService = {
             return { data: null, error: null };
         }
 
+        const userId = await this._getUserId();
+        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
+
         const { data, error } = await this.client.from('notifications')
             .select('*')
+            .eq('user_id', userId)
             .order('created_at', { ascending: false })
             .limit(100);
 
@@ -560,9 +572,13 @@ const supabaseService = {
             return { error: null };
         }
 
+        const userId = await this._getUserId();
+        if (!userId) return { error: { message: 'User not authenticated' } };
+
         const { error } = await this.client.from('notifications')
             .update({ is_read: true })
-            .eq('id', notificationId);
+            .eq('id', notificationId)
+            .eq('user_id', userId);
 
         return { error };
     },

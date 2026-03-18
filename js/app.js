@@ -116,16 +116,14 @@ const app = {
             this.showScreen('main-screens');
 
             // Load data from Supabase in parallel
-            console.log('[DEBUG] handleAuthSession: starting data load');
             try {
                 await Promise.all([
                     this.loadMyGroups(),
                     this.loadMyVotings(),
                     this.loadMyNotifications()
                 ]);
-                console.log('[DEBUG] handleAuthSession: data load complete');
             } catch (loadErr) {
-                console.error('[DEBUG] handleAuthSession: data load FAILED:', loadErr);
+                // Data load failed silently — groups/votings may be empty
             }
 
             // Check expired votings (non-blocking)
@@ -286,6 +284,7 @@ const app = {
     // Show auth error message
     showAuthError(msg) {
         const el = document.getElementById('auth-error');
+        if (!el) return;
         el.textContent = msg;
         el.classList.remove('hidden');
         const successEl = document.getElementById('auth-success');
@@ -295,6 +294,7 @@ const app = {
     // Show auth success message
     showAuthSuccess(msg) {
         const el = document.getElementById('auth-success');
+        if (!el) return;
         el.textContent = msg;
         el.classList.remove('hidden');
         const errorEl = document.getElementById('auth-error');
@@ -537,11 +537,15 @@ const app = {
         this.updateProfileDisplay();
 
         // Load data from Supabase
-        await Promise.all([
-            this.loadMyGroups(),
-            this.loadMyVotings(),
-            this.loadMyNotifications()
-        ]);
+        try {
+            await Promise.all([
+                this.loadMyGroups(),
+                this.loadMyVotings(),
+                this.loadMyNotifications()
+            ]);
+        } catch (loadErr) {
+            console.error('[acceptTerms] Data load failed:', loadErr);
+        }
 
         // Start periodic check
         if (this._expiryInterval) clearInterval(this._expiryInterval);
@@ -559,13 +563,8 @@ const app = {
     // === DATA LOADING FROM SUPABASE ===
 
     async loadMyGroups() {
-        console.log('[DEBUG] loadMyGroups called');
         const { data, error } = await supabaseService.getMyGroups();
-        console.log('[DEBUG] getMyGroups result:', { data, error });
-        if (error || !data) {
-            console.log('[DEBUG] loadMyGroups early return - error or no data');
-            return;
-        }
+        if (error || !data) return;
 
         this.state.groups = data.map(item => ({
             id: item.group.id,
@@ -580,7 +579,6 @@ const app = {
             history: []
         }));
 
-        console.log('[DEBUG] state.groups after load:', JSON.stringify(this.state.groups));
         this.renderGroups();
     },
 
@@ -695,8 +693,9 @@ const app = {
         list.innerHTML = filtered.map(voting => {
             const abstainVotes = voting.abstainVotes || 0;
             const totalVoted = voting.yesVotes + voting.noVotes + abstainVotes;
-            const progress = Math.round((totalVoted / voting.totalMembers) * 100);
-            const yesPercent = Math.round((voting.yesVotes / voting.totalMembers) * 100);
+            const safeTotal = voting.totalMembers > 0 ? voting.totalMembers : 1;
+            const progress = Math.round((totalVoted / safeTotal) * 100);
+            const yesPercent = Math.round((voting.yesVotes / safeTotal) * 100);
             const timeLeft = this.getTimeLeft(voting.endsAt);
             
             // Format creation date
@@ -803,7 +802,7 @@ const app = {
         
         // Update nav label
         const navLabel = document.getElementById('nav-notifications');
-        navLabel.textContent = unreadCount > 0 ? `${t.notifications} (${unreadCount})` : t.notifications;
+        if (navLabel) navLabel.textContent = unreadCount > 0 ? `${t.notifications} (${unreadCount})` : t.notifications;
 
         if (this.state.notifications.length === 0) {
             list.innerHTML = `<div class="empty-state">${t.empty_notifications}</div>`;
@@ -832,7 +831,7 @@ const app = {
     },
 
     async markRead(id) {
-        const notif = this.state.notifications.find(n => n.id === id);
+        const notif = this.state.notifications.find(n => String(n.id) === String(id));
         if (notif && !notif.read) {
             notif.read = true;
             this.renderNotifications();
@@ -894,43 +893,43 @@ const app = {
             // Fixed 72 hours for admin/member votes
             durationGroup.classList.add('hidden');
             document.getElementById('voting-duration').value = '72';
-            
+
             // Show member selection
             targetGroup.classList.remove('hidden');
-            
+
             // Update label
             const label = targetGroup.querySelector('label');
             label.textContent = type === 'admin-change' ? t.target_admin_candidate : t.target_member_remove;
-            
+
             // Populate members
             if (groupId) {
                 const group = this.state.groups.find(g => g.id === groupId);
                 if (group) {
                     // Filter members (for admin-change: exclude current admin, for remove: exclude admin too)
-                    const eligibleMembers = group.members.filter(m => 
+                    const eligibleMembers = group.members.filter(m =>
                         type === 'admin-change' ? m.role !== 'admin' : m.role !== 'admin'
                     );
-                    
+
                     targetSelect.innerHTML = `<option value="">${t.select_member}</option>` +
                         eligibleMembers.map(m => `<option value="${m.id}">${this.escapeHTML(m.name)} (${this.escapeHTML(m.address)})</option>`).join('');
                 }
+            }
+
+            // Show reason field for member removal
+            if (type === 'remove-member') {
+                reasonGroup.classList.remove('hidden');
             }
         } else if (type === 'freeze') {
             // Fixed 7 days (168 hours) for freeze votes
             durationGroup.classList.add('hidden');
             document.getElementById('voting-duration').value = '168';
-            
+
             // Show freeze member selection
             if (freezeGroup) freezeGroup.classList.remove('hidden');
-            
+
             // Store selected members for freeze
             this.state.freezeSelectedMembers = [];
             this.renderFreezeMemberChips();
-            
-            // Show reason field for removal
-            if (type === 'remove-member') {
-                reasonGroup.classList.remove('hidden');
-            }
         }
     },
 
@@ -1296,11 +1295,12 @@ const app = {
         const isActive = voting.status === 'active';
         const isAuthor = voting.initiatorId === this.state.user.id;
         const abstainVotes = voting.abstainVotes || 0;
-        const yesPercent = Math.round((voting.yesVotes / voting.totalMembers) * 100);
-        const noPercent = Math.round((voting.noVotes / voting.totalMembers) * 100);
-        const abstainPercent = Math.round((abstainVotes / voting.totalMembers) * 100);
+        const safeTotal = voting.totalMembers > 0 ? voting.totalMembers : 1;
+        const yesPercent = Math.round((voting.yesVotes / safeTotal) * 100);
+        const noPercent = Math.round((voting.noVotes / safeTotal) * 100);
+        const abstainPercent = Math.round((abstainVotes / safeTotal) * 100);
         const totalVoted = voting.yesVotes + voting.noVotes + abstainVotes;
-        const participation = Math.round((totalVoted / voting.totalMembers) * 100);
+        const participation = Math.round((totalVoted / safeTotal) * 100);
 
         // Build target member info
         let targetInfo = '';
@@ -1718,7 +1718,13 @@ const app = {
             group.history = (data.history || []).map(h => ({
                 date: new Date(h.created_at).toLocaleString(),
                 action: h.action,
-                details: h.details || {}
+                details: h.details || {},
+                from: h.details?.from || '',
+                to: h.details?.to || '',
+                member: h.details?.member || '',
+                reason: h.details?.reason || '',
+                initiator: h.details?.initiator || '',
+                votingId: h.details?.votingId || ''
             }));
 
             group.membersCount = data.stats?.members_count || group.members.length;
@@ -1981,7 +1987,7 @@ const app = {
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `group-${groupId}-history-${new Date().toISOString().split('T')[0]}.csv`;
+        link.download = `group-${group ? group.groupId : 'unknown'}-history-${new Date().toISOString().split('T')[0]}.csv`;
         link.click();
     },
 
@@ -2949,6 +2955,7 @@ const app = {
 
     // Freeze voting member selection
     searchFreezeMembers(query) {
+        const t = this.translations[this.currentLanguage];
         if (!query || query.length < 2) {
             document.getElementById('freeze-search-results').classList.add('hidden');
             return;
