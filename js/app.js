@@ -116,11 +116,13 @@ const app = {
             this.showScreen('main-screens');
 
             // Load data from Supabase in parallel
+            console.log('[DEBUG] handleAuthSession: starting data load');
             await Promise.all([
                 this.loadMyGroups(),
                 this.loadMyVotings(),
                 this.loadMyNotifications()
             ]);
+            console.log('[DEBUG] handleAuthSession: data load complete');
 
             // Check expired votings (non-blocking)
             this.checkExpiredVotingsServer();
@@ -553,8 +555,13 @@ const app = {
     // === DATA LOADING FROM SUPABASE ===
 
     async loadMyGroups() {
+        console.log('[DEBUG] loadMyGroups called');
         const { data, error } = await supabaseService.getMyGroups();
-        if (error || !data) return;
+        console.log('[DEBUG] getMyGroups result:', { data, error });
+        if (error || !data) {
+            console.log('[DEBUG] loadMyGroups early return - error or no data');
+            return;
+        }
 
         this.state.groups = data.map(item => ({
             id: item.group.id,
@@ -569,6 +576,7 @@ const app = {
             history: []
         }));
 
+        console.log('[DEBUG] state.groups after load:', JSON.stringify(this.state.groups));
         this.renderGroups();
     },
 
