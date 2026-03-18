@@ -533,6 +533,73 @@
             </div>
         </div>
 
+        <!-- Group Menu Action Sheet -->
+        <div class="modal hidden" id="group-menu-modal">
+            <div class="modal-overlay" onclick="app.hideModal('group-menu-modal')"></div>
+            <div class="modal-content modal-action-sheet">
+                <div class="modal-header">
+                    <h3 data-lang="group_menu">Меню групи</h3>
+                    <button class="btn-icon" onclick="app.hideModal('group-menu-modal')" aria-label="Close">✕</button>
+                </div>
+                <div class="modal-body action-sheet-body">
+                    <button class="action-sheet-item" onclick="app.editGroup()">
+                        <span class="action-icon">✏️</span>
+                        <span data-lang="edit_group">Редагувати групу</span>
+                    </button>
+                    <button class="action-sheet-item action-danger" id="group-menu-delete-btn" onclick="app.confirmDeleteGroup()">
+                        <span class="action-icon">🗑️</span>
+                        <span data-lang="delete_group">Видалити групу</span>
+                    </button>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary btn-full" onclick="app.hideModal('group-menu-modal')" data-lang="cancel">Скасувати</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Group Modal -->
+        <div class="modal hidden" id="edit-group-modal">
+            <div class="modal-overlay" onclick="app.hideModal('edit-group-modal')"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 data-lang="edit_group">Редагувати групу</h3>
+                    <button class="btn-icon" onclick="app.hideModal('edit-group-modal')" aria-label="Close">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label data-lang="group_name">Назва групи</label>
+                        <input type="text" id="edit-group-name" placeholder="Назва групи">
+                    </div>
+                    <div class="form-group">
+                        <label data-lang="group_description">Опис (необов'язково)</label>
+                        <textarea id="edit-group-description" placeholder="Короткий опис групи..." rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="app.hideModal('edit-group-modal')" data-lang="cancel">Скасувати</button>
+                    <button class="btn btn-primary" onclick="app.saveEditedGroup()" data-lang="save">Зберегти</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Delete Group Confirmation Modal -->
+        <div class="modal hidden" id="delete-group-modal">
+            <div class="modal-overlay" onclick="app.hideModal('delete-group-modal')"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 data-lang="delete_group">Видалити групу</h3>
+                    <button class="btn-icon" onclick="app.hideModal('delete-group-modal')" aria-label="Close">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p data-lang="delete_group_confirm">Ви впевнені, що хочете видалити цю групу? Всі голосування та історія будуть втрачені. Цю дію не можна скасувати.</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="app.hideModal('delete-group-modal')" data-lang="cancel">Скасувати</button>
+                    <button class="btn btn-primary" style="background: var(--color-danger);" onclick="app.deleteGroup()" data-lang="delete">Видалити</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Terms Modal (shown on first profile save) -->
         <div class="modal hidden" id="terms-modal">
             <div class="modal-overlay"></div>

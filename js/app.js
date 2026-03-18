@@ -2065,8 +2065,91 @@ const app = {
     },
 
     showGroupMenu() {
-        // Simple alert for prototype - could be a dropdown menu
-        alert('Меню групи: \n• Редагувати\n• Архівувати\n• Видалити (голосування)');
+        const group = this.state.groups.find(g => g.id === this.state.currentGroupId);
+        const isAdmin = group && group.role === 'admin';
+        const deleteBtn = document.getElementById('group-menu-delete-btn');
+        if (deleteBtn) {
+            deleteBtn.style.display = isAdmin ? 'flex' : 'none';
+        }
+        this.showModal('group-menu-modal');
+    },
+
+    editGroup() {
+        this.hideModal('group-menu-modal');
+        const group = this.state.groups.find(g => g.id === this.state.currentGroupId);
+        if (!group) return;
+        document.getElementById('edit-group-name').value = group.name || '';
+        document.getElementById('edit-group-description').value = group.description || '';
+        this.showModal('edit-group-modal');
+    },
+
+    async saveEditedGroup() {
+        const t = this.translations[this.currentLanguage];
+        const name = document.getElementById('edit-group-name').value.trim();
+        const description = document.getElementById('edit-group-description').value.trim();
+
+        if (!name) {
+            alert(t.group_name_required || 'Введіть назву групи');
+            return;
+        }
+
+        const groupId = this.state.currentGroupId;
+        if (!groupId) return;
+
+        const btn = document.querySelector('#edit-group-modal .btn-primary');
+        if (btn) { btn.classList.add('btn-loading'); btn.disabled = true; }
+
+        try {
+            const { error } = await supabaseService.updateGroup(groupId, { name, description });
+            if (error) throw new Error(error.message);
+
+            // Update local state
+            const group = this.state.groups.find(g => g.id === groupId);
+            if (group) {
+                group.name = name;
+                group.description = description;
+            }
+
+            this.hideModal('edit-group-modal');
+            document.getElementById('group-detail-name').textContent = name;
+            document.getElementById('group-detail-description').textContent = description;
+            this.renderGroups();
+        } catch (err) {
+            alert(t.auth_error_network || err.message);
+        } finally {
+            if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
+        }
+    },
+
+    confirmDeleteGroup() {
+        this.hideModal('group-menu-modal');
+        this.showModal('delete-group-modal');
+    },
+
+    async deleteGroup() {
+        const t = this.translations[this.currentLanguage];
+        const groupId = this.state.currentGroupId;
+        if (!groupId) return;
+
+        const btn = document.querySelector('#delete-group-modal .btn-primary, #delete-group-modal .btn[style]');
+        if (btn) { btn.classList.add('btn-loading'); btn.disabled = true; }
+
+        try {
+            const { error } = await supabaseService.deleteGroup(groupId);
+            if (error) throw new Error(error.message);
+
+            // Remove from local state
+            this.state.groups = this.state.groups.filter(g => g.id !== groupId);
+            this.state.currentGroupId = null;
+
+            this.hideModal('delete-group-modal');
+            this.showScreen('groups-screen');
+            this.renderGroups();
+        } catch (err) {
+            alert(t.auth_error_network || err.message);
+        } finally {
+            if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
+        }
     },
 
     updateProfileDisplay() {
@@ -2366,7 +2449,14 @@ const app = {
             auth_error_not_confirmed: 'Підтвердіть email перш ніж увійти',
             auth_error_enter_email: 'Введіть email для відновлення пароля',
             auth_check_email: 'Перевірте пошту для підтвердження реєстрації',
-            auth_reset_sent: 'Лист для відновлення пароля надіслано на вашу пошту'
+            auth_reset_sent: 'Лист для відновлення пароля надіслано на вашу пошту',
+            group_menu: 'Меню групи',
+            edit_group: 'Редагувати групу',
+            delete_group: 'Видалити групу',
+            delete_group_confirm: 'Ви впевнені, що хочете видалити цю групу? Всі голосування та історія будуть втрачені. Цю дію не можна скасувати.',
+            group_name_required: 'Введіть назву групи',
+            group_updated: 'Групу оновлено',
+            group_deleted: 'Групу видалено'
         },
         en: {
             profile: 'Profile',
@@ -2652,7 +2742,14 @@ const app = {
             auth_error_not_confirmed: 'Please confirm your email before signing in',
             auth_error_enter_email: 'Enter your email to reset password',
             auth_check_email: 'Check your email to confirm registration',
-            auth_reset_sent: 'Password reset email has been sent'
+            auth_reset_sent: 'Password reset email has been sent',
+            group_menu: 'Group Menu',
+            edit_group: 'Edit Group',
+            delete_group: 'Delete Group',
+            delete_group_confirm: 'Are you sure you want to delete this group? All votings and history will be lost. This action cannot be undone.',
+            group_name_required: 'Enter group name',
+            group_updated: 'Group updated',
+            group_deleted: 'Group deleted'
         },
         ru: {
             profile: 'Профиль',
@@ -2938,7 +3035,14 @@ const app = {
             auth_error_not_confirmed: 'Подтвердите email перед входом',
             auth_error_enter_email: 'Введите email для восстановления пароля',
             auth_check_email: 'Проверьте почту для подтверждения регистрации',
-            auth_reset_sent: 'Письмо для восстановления пароля отправлено на вашу почту'
+            auth_reset_sent: 'Письмо для восстановления пароля отправлено на вашу почту',
+            group_menu: 'Меню группы',
+            edit_group: 'Редактировать группу',
+            delete_group: 'Удалить группу',
+            delete_group_confirm: 'Вы уверены, что хотите удалить эту группу? Все голосования и история будут потеряны. Это действие нельзя отменить.',
+            group_name_required: 'Введите название группы',
+            group_updated: 'Группа обновлена',
+            group_deleted: 'Группа удалена'
         }
     },
 

@@ -77,6 +77,18 @@ CREATE POLICY "Groups visible to members"
     ON groups FOR SELECT TO authenticated
     USING (is_group_member(id, auth.uid()));
 
+-- Creator can update their group
+DROP POLICY IF EXISTS "Creator can update group" ON groups;
+CREATE POLICY "Creator can update group"
+    ON groups FOR UPDATE TO authenticated
+    USING (created_by = auth.uid());
+
+-- Creator can delete their group
+DROP POLICY IF EXISTS "Creator can delete group" ON groups;
+CREATE POLICY "Creator can delete group"
+    ON groups FOR DELETE TO authenticated
+    USING (created_by = auth.uid());
+
 -- =====================
 -- 4. Fix join_requests policies (referenced group_members directly)
 -- =====================

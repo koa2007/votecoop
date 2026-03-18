@@ -1269,6 +1269,50 @@ html, body {
     flex: 1;
 }
 
+/* Action Sheet (group menu, etc.) */
+.modal-action-sheet {
+    max-height: 50vh;
+}
+
+.action-sheet-body {
+    padding: 8px 0;
+}
+
+.action-sheet-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 14px 20px;
+    border: none;
+    background: transparent;
+    font-size: 16px;
+    color: var(--color-text);
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    transition: background 0.15s;
+}
+
+.action-sheet-item:active {
+    background: var(--color-surface-secondary);
+}
+
+.action-sheet-item.action-danger {
+    color: var(--color-danger);
+}
+
+.action-icon {
+    font-size: 20px;
+    width: 28px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.btn-full {
+    width: 100%;
+}
+
 /* Voting Detail */
 .voting-detail-header {
     margin-bottom: 24px;

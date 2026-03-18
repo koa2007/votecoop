@@ -234,6 +234,39 @@ const supabaseService = {
         return { data, error };
     },
 
+    // Update group name/description (admin only)
+    async updateGroup(groupId, updates) {
+        const userId = await this._getUserId();
+        if (!userId) return { error: { message: 'User not authenticated' } };
+
+        const { data, error } = await this.client
+            .from('groups')
+            .update({
+                name: updates.name,
+                description: updates.description
+            })
+            .eq('id', groupId)
+            .eq('created_by', userId)
+            .select()
+            .single();
+
+        return { data, error };
+    },
+
+    // Delete group (admin/creator only)
+    async deleteGroup(groupId) {
+        const userId = await this._getUserId();
+        if (!userId) return { error: { message: 'User not authenticated' } };
+
+        const { error } = await this.client
+            .from('groups')
+            .delete()
+            .eq('id', groupId)
+            .eq('created_by', userId);
+
+        return { error };
+    },
+
     // Get detailed group info (members, requests, history, stats)
     async getGroupDetail(groupId) {
         if (!this.isReady()) {
