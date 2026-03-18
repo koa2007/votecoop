@@ -2066,7 +2066,7 @@ const app = {
 
     showGroupMenu() {
         const group = this.state.groups.find(g => g.id === this.state.currentGroupId);
-        const isAdmin = group && group.role === 'admin';
+        const isAdmin = group && group.isAdmin;
         const deleteBtn = document.getElementById('group-menu-delete-btn');
         if (deleteBtn) {
             deleteBtn.style.display = isAdmin ? 'flex' : 'none';
