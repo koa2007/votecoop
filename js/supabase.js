@@ -682,5 +682,13 @@ const supabaseService = {
         });
 
         return { error };
+    },
+
+    async notifyJoinRequest(groupId) {
+        if (!this.isReady()) {
+            return { error: { message: 'Supabase not configured' } };
+        }
+        const { error } = await this.client.rpc('notify_join_request', { p_group_id: groupId });
+        return { error };
     }
 };

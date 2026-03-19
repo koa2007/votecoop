@@ -1234,12 +1234,15 @@ const app = {
 
             document.getElementById('join-group-id').value = '';
 
-            // Create notification in DB
+            // Create notification in DB for the requester
             await supabaseService.createNotification(
                 this.state.user.id,
                 'system',
                 `${t.join_request_sent || 'Запит на приєднання надіслано'}: ${group.name}`
             );
+
+            // Notify group admin about the join request
+            await supabaseService.notifyJoinRequest(group.id);
 
             // Add notification locally for instant display
             this.state.notifications.unshift({
