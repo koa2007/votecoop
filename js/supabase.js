@@ -244,6 +244,15 @@ const supabaseService = {
         return { data: data || [], error };
     },
 
+    // Combined groups + stats in one RPC call (faster than 2 separate queries)
+    async getMyGroupsWithStats() {
+        if (!this.isReady()) {
+            return { data: null, error: null };
+        }
+        const { data, error } = await this.client.rpc('get_my_groups_with_stats');
+        return { data, error };
+    },
+
     // Update group name/description (admin only)
     async updateGroup(groupId, updates) {
         const userId = await this._getUserId();

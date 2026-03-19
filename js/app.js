@@ -113,9 +113,8 @@ const app = {
 
             this.setupEventListeners();
             this.updateProfileDisplay();
-            this.showScreen('main-screens');
 
-            // Load data from Supabase in parallel
+            // Load data BEFORE showing main screen (keep spinner visible)
             try {
                 await Promise.all([
                     this.loadMyGroups(),
@@ -125,6 +124,9 @@ const app = {
             } catch (loadErr) {
                 // Data load failed silently — groups/votings may be empty
             }
+
+            // Show main screen only AFTER data is loaded
+            this.showScreen('main-screens');
 
             // Check expired votings (non-blocking)
             this.checkExpiredVotingsServer();
@@ -530,13 +532,11 @@ const app = {
 
         this.hideModal('terms-modal');
         document.getElementById('profile-setup-screen').classList.add('hidden');
-        document.getElementById('main-screens').classList.remove('hidden');
 
         this.setupEventListeners();
-        this.showScreen('voting-screen');
         this.updateProfileDisplay();
 
-        // Load data from Supabase
+        // Load data BEFORE showing main screen
         try {
             await Promise.all([
                 this.loadMyGroups(),
@@ -544,8 +544,12 @@ const app = {
                 this.loadMyNotifications()
             ]);
         } catch (loadErr) {
-            console.error('[acceptTerms] Data load failed:', loadErr);
+            // Data load failed silently
         }
+
+        // Show main screen only AFTER data is loaded
+        document.getElementById('main-screens').classList.remove('hidden');
+        this.showScreen('voting-screen');
 
         // Start periodic check
         if (this._expiryInterval) clearInterval(this._expiryInterval);
@@ -556,6 +560,11 @@ const app = {
         if (supabaseService.isReady()) {
             await supabaseService.signOut();
         }
+        // Clear cached data
+        try {
+            localStorage.removeItem('vc_groups');
+            localStorage.removeItem('vc_notifications');
+        } catch (e) { /* ignore */ }
         // Clear state and reload
         location.reload();
     },
@@ -563,29 +572,36 @@ const app = {
     // === DATA LOADING FROM SUPABASE ===
 
     async loadMyGroups() {
-        const { data, error } = await supabaseService.getMyGroups();
+        // Show cached data instantly
+        try {
+            const cached = localStorage.getItem('vc_groups');
+            if (cached) {
+                this.state.groups = JSON.parse(cached);
+                this.renderGroups();
+                this.updateProfileDisplay();
+            }
+        } catch (e) { /* ignore parse errors */ }
+
+        // Fetch fresh data from server
+        const { data, error } = await supabaseService.getMyGroupsWithStats();
         if (error || !data) return;
 
-        const groupIds = data.map(item => item.group.id);
-        const { data: stats } = await supabaseService.getGroupsStats(groupIds);
-        const statsMap = {};
-        (stats || []).forEach(s => { statsMap[s.group_id] = s; });
+        this.state.groups = data.map(item => ({
+            id: item.group_id,
+            name: item.name,
+            description: item.description,
+            groupId: item.group_code,
+            isAdmin: item.role === 'admin',
+            membersCount: item.members_count || 0,
+            votingsCount: item.total_votings_count || 0,
+            members: [],
+            requests: [],
+            history: []
+        }));
 
-        this.state.groups = data.map(item => {
-            const s = statsMap[item.group.id] || {};
-            return {
-                id: item.group.id,
-                name: item.group.name,
-                description: item.group.description,
-                groupId: item.group.group_code,
-                isAdmin: item.role === 'admin',
-                membersCount: s.members_count || 0,
-                votingsCount: s.total_votings_count || 0,
-                members: [],
-                requests: [],
-                history: []
-            };
-        });
+        // Cache for next load
+        try { localStorage.setItem('vc_groups', JSON.stringify(this.state.groups)); }
+        catch (e) { /* storage full */ }
 
         this.renderGroups();
         this.updateProfileDisplay();
@@ -659,6 +675,16 @@ const app = {
     },
 
     async loadMyNotifications() {
+        // Show cached data instantly
+        try {
+            const cached = localStorage.getItem('vc_notifications');
+            if (cached) {
+                this.state.notifications = JSON.parse(cached);
+                this.renderNotifications();
+            }
+        } catch (e) { /* ignore */ }
+
+        // Fetch fresh data
         const { data, error } = await supabaseService.getMyNotifications();
         if (error || !data) return;
 
@@ -669,6 +695,9 @@ const app = {
             time: new Date(n.created_at).toLocaleString(),
             read: n.is_read
         }));
+
+        try { localStorage.setItem('vc_notifications', JSON.stringify(this.state.notifications)); }
+        catch (e) { /* storage full */ }
 
         this.renderNotifications();
     },
