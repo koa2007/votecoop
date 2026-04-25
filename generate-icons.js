@@ -43,7 +43,7 @@ function generateMaskableIcon(size, outputPath) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = `900 ${Math.round(size * 0.46)}px Arial, "Segoe UI", sans-serif`;
-    ctx.fillText('V', size / 2, size / 2 + size * 0.02);
+    ctx.fillText('S', size / 2, size / 2 + size * 0.02);
 
     fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
     console.log(`maskable: ${outputPath} (${size}x${size})`);
@@ -62,7 +62,7 @@ function generateRoundedIcon(size, outputPath) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = `900 ${Math.round(size * 0.46)}px Arial, "Segoe UI", sans-serif`;
-    ctx.fillText('V', size / 2, size / 2 + size * 0.02);
+    ctx.fillText('S', size / 2, size / 2 + size * 0.02);
 
     fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
     console.log(`rounded:  ${outputPath} (${size}x${size})`);

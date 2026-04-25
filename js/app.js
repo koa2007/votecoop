@@ -1,4 +1,4 @@
-// VoteCoop App
+// Spilka App
 const app = {
     state: {
         user: null,
@@ -1278,7 +1278,7 @@ const app = {
         const btn = document.getElementById('install-app-btn');
         if (btn) btn.classList.add('hidden');
         const t = this.translations[this.currentLanguage] || {};
-        this.toastSuccess(t.install_thanks || 'Дякуємо! Тепер VoteCoop на головному екрані.');
+        this.toastSuccess(t.install_thanks || 'Дякуємо! Тепер Spilka на головному екрані.');
     },
 
     async installApp() {
@@ -2828,7 +2828,7 @@ const app = {
             theme_light: 'Світла',
             theme_dark: 'Темна',
             install_app: 'Встановити на головний екран',
-            install_thanks: 'Дякуємо! VoteCoop встановлено на головному екрані.',
+            install_thanks: 'Дякуємо! Spilka встановлено на головному екрані.',
             install_already: 'Додаток уже встановлено',
             install_ios_hint: 'На iPhone/iPad: натисніть «Поділитися» (квадрат зі стрілкою) і виберіть «На екран Домівка».',
             install_not_ready: 'Опція встановлення поки недоступна. Перевірте, що сторінку відкрито через HTTPS — і спробуйте знову.',
@@ -2936,7 +2936,7 @@ const app = {
             yes: 'За',
             no: 'Проти',
             participation: 'участі',
-            instructions_title: 'Як користуватися VoteCoop',
+            instructions_title: 'Як користуватися Spilka',
             instr_quick_start: 'Швидкий старт',
             instr_qs_step1: '1. <strong>Увійдіть</strong> через Google-акаунт',
             instr_qs_step2: '2. <strong>Заповніть профіль</strong> — вкажіть ім\'я, прізвище, телефон та номер квартири/ділянки (обов\'язково для голосування)',
@@ -3168,7 +3168,7 @@ const app = {
             theme_light: 'Light',
             theme_dark: 'Dark',
             install_app: 'Install on home screen',
-            install_thanks: 'Thanks! VoteCoop is now on your home screen.',
+            install_thanks: 'Thanks! Spilka is now on your home screen.',
             install_already: 'App is already installed',
             install_ios_hint: 'On iPhone/iPad: tap "Share" (square with arrow) and choose "Add to Home Screen".',
             install_not_ready: 'Install option is not available right now. Make sure you opened the page via HTTPS and try again.',
@@ -3276,7 +3276,7 @@ const app = {
             yes: 'Yes',
             no: 'No',
             participation: 'participation',
-            instructions_title: 'How to use VoteCoop',
+            instructions_title: 'How to use Spilka',
             instr_quick_start: 'Quick Start',
             instr_qs_step1: '1. <strong>Sign in</strong> with your Google account',
             instr_qs_step2: '2. <strong>Complete your profile</strong> — enter name, phone, and apartment/plot number (required to vote)',
@@ -3508,7 +3508,7 @@ const app = {
             theme_light: 'Светлая',
             theme_dark: 'Тёмная',
             install_app: 'Установить на главный экран',
-            install_thanks: 'Спасибо! VoteCoop теперь на главном экране.',
+            install_thanks: 'Спасибо! Spilka теперь на главном экране.',
             install_already: 'Приложение уже установлено',
             install_ios_hint: 'На iPhone/iPad: нажмите «Поделиться» (квадрат со стрелкой) и выберите «На экран Домой».',
             install_not_ready: 'Опция установки сейчас недоступна. Проверьте, что страница открыта через HTTPS — и попробуйте снова.',
@@ -3616,7 +3616,7 @@ const app = {
             yes: 'За',
             no: 'Против',
             participation: 'участия',
-            instructions_title: 'Как пользоваться VoteCoop',
+            instructions_title: 'Как пользоваться Spilka',
             instr_quick_start: 'Быстрый старт',
             instr_qs_step1: '1. <strong>Войдите</strong> через Google-аккаунт',
             instr_qs_step2: '2. <strong>Заполните профиль</strong> — укажите имя, фамилию, телефон и номер квартиры/участка (обязательно для голосования)',
@@ -3996,9 +3996,9 @@ const app = {
 
         // Update document title
         const titles = {
-            uk: 'VoteCoop - Голосування для спільнот',
-            en: 'VoteCoop - Voting for communities',
-            ru: 'VoteCoop - Голосования для сообществ'
+            uk: 'Spilka - Голосування для спільнот',
+            en: 'Spilka - Voting for communities',
+            ru: 'Spilka - Голосования для сообществ'
         };
         document.title = titles[lang];
 

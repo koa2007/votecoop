@@ -1,6 +1,6 @@
 {
-  "name": "VoteCoop — Голосування для ОСББ",
-  "short_name": "VoteCoop",
+  "name": "Spilka — Голосування для спільнот",
+  "short_name": "Spilka",
   "description": "Додаток для демократичного голосування в ОСББ та кооперативах",
   "start_url": "./index.html",
   "scope": "./",
