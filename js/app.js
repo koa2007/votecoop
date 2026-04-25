@@ -2094,6 +2094,20 @@ const app = {
             group.votingsCount = data.stats?.total_votings_count || 0;
         }
 
+        // Fetch per-member vote counts so participation column shows real data
+        // (Without this, getMemberParticipation would always return 0 because
+        // votes are not loaded into voting.comments.)
+        try {
+            const { data: votesData } = await supabaseService.client
+                .rpc('get_group_member_votes', { p_group_id: group.id });
+            group.memberVotes = {};
+            (votesData || []).forEach(row => {
+                group.memberVotes[row.user_id] = Number(row.voted_count) || 0;
+            });
+        } catch (e) {
+            group.memberVotes = group.memberVotes || {};
+        }
+
         // Count frozen members
         const members = group.members || [];
         const frozenCount = members.filter(m => m.frozen).length;
@@ -2133,15 +2147,26 @@ const app = {
 
     // Calculate member participation in group votings
     getMemberParticipation(memberId, groupId) {
-        const groupVotings = this.state.votings.filter(v => v.groupId === groupId);
+        // Use only non-deleted votings for the denominator (matches the RPC)
+        const groupVotings = this.state.votings.filter(
+            v => v.groupId === groupId && v.status !== 'deleted'
+        );
         const totalVotings = groupVotings.length;
         if (totalVotings === 0) return { participated: 0, total: 0, percentage: 0 };
-        
-        const participated = groupVotings.filter(v => {
-            return v.comments && v.comments.some(c => c.userId === memberId);
-        }).length;
-        
-        return { participated, total: totalVotings, percentage: Math.round((participated / totalVotings) * 100) };
+
+        // Prefer authoritative DB-side counts (loaded by showGroupDetail via
+        // get_group_member_votes RPC). Fallback to 0 if not yet loaded.
+        const group = this.state.groups.find(g => g.id === groupId);
+        const fromMap = group?.memberVotes?.[memberId];
+        const participated = typeof fromMap === 'number'
+            ? Math.min(fromMap, totalVotings)
+            : 0;
+
+        return {
+            participated,
+            total: totalVotings,
+            percentage: Math.round((participated / totalVotings) * 100)
+        };
     },
 
     // Render members list with current sort and filter
