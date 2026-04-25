@@ -1,15 +1,16 @@
-// Generate VoteCoop PWA icons.
-// IMPORTANT: maskable icons must have a SOLID background filling the entire
-// canvas (no transparent corners) — otherwise OS launchers paint the corners
-// white. The visible content (the "V") must sit inside the inner ~80% safe
-// zone so it isn't clipped when the platform applies a circular/squircle mask.
+// Generate Spilka PWA icons from spilkalogo.png.
+// Source logo has its own beige background, but PWA maskable icons need a
+// SOLID brand-color background filling the entire canvas — otherwise OS
+// launchers paint the corners (white/beige) when applying a circular or
+// squircle mask. We composite the source logo centered inside the safe
+// zone (~78% of canvas) over a full-bleed brand-blue square.
 
-const { createCanvas } = require('canvas');
+const { createCanvas, loadImage } = require('canvas');
 const fs = require('fs');
 const path = require('path');
 
 const BRAND = '#007AFF';
-const FG = '#FFFFFF';
+const SOURCE = path.join(__dirname, 'spilkalogo.png');
 
 const iconsDir = path.join(__dirname, 'icons');
 if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir);
@@ -24,57 +25,61 @@ function roundRect(ctx, x, y, w, h, r) {
     ctx.lineTo(x + r, y + h);
     ctx.quadraticCurveTo(x, y + h, x, y + h - r);
     ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.quadraticCurveTo(x, y, x, y + r);
     ctx.closePath();
     ctx.fill();
 }
 
-function generateMaskableIcon(size, outputPath) {
+async function generateMaskableIcon(size, outputPath, source) {
     const canvas = createCanvas(size, size);
     const ctx = canvas.getContext('2d');
 
-    // Fill ENTIRE canvas with brand color so masks have no transparency to
-    // expose. The platform will round the corners; we keep them brand-blue.
+    // Full-bleed brand background (so corners survive any mask)
     ctx.fillStyle = BRAND;
     ctx.fillRect(0, 0, size, size);
 
-    // White "V" sized to fit inside the maskable safe zone (80% center).
-    ctx.fillStyle = FG;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = `900 ${Math.round(size * 0.46)}px Arial, "Segoe UI", sans-serif`;
-    ctx.fillText('S', size / 2, size / 2 + size * 0.02);
+    // Logo sized to safe zone (78% of canvas — slightly larger than 80% to
+    // make the mark look strong, but within the maskable safe area).
+    const logoSize = Math.round(size * 0.78);
+    const offset = Math.round((size - logoSize) / 2);
+    ctx.drawImage(source, offset, offset, logoSize, logoSize);
 
     fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
     console.log(`maskable: ${outputPath} (${size}x${size})`);
 }
 
-// Optional: a rounded-square variant for browsers that prefer "any" purpose.
-// Same content, with built-in 18% corner radius (Android-style squircle).
-function generateRoundedIcon(size, outputPath) {
+async function generateRoundedIcon(size, outputPath, source) {
     const canvas = createCanvas(size, size);
     const ctx = canvas.getContext('2d');
 
+    // Brand-blue rounded square (Android squircle radius ≈ 22%)
     ctx.fillStyle = BRAND;
     roundRect(ctx, 0, 0, size, size, Math.round(size * 0.22));
 
-    ctx.fillStyle = FG;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = `900 ${Math.round(size * 0.46)}px Arial, "Segoe UI", sans-serif`;
-    ctx.fillText('S', size / 2, size / 2 + size * 0.02);
+    const logoSize = Math.round(size * 0.78);
+    const offset = Math.round((size - logoSize) / 2);
+    ctx.drawImage(source, offset, offset, logoSize, logoSize);
 
     fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
     console.log(`rounded:  ${outputPath} (${size}x${size})`);
 }
 
-// Re-use the same maskable PNG for the main icons since they fill edges
-// (works for both "any" and "maskable" purposes).
-generateMaskableIcon(192, path.join(iconsDir, 'icon-192.png'));
-generateMaskableIcon(512, path.join(iconsDir, 'icon-512.png'));
+async function generateFavicon(size, outputPath, source) {
+    const canvas = createCanvas(size, size);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = BRAND;
+    ctx.fillRect(0, 0, size, size);
+    ctx.drawImage(source, Math.round(size * 0.1), Math.round(size * 0.1),
+                  Math.round(size * 0.8), Math.round(size * 0.8));
+    fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
+    console.log(`favicon:  ${outputPath} (${size}x${size})`);
+}
 
-// Apple touch icon needs a non-transparent rounded look (iOS doesn't apply
-// a maskable mask).
-generateRoundedIcon(180, path.join(iconsDir, 'apple-touch-icon.png'));
-
-console.log('Icons generated successfully!');
+(async () => {
+    const source = await loadImage(SOURCE);
+    await generateMaskableIcon(192, path.join(iconsDir, 'icon-192.png'), source);
+    await generateMaskableIcon(512, path.join(iconsDir, 'icon-512.png'), source);
+    await generateRoundedIcon(180, path.join(iconsDir, 'apple-touch-icon.png'), source);
+    await generateFavicon(64, path.join(iconsDir, 'favicon-64.png'), source);
+    console.log('Icons generated successfully!');
+})();
