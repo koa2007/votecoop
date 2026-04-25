@@ -1966,6 +1966,7 @@ html, body {
 .text-muted { color: var(--color-muted); }
 .text-primary { color: var(--color-primary); }
 .text-warning { color: var(--color-warning); }
+.text-pending { color: var(--color-pending); }
 .bg-info { background: var(--color-info); }
 
 /* Group Detail Stats */

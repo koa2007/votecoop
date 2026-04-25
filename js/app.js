@@ -2025,7 +2025,7 @@ const app = {
         content.innerHTML = `
             <div class="voting-detail-header">
                 <div class="voting-detail-status ${isActive ? 'active' : 'completed'}">
-                    ${isActive ? `<i class="ph-fill ph-circle text-danger" aria-hidden="true"></i> ${t.active_votings}` : `<i class="ph-fill ph-check-circle text-success" aria-hidden="true"></i> ${t.completed}`}
+                    ${isActive ? `<i class="ph-fill ph-circle text-pending" aria-hidden="true"></i> ${t.active_votings}` : `<i class="ph-fill ph-check-circle text-success" aria-hidden="true"></i> ${t.completed}`}
                 </div>
                 <h2 class="voting-detail-title">${this.escapeHTML(voting.title)}</h2>
                 ${voting.description ? `<div class="voting-description">${this.escapeHTML(voting.description)}</div>` : ''}
