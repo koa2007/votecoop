@@ -560,6 +560,18 @@ html, body {
     line-height: 1;
 }
 
+.logo-img {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+    display: block;
+}
+
+.logo:not(.logo-inline) .logo-img {
+    width: 96px;
+    height: 96px;
+}
+
 .logo.logo-inline .logo-text {
     display: flex;
     flex-direction: column;

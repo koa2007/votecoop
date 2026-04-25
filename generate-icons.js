@@ -9,12 +9,13 @@ const { createCanvas, loadImage } = require('canvas');
 const fs = require('fs');
 const path = require('path');
 
-const BRAND = '#007AFF';
-// Transparent logo: stack mark on top ~58% of canvas, "spilka.top" text on
-// the bottom ~32%. We crop just the MARK for icons because dark-navy text
-// would be invisible on the brand-blue background at small sizes.
+// PWA icons use the app's neutral light-gray surface as background (matches
+// the in-app feel) instead of brand blue — keeps the logo's own colors
+// visible without a dominant blue square. Transparent corners would show
+// white on iOS / launcher color on Android, so we still fill the canvas.
+const BG = '#f5f5f7';
 const SOURCE = path.join(__dirname, 'spilkalogotransperent.png');
-// Crop region of the source — fraction of width/height
+// Crop just the stack mark (top ~58%) — dark-navy text is illegible at icon sizes.
 const CROP = { x: 0.05, y: 0.04, w: 0.90, h: 0.58 };
 
 const iconsDir = path.join(__dirname, 'icons');
@@ -48,7 +49,7 @@ async function generateMaskableIcon(size, outputPath, source) {
     const canvas = createCanvas(size, size);
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = BRAND;
+    ctx.fillStyle = BG;
     ctx.fillRect(0, 0, size, size);
 
     const logoSize = Math.round(size * 0.72);
@@ -64,7 +65,7 @@ async function generateRoundedIcon(size, outputPath, source) {
     const canvas = createCanvas(size, size);
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = BRAND;
+    ctx.fillStyle = BG;
     roundRect(ctx, 0, 0, size, size, Math.round(size * 0.22));
 
     const logoSize = Math.round(size * 0.72);
@@ -79,7 +80,7 @@ async function generateRoundedIcon(size, outputPath, source) {
 async function generateFavicon(size, outputPath, source) {
     const canvas = createCanvas(size, size);
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = BRAND;
+    ctx.fillStyle = BG;
     ctx.fillRect(0, 0, size, size);
     const logoSize = Math.round(size * 0.78);
     const offset = Math.round((size - logoSize) / 2);
