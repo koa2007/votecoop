@@ -39,6 +39,17 @@ const app = {
 
     // Initialize app
     async init() {
+        // Apply saved theme before anything renders to prevent flash
+        this.initTheme();
+
+        // Re-sync theme-color meta when system preference changes (only matters in 'auto' mode)
+        if (window.matchMedia) {
+            try {
+                window.matchMedia('(prefers-color-scheme: dark)')
+                    .addEventListener('change', () => this.updateThemeMeta());
+            } catch (e) { /* legacy Safari */ }
+        }
+
         // Load saved language preference first (for error messages)
         const savedLang = localStorage.getItem('votecoop-language') || 'uk';
         if (savedLang !== 'uk') {
@@ -883,13 +894,73 @@ const app = {
         await supabaseService.markAllNotificationsRead();
     },
 
-    // Modals
+    // Modals — also lock body scroll while any modal is open
     showModal(modalId) {
-        document.getElementById(modalId).classList.remove('hidden');
+        const el = document.getElementById(modalId);
+        if (!el) return;
+        el.classList.remove('hidden');
+        document.body.classList.add('modal-open');
     },
 
     hideModal(modalId) {
-        document.getElementById(modalId).classList.add('hidden');
+        const el = document.getElementById(modalId);
+        if (el) el.classList.add('hidden');
+        // Unlock body scroll only when no modals are visible
+        const anyOpen = Array.from(document.querySelectorAll('.modal'))
+            .some(m => !m.classList.contains('hidden'));
+        if (!anyOpen) document.body.classList.remove('modal-open');
+    },
+
+    // === THEME (light / dark / auto) ===
+    // Modes: 'auto' (follows system), 'light', 'dark'. Persisted in localStorage.
+    initTheme() {
+        const saved = localStorage.getItem('votecoop-theme') || 'auto';
+        this.applyTheme(saved);
+    },
+
+    applyTheme(mode) {
+        const root = document.documentElement;
+        if (mode === 'auto') {
+            root.removeAttribute('data-theme');
+        } else {
+            root.setAttribute('data-theme', mode);
+        }
+        localStorage.setItem('votecoop-theme', mode);
+        this.updateThemeMeta();
+        this.updateThemeToggleUI(mode);
+    },
+
+    updateThemeMeta() {
+        // Update <meta name="theme-color"> from CSS var so the OS UI matches
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (!meta) return;
+        const value = getComputedStyle(document.documentElement)
+            .getPropertyValue('--color-theme-meta')
+            .trim();
+        if (value) meta.setAttribute('content', value);
+    },
+
+    updateThemeToggleUI(mode) {
+        const btn = document.getElementById('theme-toggle-btn');
+        if (!btn) return;
+        const t = this.translations[this.currentLanguage] || {};
+        const labels = {
+            auto: t.theme_auto || 'Auto',
+            light: t.theme_light || 'Light',
+            dark: t.theme_dark || 'Dark'
+        };
+        const icons = { auto: 'ph-circle-half', light: 'ph-sun', dark: 'ph-moon' };
+        const labelEl = btn.querySelector('.theme-label');
+        const iconEl = btn.querySelector('.theme-icon i');
+        if (labelEl) labelEl.textContent = `${t.theme || 'Theme'}: ${labels[mode] || labels.auto}`;
+        if (iconEl) iconEl.className = `ph ${icons[mode] || icons.auto}`;
+    },
+
+    cycleTheme() {
+        const current = localStorage.getItem('votecoop-theme') || 'auto';
+        const order = ['auto', 'light', 'dark'];
+        const next = order[(order.indexOf(current) + 1) % order.length];
+        this.applyTheme(next);
     },
 
     showCreateGroup() {
@@ -2293,6 +2364,10 @@ const app = {
             instructions: 'Інструкції',
             instructions_title: 'Інструкції з використання',
             logout: 'Вийти',
+            theme: 'Тема',
+            theme_auto: 'Системна',
+            theme_light: 'Світла',
+            theme_dark: 'Темна',
             address: 'Адреса',
             groups_count: 'Груп',
             firstname: "Ім'я",
@@ -2604,6 +2679,10 @@ const app = {
             instructions: 'Instructions',
             instructions_title: 'User Instructions',
             logout: 'Logout',
+            theme: 'Theme',
+            theme_auto: 'System',
+            theme_light: 'Light',
+            theme_dark: 'Dark',
             address: 'Address',
             groups_count: 'Groups',
             firstname: 'First Name',
@@ -2915,6 +2994,10 @@ const app = {
             instructions: 'Инструкции',
             instructions_title: 'Инструкции по использованию',
             logout: 'Выйти',
+            theme: 'Тема',
+            theme_auto: 'Системная',
+            theme_light: 'Светлая',
+            theme_dark: 'Тёмная',
             address: 'Адрес',
             groups_count: 'Групп',
             firstname: 'Имя',
@@ -3402,6 +3485,10 @@ const app = {
         this.renderVotings();
         this.renderGroups();
         this.renderNotifications();
+
+        // Refresh theme toggle label (it has a dynamic prefix)
+        const currentTheme = localStorage.getItem('votecoop-theme') || 'auto';
+        this.updateThemeToggleUI(currentTheme);
     },
 
 

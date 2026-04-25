@@ -1,6 +1,28 @@
 node_modules/
 generate-icons.js
 package-lock.json
+
+# Secrets / credentials
 .env
 .env.local
-js/config.js
+.env.*.local
+*.pem
+*.key
+github*login*.txt
+*credentials*.txt
+*password*.txt
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Build outputs
+dist/
+build/
+
+# Supabase local
+supabase/.temp/
+supabase/.branches/
