@@ -533,22 +533,42 @@ html, body {
     margin-bottom: 8px;
 }
 
-/* Inline logo: icon + (title + subtitle) horizontally — saves vertical space */
+/* Inline logo: icon + (title + subtitle) horizontally — saves vertical space.
+   `display: flex` is required — without it, flex-direction is a no-op and the
+   icon stacks above the text. */
 .logo.logo-inline {
+    display: flex;
     flex-direction: row;
     align-items: center;
+    justify-content: center;
     gap: 14px;
     text-align: left;
+    margin-bottom: 12px;
 }
 
 .logo.logo-inline .logo-icon {
     font-size: 44px;
     margin-bottom: 0;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    line-height: 1;
+}
+
+.logo.logo-inline .logo-icon .ph {
+    font-size: 44px;
+    line-height: 1;
+}
+
+.logo.logo-inline .logo-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
 }
 
 .logo.logo-inline .logo-text h1 {
-    font-size: 24px;
+    font-size: 26px;
+    line-height: 1.1;
     margin-bottom: 2px;
 }
 
@@ -556,6 +576,7 @@ html, body {
     font-size: 13px;
     color: var(--color-text-secondary);
     margin: 0;
+    line-height: 1.2;
 }
 
 /* Inline links row: "Forgot password? · Register" */
