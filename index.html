@@ -21,6 +21,24 @@
     <!-- Toast container (globally positioned) -->
     <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
+    <!-- Confirm dialog (replaces window.confirm for destructive actions) -->
+    <div class="modal hidden" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div class="modal-overlay" onclick="app.confirmDialogCancel()"></div>
+        <div class="modal-content modal-confirm">
+            <div class="modal-header">
+                <h3 id="confirm-title">Підтвердження</h3>
+                <button class="btn-icon" onclick="app.confirmDialogCancel()" aria-label="Close">✕</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirm-message"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="confirm-cancel-btn" onclick="app.confirmDialogCancel()">Скасувати</button>
+                <button class="btn btn-danger" id="confirm-ok-btn" onclick="app.confirmDialogConfirm()">Підтвердити</button>
+            </div>
+        </div>
+    </div>
+
     <!-- App Container -->
     <div id="app">
         
@@ -35,9 +53,9 @@
             </div>
         </div>
 
-        <!-- Auth Screen -->
+        <!-- Auth (Login) Screen — fits one phone screen, no scroll -->
         <div class="screen hidden" id="auth-screen">
-            <div class="auth-container">
+            <div class="auth-container auth-compact">
                 <div class="auth-language-selector">
                     <div class="language-selector">
                         <select id="auth-language-select" onchange="app.changeLanguage(this.value)">
@@ -47,18 +65,19 @@
                         </select>
                     </div>
                 </div>
-                <div class="logo">
+
+                <!-- Inline logo + title -->
+                <div class="logo logo-inline">
                     <div class="logo-icon"><i class="ph ph-scales"></i></div>
-                    <h1>VoteCoop</h1>
-                    <p data-lang="auth_subtitle">Голосування для спільнот</p>
+                    <div class="logo-text">
+                        <h1>VoteCoop</h1>
+                        <p data-lang="auth_subtitle">Голосування для спільнот</p>
+                    </div>
                 </div>
 
-                <!-- Auth error message -->
                 <div class="auth-error hidden" id="auth-error"></div>
-                <!-- Auth success message -->
                 <div class="auth-success hidden" id="auth-success"></div>
 
-                <!-- Email/Password form -->
                 <form class="auth-form" id="auth-form" onsubmit="return false;">
                     <div class="form-group">
                         <input type="email" id="auth-email" data-lang-placeholder="auth_email_placeholder" placeholder="Email" required autocomplete="email">
@@ -69,27 +88,84 @@
                             <i class="ph ph-eye" id="password-toggle-icon" aria-hidden="true"></i>
                         </button>
                     </div>
-                    <button class="btn btn-primary" id="auth-login-btn" type="button" onclick="app.loginWithEmail()">
+                    <button class="btn btn-primary" id="auth-login-btn" type="submit" onclick="app.loginWithEmail()">
                         <span data-lang="auth_login_btn">Увійти</span>
                     </button>
-                    <button class="btn btn-secondary" id="auth-register-btn" type="button" onclick="app.registerWithEmail()">
-                        <span data-lang="auth_register_btn">Зареєструватися</span>
-                    </button>
-                    <a href="#" class="auth-link" onclick="app.resetPassword(); return false;" data-lang="auth_forgot_password">Забули пароль?</a>
+
+                    <!-- Inline links: forgot password · register -->
+                    <div class="auth-links-row">
+                        <a href="#" class="auth-link" onclick="app.resetPassword(); return false;" data-lang="auth_forgot_password">Забули пароль?</a>
+                        <span class="auth-link-separator" aria-hidden="true">·</span>
+                        <a href="#" class="auth-link" onclick="app.showRegisterScreen(); return false;" data-lang="auth_register_link">Реєстрація</a>
+                    </div>
                 </form>
 
-                <!-- Divider -->
                 <div class="auth-divider">
                     <span data-lang="auth_or_divider">або</span>
                 </div>
 
-                <!-- Google OAuth -->
-                <button class="btn btn-primary btn-google" onclick="app.loginWithGoogle()">
+                <button class="btn btn-google" onclick="app.loginWithGoogle()">
                     <span class="icon">G</span>
                     <span data-lang="auth_google_btn">Увійти через Google</span>
                 </button>
+            </div>
+        </div>
 
-                <p class="auth-hint" data-lang="auth_hint">Автоматична реєстрація при першому вході</p>
+        <!-- Registration Screen (separate from login) -->
+        <div class="screen hidden" id="register-screen">
+            <div class="auth-container auth-compact">
+                <div class="auth-back-row">
+                    <button class="btn-icon back-btn" onclick="app.showAuthScreen()" aria-label="Back">
+                        <i class="ph ph-arrow-left" aria-hidden="true"></i>
+                    </button>
+                    <div class="language-selector">
+                        <select id="register-language-select" onchange="app.changeLanguage(this.value)">
+                            <option value="uk">Українська</option>
+                            <option value="en">English</option>
+                            <option value="ru">Русский</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="logo logo-inline">
+                    <div class="logo-icon"><i class="ph ph-user-plus"></i></div>
+                    <div class="logo-text">
+                        <h1 data-lang="register_title">Реєстрація</h1>
+                        <p data-lang="register_subtitle">Створіть акаунт для голосувань</p>
+                    </div>
+                </div>
+
+                <div class="auth-error hidden" id="register-error"></div>
+                <div class="auth-success hidden" id="register-success"></div>
+
+                <form class="auth-form" id="register-form" onsubmit="return false;">
+                    <div class="form-group">
+                        <input type="email" id="register-email" data-lang-placeholder="auth_email_placeholder" placeholder="Email" required autocomplete="email">
+                    </div>
+                    <div class="form-group password-group">
+                        <input type="password" id="register-password" data-lang-placeholder="register_password_placeholder" placeholder="Пароль (мін. 6 символів)" required minlength="6" autocomplete="new-password">
+                        <button type="button" class="password-toggle" onclick="app.toggleRegisterPasswordVisibility()" aria-label="Show password">
+                            <i class="ph ph-eye" id="register-password-toggle-icon" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <button class="btn btn-primary" id="register-submit-btn" type="submit" onclick="app.registerWithEmail()">
+                        <span data-lang="register_submit_btn">Створити акаунт</span>
+                    </button>
+                </form>
+
+                <div class="auth-divider">
+                    <span data-lang="auth_or_divider">або</span>
+                </div>
+
+                <button class="btn btn-google" onclick="app.loginWithGoogle()">
+                    <span class="icon">G</span>
+                    <span data-lang="register_google_btn">Реєстрація через Google</span>
+                </button>
+
+                <p class="auth-hint">
+                    <span data-lang="register_have_account">Вже маєте акаунт?</span>
+                    <a href="#" class="auth-link" onclick="app.showAuthScreen(); return false;" data-lang="auth_login_btn">Увійти</a>
+                </p>
             </div>
         </div>
 
@@ -139,7 +215,13 @@
                         <button class="btn-icon" onclick="app.showCreateVoting()" aria-label="Create new voting">+</button>
                     </div>
                 </div>
-                <div class="screen-content">
+                <div class="screen-content" data-ptr="voting">
+                    <!-- Profile-incomplete CTA (shown only if apartment empty) -->
+                    <div class="cta-banner hidden" id="profile-incomplete-cta" role="button" tabindex="0" onclick="app.showEditProfile()" onkeydown="if(event.key==='Enter')app.showEditProfile()">
+                        <i class="ph-fill ph-warning-circle" aria-hidden="true"></i>
+                        <span class="cta-text" data-lang="cta_complete_profile">Заповніть «Квартиру/офіс» у профілі, щоб голосувати</span>
+                        <i class="ph ph-caret-right" aria-hidden="true"></i>
+                    </div>
                     <div class="segmented-control">
                         <button class="segment active" data-filter="active" data-lang="active_votings">Активні</button>
                         <button class="segment" data-filter="completed" data-lang="completed_votings">Завершені</button>
@@ -159,7 +241,7 @@
                         <button class="btn-icon" onclick="app.showCreateGroup()" aria-label="Create new group">+</button>
                     </div>
                 </div>
-                <div class="screen-content">
+                <div class="screen-content" data-ptr="groups">
                     <div class="join-group-section">
                         <input type="text" id="join-group-id" data-lang-placeholder="enter_group_id" placeholder="Введіть ID групи (6 цифр)" maxlength="6" inputmode="numeric" pattern="[0-9]{6}">
                         <button class="btn btn-primary join-group-btn" onclick="app.joinGroup()" aria-label="Join group">
@@ -181,7 +263,7 @@
                         <button class="btn-text" onclick="app.markAllRead()" data-lang="mark_all_read">Прочитано все</button>
                     </div>
                 </div>
-                <div class="screen-content">
+                <div class="screen-content" data-ptr="notif">
                     <div class="notifications-list" id="notifications-list">
                         <!-- Notifications will be inserted here -->
                     </div>
@@ -439,20 +521,27 @@
                 <div class="group-stats">
                     <div class="stat">
                         <span class="stat-value" id="group-members-count">5</span>
-                        <span class="stat-label" id="members-label">учасників</span>
+                        <span class="stat-label" id="members-label" data-lang="members_label">Учасників</span>
                         <div id="frozen-count-display" class="frozen-count-display">
                             <i class="ph-fill ph-snowflake" aria-hidden="true"></i> <span id="frozen-count">0</span> <span data-lang="frozen_abbr">замор.</span>
                         </div>
                     </div>
                     <div class="stat stat-centered">
-                        <div>
-                            <span class="stat-value info" id="group-votings-count">5</span>
-                            <div class="stat-sub-values">
-                                <span id="votings-accepted" class="accepted">1</span>
-                                <span id="votings-rejected" class="rejected">0</span>
-                                <span class="separator">-</span>
-                                <span id="votings-pending" class="pending">3</span>
-                            </div>
+                        <span class="stat-value info" id="group-votings-count">5</span>
+                        <span class="stat-label" data-lang="votings_label">Голосувань</span>
+                        <div class="stat-breakdown" aria-label="Voting outcomes">
+                            <span class="stat-pill stat-accepted" title="Прийнято">
+                                <i class="ph-fill ph-check-circle" aria-hidden="true"></i>
+                                <span id="votings-accepted">0</span>
+                            </span>
+                            <span class="stat-pill stat-rejected" title="Відхилено">
+                                <i class="ph-fill ph-x-circle" aria-hidden="true"></i>
+                                <span id="votings-rejected">0</span>
+                            </span>
+                            <span class="stat-pill stat-pending" title="Активні">
+                                <i class="ph-fill ph-circle" aria-hidden="true"></i>
+                                <span id="votings-pending">0</span>
+                            </span>
                         </div>
                     </div>
                 </div>

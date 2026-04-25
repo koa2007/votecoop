@@ -164,6 +164,10 @@ const app = {
             // Show main screen only AFTER data is loaded
             this.showScreen('main-screens');
 
+            // Inline UX helpers
+            this.refreshProfileCTA();
+            this.initPullToRefresh();
+
             // Check expired votings (non-blocking)
             this.checkExpiredVotingsServer();
 
@@ -237,7 +241,7 @@ const app = {
     // Navigation
     showScreen(screenId) {
         const mainScreens = ['voting-screen', 'groups-screen', 'notifications-screen', 'profile-screen'];
-        const topLevelScreens = ['loading-screen', 'auth-screen', 'profile-setup-screen'];
+        const topLevelScreens = ['loading-screen', 'auth-screen', 'register-screen', 'profile-setup-screen'];
         const detailScreens = ['group-detail-screen'];
         const mainContainer = document.getElementById('main-screens');
 
@@ -322,6 +326,57 @@ const app = {
             input.type = 'password';
             icon.className = 'ph ph-eye';
         }
+    },
+
+    toggleRegisterPasswordVisibility() {
+        const input = document.getElementById('register-password');
+        const icon = document.getElementById('register-password-toggle-icon');
+        if (!input || !icon) return;
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'ph ph-eye-slash';
+        } else {
+            input.type = 'password';
+            icon.className = 'ph ph-eye';
+        }
+    },
+
+    // Switch between login and register screens (top-level)
+    showAuthScreen() {
+        this.hideAuthMessages();
+        this.hideRegisterMessages();
+        this.showScreen('auth-screen');
+    },
+
+    showRegisterScreen() {
+        this.hideAuthMessages();
+        this.hideRegisterMessages();
+        this.showScreen('register-screen');
+    },
+
+    hideRegisterMessages() {
+        ['register-error', 'register-success'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+    },
+
+    showRegisterError(msg) {
+        const el = document.getElementById('register-error');
+        if (!el) return this.showAuthError(msg);
+        el.textContent = msg;
+        el.classList.remove('hidden');
+        const ok = document.getElementById('register-success');
+        if (ok) ok.classList.add('hidden');
+    },
+
+    showRegisterSuccess(msg) {
+        const el = document.getElementById('register-success');
+        if (!el) return this.showAuthSuccess(msg);
+        el.textContent = msg;
+        el.classList.remove('hidden');
+        const err = document.getElementById('register-error');
+        if (err) err.classList.add('hidden');
     },
 
     // Show auth error message
@@ -420,48 +475,57 @@ const app = {
         // Success — onAuthStateChange will handle the rest
     },
 
-    // Register with email/password
+    // Register with email/password — uses dedicated register screen if open,
+    // falls back to login screen for backward compatibility.
     async registerWithEmail() {
         const t = this.translations[this.currentLanguage];
-        const email = document.getElementById('auth-email').value.trim();
-        const password = document.getElementById('auth-password').value;
+        const onRegScreen = this.state.currentScreen === 'register-screen';
+        const emailEl = document.getElementById(onRegScreen ? 'register-email' : 'auth-email');
+        const passEl  = document.getElementById(onRegScreen ? 'register-password' : 'auth-password');
+        const btnId   = onRegScreen ? 'register-submit-btn' : 'auth-register-btn';
+        const showErr = (m) => onRegScreen ? this.showRegisterError(m) : this.showAuthError(m);
+        const showOk  = (m) => onRegScreen ? this.showRegisterSuccess(m) : this.showAuthSuccess(m);
+        const hideMsg = () => onRegScreen ? this.hideRegisterMessages() : this.hideAuthMessages();
+
+        const email = emailEl?.value.trim() || '';
+        const password = passEl?.value || '';
 
         if (!email || !password) {
-            this.showAuthError(t.auth_error_fill_fields);
+            showErr(t.auth_error_fill_fields);
             return;
         }
 
         if (password.length < 6) {
-            this.showAuthError(t.auth_error_password_short);
+            showErr(t.auth_error_password_short);
             return;
         }
 
         if (!supabaseService.isReady()) {
-            this.showAuthError(t.auth_error_network || 'Service unavailable');
+            showErr(t.auth_error_network || 'Service unavailable');
             return;
         }
 
-        this.hideAuthMessages();
-        this.setBtnLoading('auth-register-btn', true);
+        hideMsg();
+        this.setBtnLoading(btnId, true);
 
         const { data, error } = await supabaseService.signUpWithEmail(email, password);
 
-        this.setBtnLoading('auth-register-btn', false);
+        this.setBtnLoading(btnId, false);
 
         if (error) {
             if (error.message.includes('already registered')) {
-                this.showAuthError(t.auth_error_exists);
+                showErr(t.auth_error_exists);
             } else {
-                this.showAuthError(error.message);
+                showErr(error.message);
             }
             return;
         }
 
         // Check if email confirmation is required
         if (data?.user?.identities?.length === 0) {
-            this.showAuthError(t.auth_error_exists);
+            showErr(t.auth_error_exists);
         } else {
-            this.showAuthSuccess(t.auth_check_email);
+            showOk(t.auth_check_email);
         }
     },
 
@@ -555,6 +619,7 @@ const app = {
         document.getElementById('main-screens').classList.remove('hidden');
         this.showScreen('voting-screen');
         this.updateProfileDisplay();
+        this.refreshProfileCTA();
     },
 
     showTermsModal() {
@@ -592,6 +657,10 @@ const app = {
         document.getElementById('main-screens').classList.remove('hidden');
         this.showScreen('voting-screen');
 
+        // Inline UX helpers
+        this.refreshProfileCTA();
+        this.initPullToRefresh();
+
         // Start periodic check
         if (this._expiryInterval) clearInterval(this._expiryInterval);
         this._expiryInterval = setInterval(() => this.checkExpiredVotingsServer(), 60000);
@@ -601,15 +670,21 @@ const app = {
     },
 
     async logout() {
+        const t = this.translations[this.currentLanguage] || {};
+        const ok = await this.confirm({
+            title: t.logout || 'Вийти',
+            message: t.logout_confirm || 'Вийти з акаунту? Доведеться увійти знову.',
+            okText: t.logout || 'Вийти',
+            danger: true
+        });
+        if (!ok) return;
         if (supabaseService.isReady()) {
             await supabaseService.signOut();
         }
-        // Clear cached data
         try {
             localStorage.removeItem('vc_groups');
             localStorage.removeItem('vc_notifications');
         } catch (e) { /* ignore */ }
-        // Clear state and reload
         location.reload();
     },
 
@@ -1058,6 +1133,125 @@ const app = {
     toastSuccess(msg) { return this.toast(msg, 'success'); },
     toastWarning(msg) { return this.toast(msg, 'warning'); },
     toastInfo(msg)    { return this.toast(msg, 'info'); },
+
+    // === CONFIRM DIALOG ===
+    // Promise-based replacement for window.confirm. Use:
+    //   if (await app.confirm({ title, message, okText, danger })) { ... }
+    confirm({ title, message, okText, cancelText, danger = true } = {}) {
+        return new Promise(resolve => {
+            const t = this.translations[this.currentLanguage] || {};
+            const titleEl = document.getElementById('confirm-title');
+            const msgEl = document.getElementById('confirm-message');
+            const okBtn = document.getElementById('confirm-ok-btn');
+            const cancelBtn = document.getElementById('confirm-cancel-btn');
+            if (!titleEl || !msgEl || !okBtn || !cancelBtn) {
+                resolve(window.confirm(message || ''));
+                return;
+            }
+            titleEl.textContent = title || t.confirm_title || 'Підтвердження';
+            msgEl.textContent = message || '';
+            okBtn.textContent = okText || t.confirm_ok || 'Підтвердити';
+            cancelBtn.textContent = cancelText || t.cancel || 'Скасувати';
+            okBtn.className = `btn ${danger ? 'btn-danger' : 'btn-primary'}`;
+
+            this._confirmResolver = resolve;
+            this.showModal('confirm-modal');
+        });
+    },
+
+    confirmDialogConfirm() {
+        const r = this._confirmResolver;
+        this._confirmResolver = null;
+        this.hideModal('confirm-modal');
+        if (r) r(true);
+    },
+
+    confirmDialogCancel() {
+        const r = this._confirmResolver;
+        this._confirmResolver = null;
+        this.hideModal('confirm-modal');
+        if (r) r(false);
+    },
+
+    // === PROFILE-COMPLETION CTA ===
+    // Show inline banner on the voting screen if the user can't vote yet
+    // (apartment field is empty — required to cast votes per createVoting check).
+    refreshProfileCTA() {
+        const cta = document.getElementById('profile-incomplete-cta');
+        if (!cta) return;
+        const incomplete = !this.state.user || !this.state.user.apartment;
+        cta.classList.toggle('hidden', !incomplete);
+    },
+
+    // === PULL-TO-REFRESH ===
+    // Attached to .screen-content[data-ptr]; passive on the scroll container.
+    // Threshold 60px; reload routes per data-ptr value.
+    initPullToRefresh() {
+        if (this._ptrInitialized) return;
+        this._ptrInitialized = true;
+
+        document.querySelectorAll('.screen-content[data-ptr]').forEach(container => {
+            const route = container.getAttribute('data-ptr');
+            const indicator = document.createElement('div');
+            indicator.className = 'ptr-indicator';
+            indicator.innerHTML = '<i class="ph ph-arrow-down"></i><span class="ptr-text"></span>';
+            container.before(indicator);
+
+            const t = () => this.translations[this.currentLanguage] || {};
+            const labelPull   = () => t().ptr_pull   || 'Потягніть, щоб оновити';
+            const labelArmed  = () => t().ptr_release|| 'Відпустіть, щоб оновити';
+            const labelLoad   = () => t().ptr_loading|| 'Оновлюємо…';
+
+            let startY = 0;
+            let pulling = false;
+            let armed = false;
+
+            container.addEventListener('touchstart', (e) => {
+                if (container.scrollTop > 0) { pulling = false; return; }
+                startY = e.touches[0].clientY;
+                pulling = true;
+                armed = false;
+            }, { passive: true });
+
+            container.addEventListener('touchmove', (e) => {
+                if (!pulling) return;
+                const delta = e.touches[0].clientY - startY;
+                if (delta <= 0) {
+                    indicator.classList.remove('active', 'armed');
+                    return;
+                }
+                indicator.classList.add('active');
+                indicator.querySelector('.ptr-text').textContent = labelPull();
+                if (delta > 60 && !armed) {
+                    armed = true;
+                    indicator.classList.add('armed');
+                    indicator.querySelector('.ptr-text').textContent = labelArmed();
+                } else if (delta <= 60 && armed) {
+                    armed = false;
+                    indicator.classList.remove('armed');
+                    indicator.querySelector('.ptr-text').textContent = labelPull();
+                }
+            }, { passive: true });
+
+            const finish = async () => {
+                if (!pulling) return;
+                pulling = false;
+                if (armed) {
+                    indicator.classList.add('refreshing');
+                    indicator.querySelector('.ptr-text').textContent = labelLoad();
+                    try {
+                        if (route === 'voting')        await this.loadMyVotings();
+                        else if (route === 'groups')   await this.loadMyGroups();
+                        else if (route === 'notif')    await this.loadMyNotifications();
+                    } catch (e) { /* ignore */ }
+                }
+                indicator.classList.remove('active', 'armed', 'refreshing');
+                armed = false;
+            };
+            container.addEventListener('touchend', finish, { passive: true });
+            container.addEventListener('touchcancel', finish, { passive: true });
+        });
+    },
 
     // === PWA INSTALL ===
     // Triggered by index.html when 'beforeinstallprompt' fires (Chrome/Edge/Android).
@@ -2626,6 +2820,22 @@ const app = {
             install_ios_hint: 'На iPhone/iPad: натисніть «Поділитися» (квадрат зі стрілкою) і виберіть «На екран Домівка».',
             install_not_ready: 'Опція встановлення поки недоступна. Перевірте, що сторінку відкрито через HTTPS — і спробуйте знову.',
             install_dismissed: 'Скасовано — можна встановити пізніше з цього ж екрана.',
+            auth_register_link: 'Реєстрація',
+            register_title: 'Реєстрація',
+            register_subtitle: 'Створіть акаунт для голосувань',
+            register_password_placeholder: 'Пароль (мін. 6 символів)',
+            register_submit_btn: 'Створити акаунт',
+            register_google_btn: 'Реєстрація через Google',
+            register_have_account: 'Вже маєте акаунт?',
+            cta_complete_profile: 'Заповніть «Квартиру/офіс» у профілі, щоб голосувати',
+            members_label: 'Учасників',
+            votings_label: 'Голосувань',
+            confirm_title: 'Підтвердження',
+            confirm_ok: 'Підтвердити',
+            logout_confirm: 'Вийти з акаунту? Доведеться увійти знову.',
+            ptr_pull: 'Потягніть, щоб оновити',
+            ptr_release: 'Відпустіть, щоб оновити',
+            ptr_loading: 'Оновлюємо…',
             address: 'Адреса',
             groups_count: 'Груп',
             firstname: "Ім'я",
@@ -2950,6 +3160,22 @@ const app = {
             install_ios_hint: 'On iPhone/iPad: tap "Share" (square with arrow) and choose "Add to Home Screen".',
             install_not_ready: 'Install option is not available right now. Make sure you opened the page via HTTPS and try again.',
             install_dismissed: 'Cancelled — you can install later from this screen.',
+            auth_register_link: 'Sign up',
+            register_title: 'Sign up',
+            register_subtitle: 'Create an account to vote',
+            register_password_placeholder: 'Password (min. 6 chars)',
+            register_submit_btn: 'Create account',
+            register_google_btn: 'Sign up with Google',
+            register_have_account: 'Already have an account?',
+            cta_complete_profile: 'Fill in "Apartment/office" in your profile to vote',
+            members_label: 'Members',
+            votings_label: 'Votings',
+            confirm_title: 'Confirm',
+            confirm_ok: 'Confirm',
+            logout_confirm: 'Sign out? You will need to log in again.',
+            ptr_pull: 'Pull to refresh',
+            ptr_release: 'Release to refresh',
+            ptr_loading: 'Refreshing…',
             address: 'Address',
             groups_count: 'Groups',
             firstname: 'First Name',
@@ -3274,6 +3500,22 @@ const app = {
             install_ios_hint: 'На iPhone/iPad: нажмите «Поделиться» (квадрат со стрелкой) и выберите «На экран Домой».',
             install_not_ready: 'Опция установки сейчас недоступна. Проверьте, что страница открыта через HTTPS — и попробуйте снова.',
             install_dismissed: 'Отменено — можно установить позже с этого же экрана.',
+            auth_register_link: 'Регистрация',
+            register_title: 'Регистрация',
+            register_subtitle: 'Создайте аккаунт для голосований',
+            register_password_placeholder: 'Пароль (мин. 6 символов)',
+            register_submit_btn: 'Создать аккаунт',
+            register_google_btn: 'Регистрация через Google',
+            register_have_account: 'Уже есть аккаунт?',
+            cta_complete_profile: 'Заполните «Квартиру/офис» в профиле, чтобы голосовать',
+            members_label: 'Участников',
+            votings_label: 'Голосований',
+            confirm_title: 'Подтверждение',
+            confirm_ok: 'Подтвердить',
+            logout_confirm: 'Выйти из аккаунта? Придётся войти снова.',
+            ptr_pull: 'Потяните, чтобы обновить',
+            ptr_release: 'Отпустите, чтобы обновить',
+            ptr_loading: 'Обновляем…',
             address: 'Адрес',
             groups_count: 'Групп',
             firstname: 'Имя',
@@ -4090,6 +4332,9 @@ const app = {
         this.showModal('edit-profile-modal');
     },
 
+    // Hide CTA after profile updated successfully
+    _afterProfileUpdate() { this.refreshProfileCTA(); },
+
     async saveEditedProfile() {
         const t = this.translations[this.currentLanguage];
         const firstName = document.getElementById('edit-firstname').value.trim();
@@ -4126,6 +4371,7 @@ const app = {
         this.updateProfileDisplay();
         this.hideModal('edit-profile-modal');
         this.toastSuccess(t.profile_saved);
+        this._afterProfileUpdate();
     },
 
     // Instructions
