@@ -524,8 +524,21 @@ const app = {
         // Check if email confirmation is required
         if (data?.user?.identities?.length === 0) {
             showErr(t.auth_error_exists);
-        } else {
-            showOk(t.auth_check_email);
+            return;
+        }
+
+        // Success — show success message + email pre-fill on login screen,
+        // then auto-return to login (per requested flow: register → back to login)
+        const submittedEmail = email;
+        showOk(t.auth_check_email);
+        if (onRegScreen) {
+            // Pause so user sees the message, then go back to login screen
+            setTimeout(() => {
+                this.showAuthScreen();
+                const loginEmail = document.getElementById('auth-email');
+                if (loginEmail) loginEmail.value = submittedEmail;
+                this.showAuthSuccess(t.auth_check_email);
+            }, 2500);
         }
     },
 
