@@ -9,7 +9,29 @@ const app = {
         votingFilter: 'active',
         userVotingHistory: {},
         currentVotingToDelete: null,
-        listenersAttached: false
+        listenersAttached: false,
+        // 'fetched' tracks whether a server fetch has *completed* for each list.
+        // Used to decide between skeleton loaders and "empty" states.
+        fetched: { groups: false, votings: false, notifications: false }
+    },
+
+    // Render N skeleton placeholder cards
+    renderSkeleton(count = 3) {
+        const cards = Array.from({ length: count })
+            .map(() => '<div class="skeleton skeleton-card"></div>')
+            .join('');
+        return `<div class="skeleton-list">${cards}</div>`;
+    },
+
+    // Render a friendly empty state with optional CTA
+    renderEmpty(iconClass, title, hint) {
+        return `
+            <div class="empty-cta">
+                <div class="empty-icon"><i class="${iconClass}" aria-hidden="true"></i></div>
+                <div class="empty-title">${this.escapeHTML(title || '')}</div>
+                ${hint ? `<div class="empty-hint">${this.escapeHTML(hint)}</div>` : ''}
+            </div>
+        `;
     },
 
     // Escape HTML to prevent XSS injection
@@ -145,6 +167,9 @@ const app = {
             // Periodic check every 60 seconds
             if (this._expiryInterval) clearInterval(this._expiryInterval);
             this._expiryInterval = setInterval(() => this.checkExpiredVotingsServer(), 60000);
+
+            // Subscribe to live updates (votes, votings, notifications)
+            this.subscribeToRealtime();
         } else {
             // Profile not completed — show setup screen
             this.state.user = {
@@ -170,10 +195,12 @@ const app = {
     // Handle sign out — reset state, show auth screen
     handleSignOut() {
         if (this._expiryInterval) clearInterval(this._expiryInterval);
+        this.unsubscribeFromRealtime();
         this.state.user = null;
         this.state.groups = [];
         this.state.votings = [];
         this.state.notifications = [];
+        this.state.fetched = { groups: false, votings: false, notifications: false };
         this.showScreen('auth-screen');
     },
 
@@ -477,7 +504,7 @@ const app = {
         const apartment = document.getElementById('profile-apartment').value.trim();
 
         if (!firstName || !lastName) {
-            alert(t.fill_name_error);
+            this.toastError(t.fill_name_error);
             return;
         }
 
@@ -510,7 +537,7 @@ const app = {
             this.setBtnLoading('profile-save-btn', false);
 
             if (error) {
-                alert(t.auth_error_network);
+                this.toastError(t.auth_error_network);
                 return;
             }
         }
@@ -537,7 +564,7 @@ const app = {
         const agreed = document.getElementById('terms-agree').checked;
 
         if (!agreed) {
-            alert(t.terms_agree_text);
+            this.toastError(t.terms_agree_text);
             return;
         }
 
@@ -565,6 +592,9 @@ const app = {
         // Start periodic check
         if (this._expiryInterval) clearInterval(this._expiryInterval);
         this._expiryInterval = setInterval(() => this.checkExpiredVotingsServer(), 60000);
+
+        // Subscribe to realtime updates
+        this.subscribeToRealtime();
     },
 
     async logout() {
@@ -595,7 +625,11 @@ const app = {
 
         // Fetch fresh data from server
         const { data, error } = await supabaseService.getMyGroupsWithStats();
-        if (error || !data) return;
+        if (error || !data) {
+            this.state.fetched.groups = true;
+            this.renderGroups();
+            return;
+        }
 
         this.state.groups = data.map(item => ({
             id: item.group_id,
@@ -614,13 +648,18 @@ const app = {
         try { localStorage.setItem('vc_groups', JSON.stringify(this.state.groups)); }
         catch (e) { /* storage full */ }
 
+        this.state.fetched.groups = true;
         this.renderGroups();
         this.updateProfileDisplay();
     },
 
     async loadMyVotings() {
         const { data: votings, error } = await supabaseService.getMyVotings();
-        if (error || !votings) return;
+        if (error || !votings) {
+            this.state.fetched.votings = true;
+            this.renderVotings();
+            return;
+        }
 
         const votingIds = votings.map(v => v.id);
         const { data: results } = await supabaseService.getVotingResults(votingIds);
@@ -682,6 +721,7 @@ const app = {
             });
         }
 
+        this.state.fetched.votings = true;
         this.renderVotings();
     },
 
@@ -697,7 +737,11 @@ const app = {
 
         // Fetch fresh data
         const { data, error } = await supabaseService.getMyNotifications();
-        if (error || !data) return;
+        if (error || !data) {
+            this.state.fetched.notifications = true;
+            this.renderNotifications();
+            return;
+        }
 
         this.state.notifications = data.map(n => ({
             id: n.id,
@@ -710,7 +754,72 @@ const app = {
         try { localStorage.setItem('vc_notifications', JSON.stringify(this.state.notifications)); }
         catch (e) { /* storage full */ }
 
+        this.state.fetched.notifications = true;
         this.renderNotifications();
+    },
+
+    // === REALTIME (Supabase channels) ===
+    // Subscribes to live updates so users see new votes / notifications without refreshing.
+    subscribeToRealtime() {
+        if (!supabaseService.isReady() || !this.state.user) return;
+        // Tear down any prior channels (idempotent)
+        this.unsubscribeFromRealtime();
+
+        const userId = this.state.user.id;
+        const client = supabaseService.client;
+
+        // 1) Notifications addressed to this user
+        this._notifChannel = client
+            .channel(`vc-notif-${userId}`)
+            .on('postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+                (payload) => {
+                    const n = payload.new;
+                    if (!n) return;
+                    this.state.notifications.unshift({
+                        id: n.id,
+                        type: n.type,
+                        text: n.text,
+                        time: new Date(n.created_at).toLocaleString(),
+                        read: n.is_read
+                    });
+                    this.renderNotifications();
+                    if (n.type !== 'system' || (n.text && !n.is_read)) {
+                        this.toastInfo(n.text);
+                    }
+                }
+            )
+            .subscribe();
+
+        // 2) Votes & votings — debounced reload of voting list
+        const debouncedReload = () => {
+            clearTimeout(this._votingReloadTimer);
+            this._votingReloadTimer = setTimeout(() => this.loadMyVotings(), 600);
+        };
+        this._votingsChannel = client
+            .channel(`vc-vt-${userId}`)
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'votes' },
+                debouncedReload)
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'votings' },
+                debouncedReload)
+            .subscribe();
+    },
+
+    unsubscribeFromRealtime() {
+        const client = supabaseService.client;
+        if (!client) return;
+        try {
+            if (this._notifChannel)   client.removeChannel(this._notifChannel);
+            if (this._votingsChannel) client.removeChannel(this._votingsChannel);
+        } catch (e) { /* ignore */ }
+        this._notifChannel = null;
+        this._votingsChannel = null;
+        if (this._votingReloadTimer) {
+            clearTimeout(this._votingReloadTimer);
+            this._votingReloadTimer = null;
+        }
     },
 
     async checkExpiredVotingsServer() {
@@ -735,7 +844,11 @@ const app = {
         });
 
         if (filtered.length === 0) {
-            list.innerHTML = `<div class="empty-state">${t.empty_votings}</div>`;
+            if (!this.state.fetched.votings) {
+                list.innerHTML = this.renderSkeleton(3);
+            } else {
+                list.innerHTML = this.renderEmpty('ph ph-scales', t.empty_votings, t.empty_votings_hint);
+            }
             return;
         }
 
@@ -821,7 +934,11 @@ const app = {
         const t = this.translations[this.currentLanguage];
         
         if (this.state.groups.length === 0) {
-            list.innerHTML = `<div class="empty-state">${t.empty_groups}</div>`;
+            if (!this.state.fetched.groups) {
+                list.innerHTML = this.renderSkeleton(2);
+            } else {
+                list.innerHTML = this.renderEmpty('ph ph-users-three', t.empty_groups, t.empty_groups_hint);
+            }
             return;
         }
 
@@ -854,7 +971,11 @@ const app = {
         if (navLabel) navLabel.textContent = unreadCount > 0 ? `${t.notifications} (${unreadCount})` : t.notifications;
 
         if (this.state.notifications.length === 0) {
-            list.innerHTML = `<div class="empty-state">${t.empty_notifications}</div>`;
+            if (!this.state.fetched.notifications) {
+                list.innerHTML = this.renderSkeleton(3);
+            } else {
+                list.innerHTML = this.renderEmpty('ph ph-bell', t.empty_notifications, t.empty_notifications_hint);
+            }
             return;
         }
 
@@ -893,6 +1014,47 @@ const app = {
         this.renderNotifications();
         await supabaseService.markAllNotificationsRead();
     },
+
+    // === TOAST NOTIFICATIONS ===
+    // Replaces native this.toastError() across the app — non-blocking, themed, accessible.
+    // Usage: app.toast('msg'), app.toast('msg', 'error'|'success'|'warning'|'info'), or shorthands.
+    toast(message, type = 'info', durationMs = 3500) {
+        const container = document.getElementById('toast-container');
+        if (!container || !message) return;
+
+        const icons = {
+            error:   'ph-warning-circle',
+            success: 'ph-check-circle',
+            warning: 'ph-warning',
+            info:    'ph-info'
+        };
+        const iconClass = icons[type] || icons.info;
+
+        const el = document.createElement('div');
+        el.className = `toast toast-${type}`;
+        el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+
+        const safeMsg = this.escapeHTML(String(message));
+        el.innerHTML = `
+            <span class="toast-icon"><i class="ph-fill ${iconClass}" aria-hidden="true"></i></span>
+            <span class="toast-text">${safeMsg}</span>
+            <button class="toast-close" aria-label="Close">&times;</button>
+        `;
+
+        const remove = () => {
+            el.classList.add('toast-leaving');
+            setTimeout(() => el.remove(), 200);
+        };
+        el.querySelector('.toast-close').addEventListener('click', remove);
+
+        container.appendChild(el);
+        setTimeout(remove, durationMs);
+    },
+
+    toastError(msg)   { return this.toast(msg, 'error'); },
+    toastSuccess(msg) { return this.toast(msg, 'success'); },
+    toastWarning(msg) { return this.toast(msg, 'warning'); },
+    toastInfo(msg)    { return this.toast(msg, 'info'); },
 
     // Modals — also lock body scroll while any modal is open
     showModal(modalId) {
@@ -1065,12 +1227,12 @@ const app = {
         const description = document.getElementById('group-description').value.trim();
 
         if (!name) {
-            alert(t.fill_name_error || 'Введіть назву групи');
+            this.toastError(t.fill_name_error || 'Введіть назву групи');
             return;
         }
 
         if (!this.state.user) {
-            alert(t.auth_error_network || 'User not authenticated');
+            this.toastError(t.auth_error_network || 'User not authenticated');
             return;
         }
 
@@ -1104,7 +1266,7 @@ const app = {
             document.getElementById('group-description').value = '';
             this.hideModal('create-group-modal');
         } catch (err) {
-            alert(t.auth_error_network || 'Error creating group');
+            this.toastError(t.auth_error_network || 'Error creating group');
         } finally {
             if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
         }
@@ -1114,12 +1276,12 @@ const app = {
         const t = this.translations[this.currentLanguage];
 
         if (!this.state.user) {
-            alert(t.auth_error_network || 'User not authenticated');
+            this.toastError(t.auth_error_network || 'User not authenticated');
             return;
         }
 
         if (!this.state.user.apartment) {
-            alert(t.apartment_required);
+            this.toastError(t.apartment_required);
             return;
         }
 
@@ -1134,7 +1296,7 @@ const app = {
         const reasonText = document.getElementById('removal-reason-text');
 
         if (!title || !groupId) {
-            alert(t.fill_name_error);
+            this.toastError(t.fill_name_error);
             return;
         }
 
@@ -1146,26 +1308,26 @@ const app = {
             if (lastVotingTime) {
                 const hoursSinceLastVoting = (Date.now() - lastVotingTime) / (1000 * 60 * 60);
                 if (hoursSinceLastVoting < 24) {
-                    alert(t.daily_limit_reached);
+                    this.toastError(t.daily_limit_reached);
                     return;
                 }
             }
         }
 
         if ((type === 'admin-change' || type === 'remove-member') && group.membersCount < 3) {
-            alert(t.min_3_members_required);
+            this.toastError(t.min_3_members_required);
             return;
         }
 
         if ((type === 'admin-change' || type === 'remove-member') && !targetMemberId) {
-            alert(t.select_member);
+            this.toastError(t.select_member);
             return;
         }
 
         let removalReason = '';
         if (type === 'remove-member') {
             if (!reasonSelect.value) {
-                alert(t.select_reason);
+                this.toastError(t.select_reason);
                 return;
             }
             removalReason = reasonSelect.value === 'other' ? reasonText.value : t[`reason_${reasonSelect.value}`];
@@ -1176,18 +1338,18 @@ const app = {
                 v.groupId === groupId && v.type === 'admin-change' && v.status === 'active'
             );
             if (existingAdminChange) {
-                alert(t.one_admin_change_at_time);
+                this.toastError(t.one_admin_change_at_time);
                 return;
             }
         }
 
         if (type === 'freeze') {
             if (!group.isAdmin) {
-                alert(t.only_admin_can_freeze);
+                this.toastError(t.only_admin_can_freeze);
                 return;
             }
             if (!this.state.freezeSelectedMembers || this.state.freezeSelectedMembers.length === 0) {
-                alert(t.select_freeze_members);
+                this.toastError(t.select_freeze_members);
                 return;
             }
         }
@@ -1197,11 +1359,11 @@ const app = {
                 v.groupId === groupId && v.type === 'delete-group' && v.status === 'active'
             );
             if (existingDeleteGroup) {
-                alert(t.one_delete_group_at_time);
+                this.toastError(t.one_delete_group_at_time);
                 return;
             }
             if (duration < 24) {
-                alert(t.min_duration_24h);
+                this.toastError(t.min_duration_24h);
                 return;
             }
         }
@@ -1277,7 +1439,7 @@ const app = {
                 `${t.new_voting || 'Нове голосування'}: "${title}"`
             );
         } catch (err) {
-            alert(t.auth_error_network || 'Error creating voting');
+            this.toastError(t.auth_error_network || 'Error creating voting');
         } finally {
             if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
         }
@@ -1302,14 +1464,14 @@ const app = {
         const t = this.translations[this.currentLanguage];
         const code = document.getElementById('join-group-id').value.trim();
         if (!code || code.length !== 6) {
-            alert(t.enter_group_id_error || 'Введіть коректний ID групи (6 цифр)');
+            this.toastError(t.enter_group_id_error || 'Введіть коректний ID групи (6 цифр)');
             return;
         }
 
         // Check if already member locally
         const existing = this.state.groups.find(g => g.groupId === code);
         if (existing) {
-            alert(t.already_member || 'Ви вже є учасником цієї групи');
+            this.toastError(t.already_member || 'Ви вже є учасником цієї групи');
             return;
         }
 
@@ -1317,7 +1479,7 @@ const app = {
             // Find group by code
             const { data: group, error: findErr } = await supabaseService.findGroupByCode(code);
             if (findErr || !group) {
-                alert(t.group_not_found || 'Групу не знайдено');
+                this.toastError(t.group_not_found || 'Групу не знайдено');
                 return;
             }
 
@@ -1325,7 +1487,7 @@ const app = {
             const { data: request, error: reqErr } = await supabaseService.sendJoinRequest(group.id);
             if (reqErr) {
                 if (reqErr.code === '23505') {
-                    alert(t.already_requested || 'Запит вже надіслано');
+                    this.toastError(t.already_requested || 'Запит вже надіслано');
                 } else {
                     throw new Error(reqErr.message);
                 }
@@ -1354,9 +1516,9 @@ const app = {
             });
             this.renderNotifications();
 
-            alert(t.join_request_sent || 'Запит на приєднання надіслано');
+            this.toastSuccess(t.join_request_sent || 'Запит на приєднання надіслано');
         } catch (err) {
-            alert(t.auth_error_network || 'Помилка мережі');
+            this.toastError(t.auth_error_network || 'Помилка мережі');
         }
     },
 
@@ -1686,12 +1848,12 @@ const app = {
         const t = this.translations[this.currentLanguage];
 
         if (!this.state.user.apartment) {
-            alert(t.apartment_required);
+            this.toastError(t.apartment_required);
             return;
         }
 
         if (this.state.user.frozen) {
-            alert(t.frozen_cannot_vote);
+            this.toastError(t.frozen_cannot_vote);
             return;
         }
 
@@ -1708,7 +1870,7 @@ const app = {
             const { data, error } = await supabaseService.castVote(votingId, choice, comment);
             if (error) {
                 if (error.code === '23505') {
-                    alert(t.already_voted || 'Ви вже проголосували');
+                    this.toastError(t.already_voted || 'Ви вже проголосували');
                     voting.hasVoted = true;
                 } else {
                     throw new Error(error.message);
@@ -1734,7 +1896,7 @@ const app = {
             this.renderVotings();
             this.showVotingDetail(votingId);
         } catch (err) {
-            alert(t.auth_error_network || 'Помилка голосування');
+            this.toastError(t.auth_error_network || 'Помилка голосування');
         }
     },
 
@@ -1747,7 +1909,7 @@ const app = {
         
         // Check if voting is completed
         if (voting.status === 'completed') {
-            alert(t.cannot_delete_completed);
+            this.toastError(t.cannot_delete_completed);
             return;
         }
         
@@ -1785,12 +1947,12 @@ const app = {
         const reason = document.getElementById('delete-reason-text').value.trim();
 
         if (reason.length < 5) {
-            alert(t.delete_reason_short);
+            this.toastError(t.delete_reason_short);
             return;
         }
 
         if (reason.length > 200) {
-            alert('Причина занадто довга (макс. 200 символів)');
+            this.toastError('Причина занадто довга (макс. 200 символів)');
             return;
         }
 
@@ -1808,9 +1970,9 @@ const app = {
             this.hideModal('voting-detail-modal');
             this.renderVotings();
 
-            alert(t.voting_deleted);
+            this.toastSuccess(t.voting_deleted);
         } catch (err) {
-            alert(t.auth_error_network || 'Помилка');
+            this.toastError(t.auth_error_network || 'Помилка');
         }
     },
 
@@ -2059,7 +2221,7 @@ const app = {
         const groupVotings = this.state.votings.filter(v => v.groupId === group.id);
         
         if (groupVotings.length === 0) {
-            alert('Немає голосувань для експорту');
+            this.toastError('Немає голосувань для експорту');
             return;
         }
 
@@ -2178,7 +2340,7 @@ const app = {
             if (error) throw new Error(error.message);
             await this.showGroupDetail(groupId);
         } catch (err) {
-            alert(t.auth_error_network || 'Помилка');
+            this.toastError(t.auth_error_network || 'Помилка');
         }
     },
 
@@ -2189,14 +2351,14 @@ const app = {
             if (error) throw new Error(error.message);
             await this.showGroupDetail(groupId);
         } catch (err) {
-            alert(t.auth_error_network || 'Помилка');
+            this.toastError(t.auth_error_network || 'Помилка');
         }
     },
 
     copyGroupId() {
         const groupId = document.getElementById('group-detail-id').textContent;
         navigator.clipboard.writeText(groupId).then(() => {
-            alert('ID скопійовано: ' + groupId);
+            this.toastSuccess('ID ' + groupId);
         });
     },
 
@@ -2232,7 +2394,7 @@ const app = {
         const description = document.getElementById('edit-group-description').value.trim();
 
         if (!name) {
-            alert(t.group_name_required || 'Введіть назву групи');
+            this.toastError(t.group_name_required || 'Введіть назву групи');
             return;
         }
 
@@ -2258,7 +2420,7 @@ const app = {
             document.getElementById('group-detail-description').textContent = description;
             this.renderGroups();
         } catch (err) {
-            alert(t.auth_error_network || err.message);
+            this.toastError(t.auth_error_network || err.message);
         } finally {
             if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
         }
@@ -2271,7 +2433,7 @@ const app = {
         if (!group) return;
 
         if (group.membersCount >= 2) {
-            alert(t.delete_group_need_voting);
+            this.toastError(t.delete_group_need_voting);
             return;
         }
         this.showModal('delete-group-modal');
@@ -2297,7 +2459,7 @@ const app = {
             this.showScreen('groups-screen');
             this.renderGroups();
         } catch (err) {
-            alert(t.auth_error_network || err.message);
+            this.toastError(t.auth_error_network || err.message);
         } finally {
             if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
         }
@@ -2339,7 +2501,7 @@ const app = {
             });
             this.renderNotifications();
         } catch (err) {
-            alert(t.auth_error_network || err.message);
+            this.toastError(t.auth_error_network || err.message);
         } finally {
             if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
         }
@@ -2436,13 +2598,16 @@ const app = {
             members: 'учасників',
             votings: 'голосувань',
             empty_groups: 'Ви ще не приєдналися до жодної групи',
+            empty_groups_hint: 'Створіть свою групу або приєднайтеся за 6-значним кодом, який вам надішле адміністратор.',
             group_not_found: 'Групу не знайдено',
             already_requested: 'Запит вже надіслано',
             join_request_sent: 'Запит на приєднання надіслано',
             already_member: 'Ви вже є учасником цієї групи',
             enter_group_id_error: 'Введіть коректний ID групи (6 цифр)',
-            empty_votings: 'Немає голосувань',
-            empty_notifications: 'Немає сповіщень',
+            empty_votings: 'Поки що немає голосувань',
+            empty_votings_hint: 'Тут з\'являться голосування з ваших груп. Створіть перше — натисніть «+» вгорі.',
+            empty_notifications: 'Сповіщень немає',
+            empty_notifications_hint: 'Коли в ваших групах з\'являться нові події — побачите їх тут.',
             select_group: 'Виберіть групу',
             secret_voting: 'Тайне',
             open_voting: 'Відкрите',
@@ -2750,14 +2915,17 @@ const app = {
             member: 'Member',
             members: 'members',
             votings: 'votings',
-            empty_groups: 'You have not joined any groups yet',
+            empty_groups: 'You haven\'t joined any groups yet',
+            empty_groups_hint: 'Create your own group or join one using the 6-digit code your admin sent you.',
             group_not_found: 'Group not found',
             already_requested: 'Request already sent',
             join_request_sent: 'Join request sent',
             already_member: 'You are already a member of this group',
             enter_group_id_error: 'Enter a valid group ID (6 digits)',
-            empty_votings: 'No votings',
+            empty_votings: 'No votings yet',
+            empty_votings_hint: 'Votings from your groups will appear here. Tap the "+" button above to create the first one.',
             empty_notifications: 'No notifications',
+            empty_notifications_hint: 'When something happens in your groups — you\'ll see it here.',
             select_group: 'Select group',
             secret_voting: 'Secret',
             open_voting: 'Open',
@@ -3066,13 +3234,16 @@ const app = {
             members: 'участников',
             votings: 'голосований',
             empty_groups: 'Вы ещё не присоединились ни к одной группе',
+            empty_groups_hint: 'Создайте свою группу или присоединитесь по 6-значному коду, который вам пришлёт администратор.',
             group_not_found: 'Группа не найдена',
             already_requested: 'Запрос уже отправлен',
             join_request_sent: 'Запрос на присоединение отправлен',
             already_member: 'Вы уже являетесь участником этой группы',
             enter_group_id_error: 'Введите корректный ID группы (6 цифр)',
-            empty_votings: 'Нет голосований',
-            empty_notifications: 'Нет уведомлений',
+            empty_votings: 'Пока нет голосований',
+            empty_votings_hint: 'Здесь появятся голосования из ваших групп. Нажмите «+» вверху, чтобы создать первое.',
+            empty_notifications: 'Уведомлений нет',
+            empty_notifications_hint: 'Когда в ваших группах появятся события — увидите их здесь.',
             select_group: 'Выберите группу',
             secret_voting: 'Тайное',
             open_voting: 'Открытое',
@@ -3400,7 +3571,7 @@ const app = {
         if (!voting || voting.type !== 'freeze' || voting.status !== 'active') return;
 
         if (voting.objections && voting.objections.some(o => o.userId === this.state.user.id)) {
-            alert(t.already_objected);
+            this.toastError(t.already_objected);
             return;
         }
 
@@ -3408,7 +3579,7 @@ const app = {
             const { error } = await supabaseService.addFreezeObjection(votingId);
             if (error) {
                 if (error.code === '23505') {
-                    alert(t.already_objected);
+                    this.toastError(t.already_objected);
                 } else {
                     throw new Error(error.message);
                 }
@@ -3420,14 +3591,14 @@ const app = {
 
             const refreshedVoting = this.state.votings.find(v => v.id === votingId);
             if (refreshedVoting && refreshedVoting.status === 'completed') {
-                alert(t.freeze_auto_rejected);
+                this.toastWarning(t.freeze_auto_rejected);
             } else {
-                alert(t.objection_added);
+                this.toastSuccess(t.objection_added);
             }
 
             this.showVotingDetail(votingId);
         } catch (err) {
-            alert(t.auth_error_network || 'Помилка');
+            this.toastError(t.auth_error_network || 'Помилка');
         }
     },
 
@@ -3839,14 +4010,14 @@ const app = {
             });
 
             if (error) {
-                alert(t.auth_error_network);
+                this.toastError(t.auth_error_network);
                 return;
             }
         }
 
         this.updateProfileDisplay();
         this.hideModal('edit-profile-modal');
-        alert(t.profile_saved);
+        this.toastSuccess(t.profile_saved);
     },
 
     // Instructions
