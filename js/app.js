@@ -64,6 +64,9 @@ const app = {
         // Apply saved theme before anything renders to prevent flash
         this.initTheme();
 
+        // If iOS user — surface install hint button (no native prompt event on iOS)
+        this.showIOSInstallHintIfNeeded();
+
         // Re-sync theme-color meta when system preference changes (only matters in 'auto' mode)
         if (window.matchMedia) {
             try {
@@ -1055,6 +1058,68 @@ const app = {
     toastSuccess(msg) { return this.toast(msg, 'success'); },
     toastWarning(msg) { return this.toast(msg, 'warning'); },
     toastInfo(msg)    { return this.toast(msg, 'info'); },
+
+    // === PWA INSTALL ===
+    // Triggered by index.html when 'beforeinstallprompt' fires (Chrome/Edge/Android).
+    // iOS Safari does not support this event — for iOS we show manual hint instead.
+    onInstallAvailable() {
+        const btn = document.getElementById('install-app-btn');
+        if (btn) btn.classList.remove('hidden');
+    },
+
+    onInstalled() {
+        const btn = document.getElementById('install-app-btn');
+        if (btn) btn.classList.add('hidden');
+        const t = this.translations[this.currentLanguage] || {};
+        this.toastSuccess(t.install_thanks || 'Дякуємо! Тепер VoteCoop на головному екрані.');
+    },
+
+    async installApp() {
+        const t = this.translations[this.currentLanguage] || {};
+
+        // iOS Safari path — show manual instruction
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+            || window.navigator.standalone === true;
+
+        if (isStandalone) {
+            this.toastInfo(t.install_already || 'Додаток уже встановлено');
+            return;
+        }
+
+        if (isIOS) {
+            this.toastInfo(t.install_ios_hint || 'На iOS: натисніть «Поділитися» → «На екран Домівка»', 6000);
+            return;
+        }
+
+        const evt = window.__deferredInstallPrompt;
+        if (!evt) {
+            // Browser hasn't fired the prompt yet — likely not eligible (HTTP, missing criteria, already installed)
+            this.toastInfo(t.install_not_ready || 'Опція встановлення зараз недоступна. Зайдіть пізніше або перевірте, що сторінка відкрита через HTTPS.', 5000);
+            return;
+        }
+
+        evt.prompt();
+        const { outcome } = await evt.userChoice;
+        window.__deferredInstallPrompt = null;
+        if (outcome !== 'accepted') {
+            this.toastInfo(t.install_dismissed || 'Скасовано — можна встановити пізніше з цього ж екрана.');
+        }
+        // Hide button — either user accepted (appinstalled fires) or dismissed
+        const btn = document.getElementById('install-app-btn');
+        if (btn) btn.classList.add('hidden');
+    },
+
+    // Detect iOS users on initial load and surface install button so they can see the iOS hint
+    showIOSInstallHintIfNeeded() {
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+            || window.navigator.standalone === true;
+        if (isIOS && !isStandalone) {
+            const btn = document.getElementById('install-app-btn');
+            if (btn) btn.classList.remove('hidden');
+        }
+    },
 
     // Modals — also lock body scroll while any modal is open
     showModal(modalId) {
@@ -2530,6 +2595,12 @@ const app = {
             theme_auto: 'Системна',
             theme_light: 'Світла',
             theme_dark: 'Темна',
+            install_app: 'Встановити на головний екран',
+            install_thanks: 'Дякуємо! VoteCoop встановлено на головному екрані.',
+            install_already: 'Додаток уже встановлено',
+            install_ios_hint: 'На iPhone/iPad: натисніть «Поділитися» (квадрат зі стрілкою) і виберіть «На екран Домівка».',
+            install_not_ready: 'Опція встановлення поки недоступна. Перевірте, що сторінку відкрито через HTTPS — і спробуйте знову.',
+            install_dismissed: 'Скасовано — можна встановити пізніше з цього ж екрана.',
             address: 'Адреса',
             groups_count: 'Груп',
             firstname: "Ім'я",
@@ -2848,6 +2919,12 @@ const app = {
             theme_auto: 'System',
             theme_light: 'Light',
             theme_dark: 'Dark',
+            install_app: 'Install on home screen',
+            install_thanks: 'Thanks! VoteCoop is now on your home screen.',
+            install_already: 'App is already installed',
+            install_ios_hint: 'On iPhone/iPad: tap "Share" (square with arrow) and choose "Add to Home Screen".',
+            install_not_ready: 'Install option is not available right now. Make sure you opened the page via HTTPS and try again.',
+            install_dismissed: 'Cancelled — you can install later from this screen.',
             address: 'Address',
             groups_count: 'Groups',
             firstname: 'First Name',
@@ -3166,6 +3243,12 @@ const app = {
             theme_auto: 'Системная',
             theme_light: 'Светлая',
             theme_dark: 'Тёмная',
+            install_app: 'Установить на главный экран',
+            install_thanks: 'Спасибо! VoteCoop теперь на главном экране.',
+            install_already: 'Приложение уже установлено',
+            install_ios_hint: 'На iPhone/iPad: нажмите «Поделиться» (квадрат со стрелкой) и выберите «На экран Домой».',
+            install_not_ready: 'Опция установки сейчас недоступна. Проверьте, что страница открыта через HTTPS — и попробуйте снова.',
+            install_dismissed: 'Отменено — можно установить позже с этого же экрана.',
             address: 'Адрес',
             groups_count: 'Групп',
             firstname: 'Имя',

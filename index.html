@@ -231,6 +231,10 @@
                             <span class="theme-icon icon"><i class="ph ph-circle-half" aria-hidden="true"></i></span>
                             <span class="theme-label">Тема: Системна</span>
                         </button>
+                        <button class="btn btn-secondary hidden" id="install-app-btn" onclick="app.installApp()">
+                            <span class="icon"><i class="ph ph-download-simple" aria-hidden="true"></i></span>
+                            <span data-lang="install_app">Встановити на головний екран</span>
+                        </button>
                         <button class="btn btn-secondary" onclick="app.showInstructions()">
                             <span class="icon">📖</span>
                             <span data-lang="instructions">Інструкції</span>
@@ -855,11 +859,30 @@
     <script src="js/supabase.js"></script>
     <script src="js/app.js"></script>
     <script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/service-worker.js')
-                .then(function(reg) { console.log('SW registered:', reg.scope); })
-                .catch(function(err) { console.log('SW error:', err); });
+        // Service worker — registered with relative path so it works under any base URL
+        // (root, GitHub Pages /votecoop/, etc.). Skipped on file:// where SW is unsupported.
+        if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('service-worker.js')
+                    .catch(function () { /* SW unavailable — app still works online */ });
+            });
         }
+
+        // PWA install prompt — capture beforeinstallprompt and offer it via app.installApp()
+        window.addEventListener('beforeinstallprompt', function (e) {
+            e.preventDefault();
+            window.__deferredInstallPrompt = e;
+            if (window.app && typeof app.onInstallAvailable === 'function') {
+                app.onInstallAvailable();
+            }
+        });
+
+        window.addEventListener('appinstalled', function () {
+            window.__deferredInstallPrompt = null;
+            if (window.app && typeof app.onInstalled === 'function') {
+                app.onInstalled();
+            }
+        });
     </script>
 </body>
 </html>
