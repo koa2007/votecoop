@@ -10,7 +10,12 @@ const fs = require('fs');
 const path = require('path');
 
 const BRAND = '#007AFF';
-const SOURCE = path.join(__dirname, 'spilkalogo.png');
+// Transparent logo: stack mark on top ~58% of canvas, "spilka.top" text on
+// the bottom ~32%. We crop just the MARK for icons because dark-navy text
+// would be invisible on the brand-blue background at small sizes.
+const SOURCE = path.join(__dirname, 'spilkalogotransperent.png');
+// Crop region of the source — fraction of width/height
+const CROP = { x: 0.05, y: 0.04, w: 0.90, h: 0.58 };
 
 const iconsDir = path.join(__dirname, 'icons');
 if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir);
@@ -30,19 +35,26 @@ function roundRect(ctx, x, y, w, h, r) {
     ctx.fill();
 }
 
+function srcRect(source) {
+    return [
+        Math.round(source.width * CROP.x),
+        Math.round(source.height * CROP.y),
+        Math.round(source.width * CROP.w),
+        Math.round(source.height * CROP.h)
+    ];
+}
+
 async function generateMaskableIcon(size, outputPath, source) {
     const canvas = createCanvas(size, size);
     const ctx = canvas.getContext('2d');
 
-    // Full-bleed brand background (so corners survive any mask)
     ctx.fillStyle = BRAND;
     ctx.fillRect(0, 0, size, size);
 
-    // Logo sized to safe zone (78% of canvas — slightly larger than 80% to
-    // make the mark look strong, but within the maskable safe area).
-    const logoSize = Math.round(size * 0.78);
+    const logoSize = Math.round(size * 0.72);
     const offset = Math.round((size - logoSize) / 2);
-    ctx.drawImage(source, offset, offset, logoSize, logoSize);
+    const [sx, sy, sw, sh] = srcRect(source);
+    ctx.drawImage(source, sx, sy, sw, sh, offset, offset, logoSize, logoSize);
 
     fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
     console.log(`maskable: ${outputPath} (${size}x${size})`);
@@ -52,13 +64,13 @@ async function generateRoundedIcon(size, outputPath, source) {
     const canvas = createCanvas(size, size);
     const ctx = canvas.getContext('2d');
 
-    // Brand-blue rounded square (Android squircle radius ≈ 22%)
     ctx.fillStyle = BRAND;
     roundRect(ctx, 0, 0, size, size, Math.round(size * 0.22));
 
-    const logoSize = Math.round(size * 0.78);
+    const logoSize = Math.round(size * 0.72);
     const offset = Math.round((size - logoSize) / 2);
-    ctx.drawImage(source, offset, offset, logoSize, logoSize);
+    const [sx, sy, sw, sh] = srcRect(source);
+    ctx.drawImage(source, sx, sy, sw, sh, offset, offset, logoSize, logoSize);
 
     fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
     console.log(`rounded:  ${outputPath} (${size}x${size})`);
@@ -69,8 +81,10 @@ async function generateFavicon(size, outputPath, source) {
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = BRAND;
     ctx.fillRect(0, 0, size, size);
-    ctx.drawImage(source, Math.round(size * 0.1), Math.round(size * 0.1),
-                  Math.round(size * 0.8), Math.round(size * 0.8));
+    const logoSize = Math.round(size * 0.78);
+    const offset = Math.round((size - logoSize) / 2);
+    const [sx, sy, sw, sh] = srcRect(source);
+    ctx.drawImage(source, sx, sy, sw, sh, offset, offset, logoSize, logoSize);
     fs.writeFileSync(outputPath, canvas.toBuffer('image/png'));
     console.log(`favicon:  ${outputPath} (${size}x${size})`);
 }
