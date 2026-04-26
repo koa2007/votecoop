@@ -109,7 +109,17 @@ const app = {
 
         // Listen for auth state changes (handles OAuth redirect callback)
         supabaseService.onAuthStateChange(async (event, session) => {
+            if (event === 'PASSWORD_RECOVERY') {
+                // User clicked "reset password" link in their email — Supabase
+                // gives a temporary session for the password update only.
+                // Show the reset-password screen instead of the main app.
+                this.showResetPasswordScreen();
+                return;
+            }
             if (event === 'SIGNED_IN' && session) {
+                // If we're already on the reset screen (recovery flow), don't
+                // bounce the user to the main app — let them set a new password.
+                if (this.state.currentScreen === 'reset-password-screen') return;
                 await this.handleAuthSession(session);
             } else if (event === 'SIGNED_OUT') {
                 this.handleSignOut();
@@ -241,7 +251,8 @@ const app = {
     // Navigation
     showScreen(screenId) {
         const mainScreens = ['voting-screen', 'groups-screen', 'notifications-screen', 'profile-screen'];
-        const topLevelScreens = ['loading-screen', 'auth-screen', 'register-screen', 'profile-setup-screen'];
+        const topLevelScreens = ['loading-screen', 'auth-screen', 'register-screen',
+            'forgot-password-screen', 'reset-password-screen', 'profile-setup-screen'];
         const detailScreens = ['group-detail-screen'];
         const mainContainer = document.getElementById('main-screens');
 
@@ -341,17 +352,54 @@ const app = {
         }
     },
 
-    // Switch between login and register screens (top-level)
+    // Switch between top-level auth screens
     showAuthScreen() {
-        this.hideAuthMessages();
-        this.hideRegisterMessages();
+        this._clearAuthMessages();
         this.showScreen('auth-screen');
     },
 
     showRegisterScreen() {
-        this.hideAuthMessages();
-        this.hideRegisterMessages();
+        this._clearAuthMessages();
         this.showScreen('register-screen');
+    },
+
+    showForgotPasswordScreen() {
+        this._clearAuthMessages();
+        // Pre-fill email from auth screen if user already typed it there
+        const fromAuth = document.getElementById('auth-email')?.value.trim();
+        const target = document.getElementById('forgot-email');
+        if (target && fromAuth && !target.value) target.value = fromAuth;
+        this.showScreen('forgot-password-screen');
+    },
+
+    // Reset-password screen — reachable both from email link
+    // (PASSWORD_RECOVERY event) and from "Change password" in profile.
+    showResetPasswordScreen() {
+        this._clearAuthMessages();
+        // Hide bottom nav + main screens; show standalone reset screen
+        const main = document.getElementById('main-screens');
+        if (main) main.classList.add('hidden');
+        // Clear inputs in case of re-entry
+        ['reset-password-1', 'reset-password-2'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        this.showScreen('reset-password-screen');
+    },
+
+    // Same screen, different label — used from profile when user is logged in
+    // and wants to change their password manually.
+    showChangePasswordScreen() {
+        this.state._returnAfterPasswordChange = 'main-screens';
+        this.showResetPasswordScreen();
+    },
+
+    _clearAuthMessages() {
+        ['auth-error', 'auth-success', 'register-error', 'register-success',
+         'forgot-error', 'forgot-success', 'reset-error', 'reset-success'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
     },
 
     hideRegisterMessages() {
@@ -377,6 +425,106 @@ const app = {
         el.classList.remove('hidden');
         const err = document.getElementById('register-error');
         if (err) err.classList.add('hidden');
+    },
+
+    _showInlineError(screenPrefix, msg) {
+        const el = document.getElementById(`${screenPrefix}-error`);
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.remove('hidden');
+        const ok = document.getElementById(`${screenPrefix}-success`);
+        if (ok) ok.classList.add('hidden');
+    },
+
+    _showInlineSuccess(screenPrefix, msg) {
+        const el = document.getElementById(`${screenPrefix}-success`);
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.remove('hidden');
+        const err = document.getElementById(`${screenPrefix}-error`);
+        if (err) err.classList.add('hidden');
+    },
+
+    toggleResetPasswordVisibility() {
+        const input = document.getElementById('reset-password-1');
+        const icon = document.getElementById('reset-password-toggle-icon');
+        if (!input || !icon) return;
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'ph ph-eye-slash';
+        } else {
+            input.type = 'password';
+            icon.className = 'ph ph-eye';
+        }
+    },
+
+    // Submit forgot-password form: send reset link to the entered email
+    async submitForgotPassword() {
+        const t = this.translations[this.currentLanguage] || {};
+        const email = document.getElementById('forgot-email')?.value.trim();
+        if (!email) {
+            this._showInlineError('forgot', t.auth_error_enter_email);
+            return;
+        }
+        if (!supabaseService.isReady()) {
+            this._showInlineError('forgot', t.auth_error_network);
+            return;
+        }
+        this._clearAuthMessages();
+        this.setBtnLoading('forgot-submit-btn', true);
+        const { error } = await supabaseService.resetPassword(email);
+        this.setBtnLoading('forgot-submit-btn', false);
+        if (error) {
+            this._showInlineError('forgot', error.message);
+            return;
+        }
+        this._showInlineSuccess('forgot', t.auth_reset_sent);
+        // After 3s return to login (mirrors register flow)
+        setTimeout(() => {
+            this.showAuthScreen();
+            const loginEmail = document.getElementById('auth-email');
+            if (loginEmail) loginEmail.value = email;
+            this.showAuthSuccess(t.auth_reset_sent);
+        }, 3000);
+    },
+
+    // Submit new password (works both for password recovery and manual change)
+    async submitNewPassword() {
+        const t = this.translations[this.currentLanguage] || {};
+        const p1 = document.getElementById('reset-password-1')?.value || '';
+        const p2 = document.getElementById('reset-password-2')?.value || '';
+        if (!p1 || p1.length < 6) {
+            this._showInlineError('reset', t.auth_error_password_short);
+            return;
+        }
+        if (p1 !== p2) {
+            this._showInlineError('reset', t.reset_mismatch || 'Паролі не співпадають');
+            return;
+        }
+        if (!supabaseService.isReady()) {
+            this._showInlineError('reset', t.auth_error_network);
+            return;
+        }
+        this._clearAuthMessages();
+        this.setBtnLoading('reset-submit-btn', true);
+        const { error } = await supabaseService.client.auth.updateUser({ password: p1 });
+        this.setBtnLoading('reset-submit-btn', false);
+        if (error) {
+            this._showInlineError('reset', error.message);
+            return;
+        }
+        this.toastSuccess(t.reset_done || 'Пароль оновлено');
+        // Decide where to go next:
+        //  • If session is fully authenticated and user state is loaded → main app
+        //  • Otherwise (post-recovery without prior session) → login screen so they sign in fresh
+        if (this.state.user && this.state.user.id) {
+            const main = document.getElementById('main-screens');
+            if (main) main.classList.remove('hidden');
+            this.showScreen('voting-screen');
+            this.refreshProfileCTA();
+        } else {
+            this.showAuthScreen();
+        }
     },
 
     // Show auth error message
@@ -542,32 +690,8 @@ const app = {
         }
     },
 
-    // Reset password
-    async resetPassword() {
-        const t = this.translations[this.currentLanguage];
-        const email = document.getElementById('auth-email').value.trim();
-
-        if (!email) {
-            this.showAuthError(t.auth_error_enter_email);
-            return;
-        }
-
-        if (!supabaseService.isReady()) {
-            this.showAuthError(t.auth_error_network);
-            return;
-        }
-
-        this.hideAuthMessages();
-
-        const { data, error } = await supabaseService.resetPassword(email);
-
-        if (error) {
-            this.showAuthError(error.message);
-            return;
-        }
-
-        this.showAuthSuccess(t.auth_reset_sent);
-    },
+    // Legacy entry point — now redirects to the dedicated forgot-password screen.
+    resetPassword() { this.showForgotPasswordScreen(); },
 
 
     // Legacy login() for backward compatibility
@@ -2840,6 +2964,18 @@ const app = {
             register_submit_btn: 'Створити акаунт',
             register_google_btn: 'Реєстрація через Google',
             register_have_account: 'Вже маєте акаунт?',
+            forgot_title: 'Відновлення пароля',
+            forgot_subtitle: 'Введіть email — надішлемо посилання',
+            forgot_submit_btn: 'Надіслати посилання',
+            forgot_remembered: 'Згадали пароль?',
+            reset_title: 'Новий пароль',
+            reset_subtitle: 'Введіть новий пароль для акаунта',
+            reset_pass1_placeholder: 'Новий пароль (мін. 6 символів)',
+            reset_pass2_placeholder: 'Повторіть новий пароль',
+            reset_submit_btn: 'Зберегти новий пароль',
+            reset_mismatch: 'Паролі не співпадають',
+            reset_done: 'Пароль оновлено',
+            change_password: 'Змінити пароль',
             cta_complete_profile: 'Заповніть «Квартиру/офіс» у профілі, щоб голосувати',
             members_label: 'Учасників',
             votings_label: 'Голосувань',
@@ -3180,6 +3316,18 @@ const app = {
             register_submit_btn: 'Create account',
             register_google_btn: 'Sign up with Google',
             register_have_account: 'Already have an account?',
+            forgot_title: 'Reset password',
+            forgot_subtitle: 'Enter your email — we\'ll send a reset link',
+            forgot_submit_btn: 'Send reset link',
+            forgot_remembered: 'Remembered your password?',
+            reset_title: 'New password',
+            reset_subtitle: 'Enter a new password for your account',
+            reset_pass1_placeholder: 'New password (min. 6 chars)',
+            reset_pass2_placeholder: 'Repeat the new password',
+            reset_submit_btn: 'Save new password',
+            reset_mismatch: 'Passwords do not match',
+            reset_done: 'Password updated',
+            change_password: 'Change password',
             cta_complete_profile: 'Fill in "Apartment/office" in your profile to vote',
             members_label: 'Members',
             votings_label: 'Votings',
@@ -3520,6 +3668,18 @@ const app = {
             register_submit_btn: 'Создать аккаунт',
             register_google_btn: 'Регистрация через Google',
             register_have_account: 'Уже есть аккаунт?',
+            forgot_title: 'Восстановление пароля',
+            forgot_subtitle: 'Введите email — пришлём ссылку',
+            forgot_submit_btn: 'Отправить ссылку',
+            forgot_remembered: 'Вспомнили пароль?',
+            reset_title: 'Новый пароль',
+            reset_subtitle: 'Введите новый пароль для аккаунта',
+            reset_pass1_placeholder: 'Новый пароль (мин. 6 символов)',
+            reset_pass2_placeholder: 'Повторите новый пароль',
+            reset_submit_btn: 'Сохранить новый пароль',
+            reset_mismatch: 'Пароли не совпадают',
+            reset_done: 'Пароль обновлён',
+            change_password: 'Сменить пароль',
             cta_complete_profile: 'Заполните «Квартиру/офис» в профиле, чтобы голосовать',
             members_label: 'Участников',
             votings_label: 'Голосований',

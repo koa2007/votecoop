@@ -94,7 +94,7 @@
 
                     <!-- Inline links: forgot password · register -->
                     <div class="auth-links-row">
-                        <a href="#" class="auth-link" onclick="app.resetPassword(); return false;" data-lang="auth_forgot_password">Забули пароль?</a>
+                        <a href="#" class="auth-link" onclick="app.showForgotPasswordScreen(); return false;" data-lang="auth_forgot_password">Забули пароль?</a>
                         <span class="auth-link-separator" aria-hidden="true">·</span>
                         <a href="#" class="auth-link" onclick="app.showRegisterScreen(); return false;" data-lang="auth_register_link">Реєстрація</a>
                     </div>
@@ -149,6 +149,80 @@
                     <span data-lang="register_have_account">Вже маєте акаунт?</span>
                     <a href="#" class="auth-link" onclick="app.showAuthScreen(); return false;" data-lang="auth_login_btn">Увійти</a>
                 </p>
+            </div>
+        </div>
+
+        <!-- Forgot Password Screen (separate, like Register) -->
+        <div class="screen hidden" id="forgot-password-screen">
+            <div class="auth-container auth-compact">
+                <div class="auth-back-row">
+                    <button class="btn-icon back-btn" onclick="app.showAuthScreen()" aria-label="Back">
+                        <i class="ph ph-arrow-left" aria-hidden="true"></i>
+                    </button>
+                    <div class="language-selector">
+                        <select id="forgot-language-select" onchange="app.changeLanguage(this.value)">
+                            <option value="uk">Українська</option>
+                            <option value="en">English</option>
+                            <option value="ru">Русский</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="logo logo-inline">
+                    <div class="logo-icon"><img src="icons/spilka-mark.png" alt="Spilka logo" class="logo-img"></div>
+                    <div class="logo-text">
+                        <h1 data-lang="forgot_title">Відновлення пароля</h1>
+                        <p data-lang="forgot_subtitle">Введіть email — надішлемо посилання</p>
+                    </div>
+                </div>
+
+                <div class="auth-error hidden" id="forgot-error"></div>
+                <div class="auth-success hidden" id="forgot-success"></div>
+
+                <form class="auth-form" id="forgot-form" onsubmit="return false;">
+                    <div class="form-group">
+                        <input type="email" id="forgot-email" data-lang-placeholder="auth_email_placeholder" placeholder="Email" required autocomplete="email">
+                    </div>
+                    <button class="btn btn-primary" id="forgot-submit-btn" type="submit" onclick="app.submitForgotPassword()">
+                        <span data-lang="forgot_submit_btn">Надіслати посилання</span>
+                    </button>
+                </form>
+
+                <p class="auth-hint">
+                    <span data-lang="forgot_remembered">Згадали пароль?</span>
+                    <a href="#" class="auth-link" onclick="app.showAuthScreen(); return false;" data-lang="auth_login_btn">Увійти</a>
+                </p>
+            </div>
+        </div>
+
+        <!-- Reset Password Screen (shown when user clicks link in email) -->
+        <div class="screen hidden" id="reset-password-screen">
+            <div class="auth-container auth-compact">
+                <div class="logo logo-inline">
+                    <div class="logo-icon"><img src="icons/spilka-mark.png" alt="Spilka logo" class="logo-img"></div>
+                    <div class="logo-text">
+                        <h1 data-lang="reset_title">Новий пароль</h1>
+                        <p data-lang="reset_subtitle">Введіть новий пароль для акаунта</p>
+                    </div>
+                </div>
+
+                <div class="auth-error hidden" id="reset-error"></div>
+                <div class="auth-success hidden" id="reset-success"></div>
+
+                <form class="auth-form" id="reset-form" onsubmit="return false;">
+                    <div class="form-group password-group">
+                        <input type="password" id="reset-password-1" data-lang-placeholder="reset_pass1_placeholder" placeholder="Новий пароль (мін. 6 символів)" required minlength="6" autocomplete="new-password">
+                        <button type="button" class="password-toggle" onclick="app.toggleResetPasswordVisibility()" aria-label="Show password">
+                            <i class="ph ph-eye" id="reset-password-toggle-icon" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="reset-password-2" data-lang-placeholder="reset_pass2_placeholder" placeholder="Повторіть новий пароль" required minlength="6" autocomplete="new-password">
+                    </div>
+                    <button class="btn btn-primary" id="reset-submit-btn" type="submit" onclick="app.submitNewPassword()">
+                        <span data-lang="reset_submit_btn">Зберегти новий пароль</span>
+                    </button>
+                </form>
             </div>
         </div>
 
@@ -291,6 +365,10 @@
                         <button class="btn btn-secondary" onclick="app.showEditProfile()">
                             <span class="icon">✏️</span>
                             <span data-lang="edit_profile">Редагувати профіль</span>
+                        </button>
+                        <button class="btn btn-secondary" onclick="app.showChangePasswordScreen()">
+                            <span class="icon"><i class="ph ph-lock-key" aria-hidden="true"></i></span>
+                            <span data-lang="change_password">Змінити пароль</span>
                         </button>
                         <button class="btn btn-secondary" id="theme-toggle-btn" onclick="app.cycleTheme()" aria-label="Toggle theme">
                             <span class="theme-icon icon"><i class="ph ph-circle-half" aria-hidden="true"></i></span>
