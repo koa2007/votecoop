@@ -154,6 +154,51 @@ body.modal-open {
     height: 100%;
 }
 
+/* Admin panel layout */
+.admin-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+}
+.admin-stat-card {
+    background: var(--color-surface);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    box-shadow: var(--shadow-sm);
+}
+.admin-stat-card .label { font-size: 12px; color: var(--color-text-secondary); }
+.admin-stat-card .value { font-size: 22px; font-weight: 700; color: var(--color-primary); margin-top: 2px; }
+.admin-stat-card .sub { font-size: 11px; color: var(--color-text-tertiary); margin-top: 2px; }
+
+.admin-tab-content { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.admin-row {
+    background: var(--color-surface);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    box-shadow: var(--shadow-sm);
+    font-size: 14px;
+    line-height: 1.4;
+}
+.admin-row .row-title { font-weight: 600; color: var(--color-text); margin-bottom: 4px; word-break: break-word; }
+.admin-row .row-meta { font-size: 12px; color: var(--color-text-secondary); }
+.admin-row .row-meta + .row-meta { margin-top: 2px; }
+.admin-row.feedback-new { border-left: 4px solid var(--color-warning); }
+.admin-row.feedback-reviewed { border-left: 4px solid var(--color-info); }
+.admin-row.feedback-done { border-left: 4px solid var(--color-success); }
+
+.admin-row-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.admin-row-actions button {
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+}
+.admin-row-actions button:hover { color: var(--color-primary); border-color: var(--color-primary); }
+
 /* CTA banner — soft inline action, e.g. "Complete your profile to vote" */
 .cta-banner {
     display: flex;

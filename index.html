@@ -21,6 +21,54 @@
     <!-- Toast container (globally positioned) -->
     <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
+    <!-- Feedback modal — any user can submit a suggestion / complaint -->
+    <div class="modal hidden" id="feedback-modal">
+        <div class="modal-overlay" onclick="app.hideModal('feedback-modal')"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 data-lang="feedback_title">Пропозиція або зауваження</h3>
+                <button class="btn-icon" onclick="app.hideModal('feedback-modal')" aria-label="Close">✕</button>
+            </div>
+            <div class="modal-body">
+                <p class="hint" data-lang="feedback_hint">Напишіть, що подобається або що варто покращити. Ми читаємо все.</p>
+                <div class="form-group">
+                    <textarea id="feedback-text" data-lang-placeholder="feedback_placeholder" placeholder="Ваша пропозиція або зауваження..." maxlength="2000" rows="6"></textarea>
+                    <div class="char-counter"><span id="feedback-counter">0</span> / 2000</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="app.hideModal('feedback-modal')" data-lang="cancel">Скасувати</button>
+                <button class="btn btn-primary" id="feedback-send-btn" onclick="app.submitFeedback()" data-lang="feedback_send">Надіслати</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin panel screen (visible only for koa2007@gmail.com) -->
+    <div class="screen hidden" id="admin-panel-screen">
+        <div class="screen-header">
+            <button class="btn-icon back-btn" onclick="app.showScreen('main-screens'); document.getElementById('profile-screen').classList.remove('hidden');" aria-label="Back">←</button>
+            <h2 data-lang="admin_panel">Адмін-панель</h2>
+            <button class="btn-icon" onclick="app.refreshAdminPanel()" aria-label="Refresh"><i class="ph ph-arrows-clockwise" aria-hidden="true"></i></button>
+        </div>
+        <div class="screen-content">
+            <!-- Stats grid -->
+            <div class="admin-stats-grid" id="admin-stats-grid">
+                <div class="empty-state" data-lang="loading">Завантаження…</div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="segmented-control">
+                <button class="segment active" data-admin-tab="users" data-lang="admin_tab_users">Користувачі</button>
+                <button class="segment" data-admin-tab="groups" data-lang="admin_tab_groups">Групи</button>
+                <button class="segment" data-admin-tab="feedback" data-lang="admin_tab_feedback">Відгуки</button>
+            </div>
+
+            <div class="admin-tab-content" id="admin-tab-users"></div>
+            <div class="admin-tab-content hidden" id="admin-tab-groups"></div>
+            <div class="admin-tab-content hidden" id="admin-tab-feedback"></div>
+        </div>
+    </div>
+
     <!-- Confirm dialog (replaces window.confirm for destructive actions) -->
     <div class="modal hidden" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <div class="modal-overlay" onclick="app.confirmDialogCancel()"></div>
@@ -369,6 +417,14 @@
                         <button class="btn btn-secondary" onclick="app.showChangePasswordScreen()">
                             <span class="icon"><i class="ph ph-lock-key" aria-hidden="true"></i></span>
                             <span data-lang="change_password">Змінити пароль</span>
+                        </button>
+                        <button class="btn btn-secondary" onclick="app.showFeedbackModal()">
+                            <span class="icon"><i class="ph ph-chat-circle-text" aria-hidden="true"></i></span>
+                            <span data-lang="feedback_btn">Пропозиція / зауваження</span>
+                        </button>
+                        <button class="btn btn-secondary hidden" id="admin-panel-btn" onclick="app.showAdminPanel()">
+                            <span class="icon"><i class="ph ph-shield-star" aria-hidden="true"></i></span>
+                            <span data-lang="admin_panel">Адмін-панель</span>
                         </button>
                         <button class="btn btn-secondary" id="theme-toggle-btn" onclick="app.cycleTheme()" aria-label="Toggle theme">
                             <span class="theme-icon icon"><i class="ph ph-circle-half" aria-hidden="true"></i></span>

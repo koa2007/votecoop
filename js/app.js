@@ -176,6 +176,7 @@ const app = {
 
             // Inline UX helpers
             this.refreshProfileCTA();
+            this.refreshAdminBadge();
             this.initPullToRefresh();
 
             // Check expired votings (non-blocking)
@@ -252,7 +253,8 @@ const app = {
     showScreen(screenId) {
         const mainScreens = ['voting-screen', 'groups-screen', 'notifications-screen', 'profile-screen'];
         const topLevelScreens = ['loading-screen', 'auth-screen', 'register-screen',
-            'forgot-password-screen', 'reset-password-screen', 'profile-setup-screen'];
+            'forgot-password-screen', 'reset-password-screen', 'profile-setup-screen',
+            'admin-panel-screen'];
         const detailScreens = ['group-detail-screen'];
         const mainContainer = document.getElementById('main-screens');
 
@@ -607,9 +609,8 @@ const app = {
 
         const { data, error } = await supabaseService.signInWithEmail(email, password);
 
-        this.setBtnLoading('auth-login-btn', false);
-
         if (error) {
+            this.setBtnLoading('auth-login-btn', false);
             if (error.message.includes('Invalid login credentials')) {
                 this.showAuthError(t.auth_error_invalid);
             } else if (error.message.includes('Email not confirmed')) {
@@ -620,7 +621,12 @@ const app = {
             return;
         }
 
-        // Success — onAuthStateChange will handle the rest
+        // Success — keep button visually busy AND switch to the loading screen
+        // so the 3-5s data fetch in handleAuthSession is covered with a spinner
+        // (otherwise the button resets and the user sees a frozen UI).
+        this.showScreen('loading-screen');
+        // Note: setBtnLoading is intentionally not reset — handleAuthSession
+        // will show main-screens, replacing the auth-screen entirely.
     },
 
     // Register with email/password — uses dedicated register screen if open,
@@ -796,6 +802,7 @@ const app = {
 
         // Inline UX helpers
         this.refreshProfileCTA();
+        this.refreshAdminBadge();
         this.initPullToRefresh();
 
         // Start periodic check
@@ -1388,6 +1395,167 @@ const app = {
             container.addEventListener('touchend', finish, { passive: true });
             container.addEventListener('touchcancel', finish, { passive: true });
         });
+    },
+
+    // === FEEDBACK ===
+    showFeedbackModal() {
+        const ta = document.getElementById('feedback-text');
+        if (ta) ta.value = '';
+        const c = document.getElementById('feedback-counter');
+        if (c) c.textContent = '0';
+        this.showModal('feedback-modal');
+        // Live counter
+        if (ta && !ta._counterBound) {
+            ta._counterBound = true;
+            ta.addEventListener('input', () => {
+                if (c) c.textContent = String(ta.value.length);
+            });
+        }
+    },
+
+    async submitFeedback() {
+        const t = this.translations[this.currentLanguage] || {};
+        const ta = document.getElementById('feedback-text');
+        const text = (ta?.value || '').trim();
+        if (text.length < 5) {
+            this.toastError(t.feedback_too_short || 'Напишіть більше деталей (мін. 5 символів)');
+            return;
+        }
+        if (!supabaseService.isReady() || !this.state.user) {
+            this.toastError(t.auth_error_network);
+            return;
+        }
+        this.setBtnLoading('feedback-send-btn', true);
+        const u = this.state.user;
+        const userName = [u.firstName, u.lastName].filter(Boolean).join(' ') || null;
+        const { error } = await supabaseService.client.from('feedback').insert({
+            user_id: u.id,
+            text,
+            user_email: u.email || null,
+            user_name: userName,
+            user_agent: navigator.userAgent.slice(0, 200)
+        });
+        this.setBtnLoading('feedback-send-btn', false);
+        if (error) {
+            this.toastError(error.message);
+            return;
+        }
+        this.hideModal('feedback-modal');
+        this.toastSuccess(t.feedback_thanks || 'Дякуємо! Ми отримали ваш відгук — найближчим часом розглянемо.');
+    },
+
+    // === ADMIN PANEL ===
+    isAdmin() {
+        return this.state.user && this.state.user.email === 'koa2007@gmail.com';
+    },
+
+    refreshAdminBadge() {
+        const btn = document.getElementById('admin-panel-btn');
+        if (btn) btn.classList.toggle('hidden', !this.isAdmin());
+    },
+
+    async showAdminPanel() {
+        if (!this.isAdmin()) {
+            this.toastError('Доступ лише для адміністратора');
+            return;
+        }
+        this.showScreen('admin-panel-screen');
+        await this.refreshAdminPanel();
+        this._setupAdminTabs();
+    },
+
+    _setupAdminTabs() {
+        if (this._adminTabsBound) return;
+        this._adminTabsBound = true;
+        document.querySelectorAll('.segment[data-admin-tab]').forEach(seg => {
+            seg.addEventListener('click', () => {
+                const tab = seg.dataset.adminTab;
+                document.querySelectorAll('.segment[data-admin-tab]').forEach(s => s.classList.remove('active'));
+                seg.classList.add('active');
+                ['users', 'groups', 'feedback'].forEach(id => {
+                    const el = document.getElementById('admin-tab-' + id);
+                    if (el) el.classList.toggle('hidden', id !== tab);
+                });
+            });
+        });
+    },
+
+    async refreshAdminPanel() {
+        if (!supabaseService.isReady() || !this.isAdmin()) return;
+        const c = supabaseService.client;
+        const grid = document.getElementById('admin-stats-grid');
+        if (grid) grid.innerHTML = '<div class="empty-state">Завантаження…</div>';
+
+        const [statsRes, usersRes, groupsRes, fbRes] = await Promise.all([
+            c.rpc('get_admin_stats'),
+            c.rpc('get_admin_recent_users', { p_limit: 30 }),
+            c.rpc('get_admin_recent_groups', { p_limit: 30 }),
+            c.rpc('get_admin_feedback', { p_limit: 50 })
+        ]);
+
+        if (statsRes.error) {
+            if (grid) grid.innerHTML = `<div class="empty-state">RPC недоступний: ${this.escapeHTML(statsRes.error.message)}.<br>Накатіть phase9-feedback-admin.sql у Supabase SQL Editor.</div>`;
+            return;
+        }
+
+        const s = statsRes.data || {};
+        const tile = (label, value, sub) => `
+            <div class="admin-stat-card">
+                <div class="label">${this.escapeHTML(label)}</div>
+                <div class="value">${this.escapeHTML(String(value ?? 0))}</div>
+                ${sub ? `<div class="sub">${this.escapeHTML(sub)}</div>` : ''}
+            </div>`;
+        if (grid) grid.innerHTML = [
+            tile('Всього користувачів', s.users_total, `${s.users_completed || 0} завершили профіль`),
+            tile('Нові за тиждень', s.users_last_7d, `${s.users_last_24h || 0} за добу`),
+            tile('Груп', s.groups_total, `${s.groups_last_7d || 0} за тиждень`),
+            tile('Учасників (всього)', s.memberships_total),
+            tile('Голосувань', s.votings_total, `${s.votings_active || 0} активних`),
+            tile('Завершені', s.votings_completed, `${s.votings_accepted || 0} прийнято / ${s.votings_rejected || 0} відхилено`),
+            tile('Голосів подано', s.votes_total),
+            tile('Відгуків', s.feedback_total, `${s.feedback_new || 0} нових`)
+        ].join('');
+
+        // Users tab
+        const usersList = (usersRes.data || []).map(u => `
+            <div class="admin-row">
+                <div class="row-title">${this.escapeHTML([u.first_name, u.last_name].filter(Boolean).join(' ') || '(без імені)')}${u.profile_completed ? '' : ' <span style="font-size:11px;color:var(--color-warning)">(не завершено)</span>'}</div>
+                <div class="row-meta">${this.escapeHTML(u.email || '—')}</div>
+                <div class="row-meta">${u.groups_count} груп · реєстрація ${new Date(u.created_at).toLocaleString()}</div>
+            </div>`).join('');
+        const ut = document.getElementById('admin-tab-users');
+        if (ut) ut.innerHTML = usersList || '<div class="empty-state">Немає користувачів</div>';
+
+        // Groups tab
+        const groupsList = (groupsRes.data || []).map(g => `
+            <div class="admin-row">
+                <div class="row-title">${this.escapeHTML(g.name)} <span style="font-family:monospace;font-size:12px;color:var(--color-text-tertiary)">${this.escapeHTML(g.group_code)}</span></div>
+                <div class="row-meta">${g.members_count} учасників · ${g.votings_count} голосувань</div>
+                <div class="row-meta">Створив: ${this.escapeHTML(g.creator_email || '—')} · ${new Date(g.created_at).toLocaleString()}</div>
+            </div>`).join('');
+        const gt = document.getElementById('admin-tab-groups');
+        if (gt) gt.innerHTML = groupsList || '<div class="empty-state">Немає груп</div>';
+
+        // Feedback tab
+        const fbList = (fbRes.data || []).map(f => `
+            <div class="admin-row feedback-${this.escapeHTML(f.status)}">
+                <div class="row-title">${this.escapeHTML(f.text)}</div>
+                <div class="row-meta">${this.escapeHTML(f.user_name || f.user_email || '—')} · ${new Date(f.created_at).toLocaleString()}</div>
+                <div class="admin-row-actions">
+                    ${f.status !== 'reviewed' ? `<button onclick="app.setFeedbackStatus('${f.id}', 'reviewed')">Переглянуто</button>` : ''}
+                    ${f.status !== 'done' ? `<button onclick="app.setFeedbackStatus('${f.id}', 'done')">Виконано</button>` : ''}
+                    ${f.status !== 'new' ? `<button onclick="app.setFeedbackStatus('${f.id}', 'new')">Новий</button>` : ''}
+                </div>
+            </div>`).join('');
+        const ft = document.getElementById('admin-tab-feedback');
+        if (ft) ft.innerHTML = fbList || '<div class="empty-state">Немає відгуків</div>';
+    },
+
+    async setFeedbackStatus(id, status) {
+        const { error } = await supabaseService.client.from('feedback').update({ status }).eq('id', id);
+        if (error) { this.toastError(error.message); return; }
+        this.toastSuccess('Статус оновлено');
+        await this.refreshAdminPanel();
     },
 
     // === PWA INSTALL ===
@@ -2976,6 +3144,18 @@ const app = {
             reset_mismatch: 'Паролі не співпадають',
             reset_done: 'Пароль оновлено',
             change_password: 'Змінити пароль',
+            feedback_btn: 'Пропозиція / зауваження',
+            feedback_title: 'Пропозиція або зауваження',
+            feedback_hint: 'Напишіть, що подобається або що варто покращити. Ми читаємо все.',
+            feedback_placeholder: 'Ваша пропозиція або зауваження...',
+            feedback_send: 'Надіслати',
+            feedback_thanks: 'Дякуємо! Ми отримали ваш відгук — найближчим часом розглянемо.',
+            feedback_too_short: 'Напишіть більше деталей (мін. 5 символів)',
+            admin_panel: 'Адмін-панель',
+            admin_tab_users: 'Користувачі',
+            admin_tab_groups: 'Групи',
+            admin_tab_feedback: 'Відгуки',
+            loading: 'Завантаження…',
             cta_complete_profile: 'Заповніть «Квартиру/офіс» у профілі, щоб голосувати',
             members_label: 'Учасників',
             votings_label: 'Голосувань',
@@ -3328,6 +3508,18 @@ const app = {
             reset_mismatch: 'Passwords do not match',
             reset_done: 'Password updated',
             change_password: 'Change password',
+            feedback_btn: 'Suggestion / report',
+            feedback_title: 'Suggestion or report',
+            feedback_hint: 'Tell us what works well or what to improve. We read every message.',
+            feedback_placeholder: 'Your suggestion or report...',
+            feedback_send: 'Send',
+            feedback_thanks: 'Thanks! We\'ve received your feedback and will review it soon.',
+            feedback_too_short: 'Please add more details (min. 5 chars)',
+            admin_panel: 'Admin panel',
+            admin_tab_users: 'Users',
+            admin_tab_groups: 'Groups',
+            admin_tab_feedback: 'Feedback',
+            loading: 'Loading…',
             cta_complete_profile: 'Fill in "Apartment/office" in your profile to vote',
             members_label: 'Members',
             votings_label: 'Votings',
@@ -3680,6 +3872,18 @@ const app = {
             reset_mismatch: 'Пароли не совпадают',
             reset_done: 'Пароль обновлён',
             change_password: 'Сменить пароль',
+            feedback_btn: 'Предложение / замечание',
+            feedback_title: 'Предложение или замечание',
+            feedback_hint: 'Напишите, что нравится или что стоит улучшить. Мы читаем всё.',
+            feedback_placeholder: 'Ваше предложение или замечание...',
+            feedback_send: 'Отправить',
+            feedback_thanks: 'Спасибо! Мы получили ваш отзыв — в ближайшее время рассмотрим.',
+            feedback_too_short: 'Напишите больше деталей (мин. 5 символов)',
+            admin_panel: 'Админ-панель',
+            admin_tab_users: 'Пользователи',
+            admin_tab_groups: 'Группы',
+            admin_tab_feedback: 'Отзывы',
+            loading: 'Загрузка…',
             cta_complete_profile: 'Заполните «Квартиру/офис» в профиле, чтобы голосовать',
             members_label: 'Участников',
             votings_label: 'Голосований',
