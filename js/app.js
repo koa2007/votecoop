@@ -1340,6 +1340,38 @@ const app = {
         await supabaseService.markAllNotificationsRead();
     },
 
+    // Move every currently shown notification into the archive.
+    // Archive is permanent (never auto-deleted) — this is a "clear inbox"
+    // action without losing history.
+    async archiveAllNotifications() {
+        const t = this.translations[this.currentLanguage] || {};
+        const count = this.state.notifications.length;
+        if (count === 0) {
+            this.toastInfo(t.archive_empty || 'Список вже порожній');
+            return;
+        }
+        const ok = await this.confirm({
+            title: t.archive_confirm_title || 'В архів',
+            message: t.archive_confirm_msg || `Перенести ${count} сповіщень в архів? Вони залишаться в історії, але список очиститься.`,
+            okText: t.archive_all || 'В архів',
+            danger: false
+        });
+        if (!ok) return;
+        const { error } = await supabaseService.archiveAllNotifications();
+        if (error) {
+            // archived_at column likely missing — explain
+            if (/archived_at/i.test(error.message || '')) {
+                this.toastError(t.archive_needs_migration || 'Спочатку накатіть phase12-notif-archive.sql');
+                return;
+            }
+            this.toastError(error.message);
+            return;
+        }
+        this.state.notifications = [];
+        this.renderNotifications();
+        this.toastSuccess(t.archive_done || 'Перенесено в архів');
+    },
+
     // === GLOBAL LOADER ===
     // Full-screen blocking spinner. Used during sign-in/sign-up so the
     // user never sees a frozen UI between "Login" click and the main app.
@@ -1614,7 +1646,33 @@ const app = {
         ]);
 
         if (statsRes.error) {
-            if (grid) grid.innerHTML = `<div class="empty-state">RPC недоступний: ${this.escapeHTML(statsRes.error.message)}.<br>Накатіть phase9-feedback-admin.sql у Supabase SQL Editor.</div>`;
+            if (grid) {
+                const sqlEditorUrl = 'https://supabase.com/dashboard/project/ygbhiorheuovtlmmyvjr/sql/new';
+                grid.innerHTML = `
+                    <div class="admin-setup-needed" style="grid-column: 1 / -1;">
+                        <div style="font-size:32px;text-align:center">⚙️</div>
+                        <h3 style="margin:8px 0">Адмін-панель потребує налаштування</h3>
+                        <p style="font-size:14px;color:var(--color-text-secondary);line-height:1.5">
+                            Базі бракує таблиці <code>feedback</code> та RPC-функцій адміна.
+                            Потрібно одноразово накатити SQL-міграції через Supabase SQL Editor.
+                        </p>
+                        <p style="font-size:13px;color:var(--color-text-tertiary);margin-top:8px">
+                            Помилка: ${this.escapeHTML(statsRes.error.message)}
+                        </p>
+                        <ol style="font-size:13px;line-height:1.7;margin:12px 0;padding-left:20px;color:var(--color-text-secondary)">
+                            <li>Відкрити <a href="${sqlEditorUrl}" target="_blank" rel="noopener" style="color:var(--color-primary)">SQL Editor</a></li>
+                            <li>Скопіювати вміст файлів з папки <code>supabase/</code> репо:
+                                <ul style="font-size:12px;margin:4px 0 4px 0;padding-left:18px;color:var(--color-text-tertiary)">
+                                    <li><code>phase9-feedback-admin.sql</code> (адмін RPC + feedback)</li>
+                                    <li><code>phase10-realtime.sql</code> (realtime для нотифікацій)</li>
+                                    <li><code>phase11-notif-metadata.sql</code> (✓✗ кнопки)</li>
+                                </ul>
+                            </li>
+                            <li>Вставити в SQL Editor → Run</li>
+                            <li>Натиснути <strong>⟳ Refresh</strong> у заголовку адмін-панелі</li>
+                        </ol>
+                    </div>`;
+            }
             return;
         }
 
@@ -3336,6 +3394,13 @@ const app = {
             refresh_group: 'Оновити дані',
             refresh_in_progress: 'Оновлюємо…',
             refresh_done: 'Дані оновлено',
+            dev_banner: '⚠️ Сайт у розробці — деякі функції можуть змінюватись',
+            archive_all: 'В архів',
+            archive_confirm_title: 'В архів',
+            archive_confirm_msg: 'Перенести сповіщення в архів? Вони залишаться в історії, але список очиститься.',
+            archive_empty: 'Список вже порожній',
+            archive_done: 'Перенесено в архів',
+            archive_needs_migration: 'Спочатку накатіть phase12-notif-archive.sql у Supabase SQL Editor',
             cta_complete_profile: 'Заповніть «Квартиру/офіс» у профілі, щоб голосувати',
             members_label: 'Учасників',
             votings_label: 'Голосувань',
@@ -3706,6 +3771,13 @@ const app = {
             refresh_group: 'Refresh data',
             refresh_in_progress: 'Refreshing…',
             refresh_done: 'Data refreshed',
+            dev_banner: '⚠️ Site in development — some features may change',
+            archive_all: 'Archive',
+            archive_confirm_title: 'Archive',
+            archive_confirm_msg: 'Move notifications to archive? They stay in history but the list is cleared.',
+            archive_empty: 'List is already empty',
+            archive_done: 'Moved to archive',
+            archive_needs_migration: 'Apply phase12-notif-archive.sql in Supabase SQL Editor first',
             cta_complete_profile: 'Fill in "Apartment/office" in your profile to vote',
             members_label: 'Members',
             votings_label: 'Votings',
@@ -4076,6 +4148,13 @@ const app = {
             refresh_group: 'Обновить данные',
             refresh_in_progress: 'Обновляем…',
             refresh_done: 'Данные обновлены',
+            dev_banner: '⚠️ Сайт в разработке — некоторые функции могут меняться',
+            archive_all: 'В архив',
+            archive_confirm_title: 'В архив',
+            archive_confirm_msg: 'Перенести уведомления в архив? Они останутся в истории, но список очистится.',
+            archive_empty: 'Список уже пуст',
+            archive_done: 'Перенесено в архив',
+            archive_needs_migration: 'Сначала накатите phase12-notif-archive.sql в Supabase SQL Editor',
             cta_complete_profile: 'Заполните «Квартиру/офис» в профиле, чтобы голосовать',
             members_label: 'Участников',
             votings_label: 'Голосований',

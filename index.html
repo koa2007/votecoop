@@ -160,6 +160,9 @@
                     </div>
                 </form>
 
+                <!-- "Site in development" notice -->
+                <div class="dev-banner" data-lang="dev_banner">⚠️ Сайт у розробці — деякі функції можуть змінюватись</div>
+
             </div>
         </div>
 
@@ -377,10 +380,21 @@
                     <h2 data-lang="notifications">Сповіщення</h2>
                     <div class="header-actions">
                         <button class="btn-info" onclick="app.showInstructions()" aria-label="Instructions"><i class="ph ph-info" aria-hidden="true"></i></button>
-                        <button class="btn-text" onclick="app.markAllRead()" data-lang="mark_all_read">Прочитано все</button>
                     </div>
                 </div>
                 <div class="screen-content" data-ptr="notif">
+                    <!-- Top action row: Mark all read + Archive -->
+                    <div class="notif-toolbar">
+                        <button class="notif-toolbar-btn" onclick="app.markAllRead()" data-lang="mark_all_read">
+                            <i class="ph ph-checks" aria-hidden="true"></i>
+                            <span>Прочитано все</span>
+                        </button>
+                        <button class="notif-toolbar-btn" onclick="app.archiveAllNotifications()" data-lang="archive_all">
+                            <i class="ph ph-clipboard-text" aria-hidden="true"></i>
+                            <span>В архів</span>
+                            <i class="ph ph-arrow-right" aria-hidden="true"></i>
+                        </button>
+                    </div>
                     <div class="notifications-list" id="notifications-list">
                         <!-- Notifications will be inserted here -->
                     </div>

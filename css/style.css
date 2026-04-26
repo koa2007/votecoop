@@ -696,6 +696,20 @@ html, body {
     font-weight: 400;
 }
 
+/* "Site in development" banner — yellow soft, low-key, on auth screen */
+.dev-banner {
+    margin-top: 16px;
+    padding: 8px 12px;
+    background: var(--color-info-bg);
+    color: var(--color-text-secondary);
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: center;
+    max-width: 320px;
+    width: 100%;
+}
+
 /* Back row on Register screen */
 .auth-back-row {
     width: 100%;
@@ -1536,8 +1550,57 @@ html, body {
     background: var(--color-surface-secondary);
 }
 
+/* Top toolbar on Notifications screen: Mark-all-read + Archive */
+.notif-toolbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.notif-toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 12px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.notif-toolbar-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.notif-toolbar-btn:active { background: var(--color-surface-secondary); }
+.notif-toolbar-btn i { font-size: 16px; }
+
+/* Stronger visual difference: unread = colored left bar + tinted bg + bolder.
+   Read = neutral surface, dimmer text, no left bar. */
+.notification-item {
+    border-left: 4px solid transparent;
+}
+
 .notification-item.unread {
     background: var(--color-info-bg);
+    border-left-color: var(--color-primary);
+}
+
+.notification-item.unread .notification-text {
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.notification-item.read {
+    background: var(--color-surface);
+    opacity: 0.85;
+}
+
+.notification-item.read .notification-text {
+    color: var(--color-text-secondary);
 }
 
 .notification-icon {
@@ -2624,24 +2687,50 @@ textarea:focus-visible {
     gap: 12px;
 }
 
-/* Vote Buttons Row */
+/* Vote Buttons Row — three buttons (No/Abstain/Yes) on one row at 375px+
+   without overflowing. .btn has width:100% globally; we override here. */
 .vote-buttons {
     display: flex;
     gap: 8px;
+    width: 100%;
 }
 
 .vote-buttons .btn {
-    flex: 1;
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    padding: 12px 6px;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
+
+.vote-buttons .btn .ph,
+.vote-buttons .btn i { font-size: 16px; }
 
 /* Compact form group (no margin) */
 .form-group-compact {
     margin: 0;
+    width: 100%;
+}
+
+.form-group-compact textarea {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: 16px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-sizing: border-box;
+    resize: vertical;
 }
 
 /* Vote comment textarea */
 .vote-comment-textarea {
     min-height: 80px;
+    width: 100%;
 }
 
 /* Voted / status messages */

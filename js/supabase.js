@@ -622,22 +622,61 @@ const supabaseService = {
         // Try with metadata column first; if the migration hasn't been
         // applied yet (phase11), fall back to the legacy column set so
         // notifications still load.
-        let { data, error } = await this.client.from('notifications')
-            .select('id, type, text, is_read, created_at, metadata')
+        // Also try to filter out archived rows; if archived_at column
+        // doesn't exist (phase12 not applied), retry without that filter.
+        let q1 = this.client.from('notifications')
+            .select('id, type, text, is_read, created_at, metadata, archived_at')
             .eq('user_id', userId)
+            .is('archived_at', null)
             .order('created_at', { ascending: false })
             .limit(100);
+        let { data, error } = await q1;
+
+        if (error && /archived_at/i.test(error.message || '')) {
+            // archived_at not yet migrated — retry without it
+            const r = await this.client.from('notifications')
+                .select('id, type, text, is_read, created_at, metadata')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: false })
+                .limit(100);
+            data = r.data; error = r.error;
+        }
 
         if (error && /metadata.*does not exist/i.test(error.message || '')) {
-            const fallback = await this.client.from('notifications')
+            const r = await this.client.from('notifications')
                 .select('id, type, text, is_read, created_at')
                 .eq('user_id', userId)
                 .order('created_at', { ascending: false })
                 .limit(100);
-            data = fallback.data;
-            error = fallback.error;
+            data = r.data; error = r.error;
         }
 
+        return { data, error };
+    },
+
+    // Archive all currently active (non-archived) notifications for this user.
+    async archiveAllNotifications() {
+        if (!this.isReady()) return { error: { message: 'Supabase not configured' } };
+        const userId = await this._getUserId();
+        if (!userId) return { error: { message: 'User not authenticated' } };
+        const { error } = await this.client.from('notifications')
+            .update({ archived_at: new Date().toISOString(), is_read: true })
+            .eq('user_id', userId)
+            .is('archived_at', null);
+        return { error };
+    },
+
+    // Fetch archived notifications (for an Archive view, future use).
+    async getArchivedNotifications() {
+        if (!this.isReady()) return { data: [], error: null };
+        const userId = await this._getUserId();
+        if (!userId) return { data: [], error: { message: 'User not authenticated' } };
+        const { data, error } = await this.client.from('notifications')
+            .select('id, type, text, is_read, created_at, metadata, archived_at')
+            .eq('user_id', userId)
+            .not('archived_at', 'is', null)
+            .order('archived_at', { ascending: false })
+            .limit(200);
         return { data, error };
     },
 
