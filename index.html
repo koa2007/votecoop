@@ -389,6 +389,7 @@
                 <div class="screen-header">
                     <h2 data-lang="notifications">Сповіщення</h2>
                     <div class="header-actions">
+                        <button class="btn-info" onclick="app.showNotificationsArchive()" aria-label="Open archive" title="Архів"><i class="ph ph-archive" aria-hidden="true"></i></button>
                         <button class="btn-info" onclick="app.showInstructions()" aria-label="Instructions"><i class="ph ph-info" aria-hidden="true"></i></button>
                     </div>
                 </div>
@@ -407,6 +408,25 @@
                     </div>
                     <div class="notifications-list" id="notifications-list">
                         <!-- Notifications will be inserted here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notifications Archive Screen -->
+            <div class="screen hidden" id="notifications-archive-screen">
+                <div class="screen-header">
+                    <button class="btn-icon back-btn" onclick="app.showScreen('notifications-screen')" aria-label="Back">←</button>
+                    <h2 data-lang="notifications_archive">Архів сповіщень</h2>
+                </div>
+                <div class="screen-content">
+                    <div class="archive-search-bar">
+                        <i class="ph ph-magnifying-glass" aria-hidden="true"></i>
+                        <input type="text" id="archive-search-input" data-lang-placeholder="archive_search_placeholder" placeholder="Пошук (від 3 символів)..." maxlength="100">
+                        <button class="archive-search-clear hidden" id="archive-search-clear" onclick="app.clearArchiveSearch()" aria-label="Clear"><i class="ph ph-x" aria-hidden="true"></i></button>
+                    </div>
+                    <div class="notifications-list" id="archive-list"></div>
+                    <div class="archive-load-more-wrap">
+                        <button class="btn btn-secondary hidden" id="archive-load-more-btn" onclick="app.loadMoreArchive()" data-lang="archive_load_more">Завантажити ще</button>
                     </div>
                 </div>
             </div>

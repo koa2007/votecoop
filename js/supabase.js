@@ -680,6 +680,38 @@ const supabaseService = {
         return { data, error };
     },
 
+    // Paginated search across notifications. archivedOnly=true → only archive,
+    // false → only active, null → both. Empty query returns recent items.
+    async searchNotifications(query, archivedOnly, limit = 50, offset = 0) {
+        if (!this.isReady()) return { data: [], error: null };
+        const userId = await this._getUserId();
+        if (!userId) return { data: [], error: { message: 'User not authenticated' } };
+        let q = this.client.from('notifications')
+            .select('id, type, text, is_read, created_at, metadata, archived_at')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limit - 1);
+        if (archivedOnly === true) q = q.not('archived_at', 'is', null);
+        else if (archivedOnly === false) q = q.is('archived_at', null);
+        if (query && query.trim().length >= 3) {
+            q = q.ilike('text', `%${query.trim()}%`);
+        }
+        const { data, error } = await q;
+        return { data: data || [], error };
+    },
+
+    // Move a single notification back from archive to active list.
+    async unarchiveNotification(notificationId) {
+        if (!this.isReady()) return { error: null };
+        const userId = await this._getUserId();
+        if (!userId) return { error: { message: 'User not authenticated' } };
+        const { error } = await this.client.from('notifications')
+            .update({ archived_at: null })
+            .eq('id', notificationId)
+            .eq('user_id', userId);
+        return { error };
+    },
+
     // Mark a single notification as read
     async markNotificationRead(notificationId) {
         if (!this.isReady()) {

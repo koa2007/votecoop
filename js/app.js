@@ -12,7 +12,8 @@ const app = {
         listenersAttached: false,
         // 'fetched' tracks whether a server fetch has *completed* for each list.
         // Used to decide between skeleton loaders and "empty" states.
-        fetched: { groups: false, votings: false, notifications: false }
+        fetched: { groups: false, votings: false, notifications: false },
+        archive: { items: [], query: '', offset: 0, hasMore: false, loading: false, debounceTimer: null, pageSize: 50 }
     },
 
     // Render N skeleton placeholder cards
@@ -1370,6 +1371,157 @@ const app = {
         this.state.notifications = [];
         this.renderNotifications();
         this.toastSuccess(t.archive_done || 'Перенесено в архів');
+    },
+
+    // === NOTIFICATIONS ARCHIVE VIEW ===
+    async showNotificationsArchive() {
+        const arch = this.state.archive;
+        arch.items = [];
+        arch.query = '';
+        arch.offset = 0;
+        arch.hasMore = false;
+        const input = document.getElementById('archive-search-input');
+        if (input) {
+            input.value = '';
+            // Attach listener once
+            if (!input.dataset.listenerAttached) {
+                input.addEventListener('input', () => this._scheduleArchiveSearch());
+                input.dataset.listenerAttached = '1';
+            }
+        }
+        document.getElementById('archive-search-clear')?.classList.add('hidden');
+        this.showScreen('notifications-archive-screen');
+        await this._fetchArchivePage(false);
+    },
+
+    _scheduleArchiveSearch() {
+        const arch = this.state.archive;
+        const input = document.getElementById('archive-search-input');
+        const clearBtn = document.getElementById('archive-search-clear');
+        const raw = input?.value || '';
+        if (clearBtn) clearBtn.classList.toggle('hidden', raw.length === 0);
+        if (arch.debounceTimer) clearTimeout(arch.debounceTimer);
+        arch.debounceTimer = setTimeout(async () => {
+            const q = raw.trim();
+            // Empty or 1-2 chars → show recent archive (no filter)
+            if (q.length > 0 && q.length < 3) return;
+            arch.query = q;
+            arch.offset = 0;
+            arch.items = [];
+            arch.hasMore = false;
+            await this._fetchArchivePage(false);
+        }, 300);
+    },
+
+    clearArchiveSearch() {
+        const input = document.getElementById('archive-search-input');
+        if (input) input.value = '';
+        document.getElementById('archive-search-clear')?.classList.add('hidden');
+        const arch = this.state.archive;
+        arch.query = '';
+        arch.offset = 0;
+        arch.items = [];
+        arch.hasMore = false;
+        this._fetchArchivePage(false);
+    },
+
+    async loadMoreArchive() {
+        const arch = this.state.archive;
+        if (arch.loading || !arch.hasMore) return;
+        arch.offset += arch.pageSize;
+        await this._fetchArchivePage(true);
+    },
+
+    async _fetchArchivePage(append) {
+        const arch = this.state.archive;
+        const t = this.translations[this.currentLanguage] || {};
+        const list = document.getElementById('archive-list');
+        const moreBtn = document.getElementById('archive-load-more-btn');
+        if (!list) return;
+        arch.loading = true;
+
+        if (!append) list.innerHTML = this.renderSkeleton(3);
+        moreBtn?.classList.add('hidden');
+
+        const { data, error } = await supabaseService.searchNotifications(arch.query, true, arch.pageSize, arch.offset);
+        arch.loading = false;
+        if (error) {
+            list.innerHTML = `<div class="empty-state-inline">${this.escapeHTML(error.message || 'Error')}</div>`;
+            return;
+        }
+        const items = (data || []).map(n => ({
+            id: n.id,
+            type: n.type,
+            text: n.text,
+            read: n.is_read,
+            time: new Date(n.created_at).toLocaleString(),
+            archivedAt: n.archived_at
+        }));
+        arch.items = append ? arch.items.concat(items) : items;
+        arch.hasMore = items.length === arch.pageSize;
+        this._renderArchiveList();
+    },
+
+    _renderArchiveList() {
+        const arch = this.state.archive;
+        const t = this.translations[this.currentLanguage] || {};
+        const list = document.getElementById('archive-list');
+        const moreBtn = document.getElementById('archive-load-more-btn');
+        if (!list) return;
+
+        if (arch.items.length === 0) {
+            const empty = arch.query
+                ? (t.archive_no_search_results || 'Нічого не знайдено')
+                : (t.archive_empty_state || 'Архів порожній');
+            list.innerHTML = `<div class="empty-state-inline">${this.escapeHTML(empty)}</div>`;
+            moreBtn?.classList.add('hidden');
+            return;
+        }
+
+        const icons = {
+            voting: '<i class="ph ph-scales"></i>',
+            member: '<i class="ph ph-user"></i>',
+            join_request: '<i class="ph ph-user-plus"></i>',
+            result: '<i class="ph ph-check-circle"></i>',
+            system: '<i class="ph ph-bell"></i>'
+        };
+
+        list.innerHTML = arch.items.map(n => `
+            <div class="notification-item read archived">
+                <div class="notification-icon">${icons[n.type] || '<i class="ph ph-bell"></i>'}</div>
+                <div class="notification-content">
+                    <div class="notification-text">${this.escapeHTML(n.text)}</div>
+                    <div class="notification-time">${this.escapeHTML(n.time)}</div>
+                </div>
+                <button class="btn-notif-unarchive" title="${t.unarchive || 'Розархівувати'}" aria-label="${t.unarchive || 'Розархівувати'}"
+                    onclick="event.stopPropagation(); app.unarchiveNotification('${n.id}')">
+                    <i class="ph ph-arrow-u-up-left" aria-hidden="true"></i>
+                </button>
+            </div>
+        `).join('');
+
+        if (arch.hasMore) moreBtn?.classList.remove('hidden');
+        else moreBtn?.classList.add('hidden');
+    },
+
+    async unarchiveNotification(id) {
+        const t = this.translations[this.currentLanguage] || {};
+        const ok = await this.confirm({
+            title: t.unarchive || 'Розархівувати',
+            message: t.unarchive_confirm || 'Повернути сповіщення до основного списку?',
+            okText: t.unarchive || 'Розархівувати',
+            danger: false
+        });
+        if (!ok) return;
+        const { error } = await supabaseService.unarchiveNotification(id);
+        if (error) { this.toastError(error.message); return; }
+        // Remove from local archive list
+        const arch = this.state.archive;
+        arch.items = arch.items.filter(n => n.id !== id);
+        this._renderArchiveList();
+        // Refresh active list so it appears there
+        this.loadMyNotifications();
+        this.toastSuccess(t.unarchive_done || 'Повернуто до основного списку');
     },
 
     // === GLOBAL LOADER ===
@@ -3585,6 +3737,14 @@ const app = {
             archive_empty: 'Список вже порожній',
             archive_done: 'Перенесено в архів',
             archive_needs_migration: 'Спочатку накатіть phase12-notif-archive.sql у Supabase SQL Editor',
+            notifications_archive: 'Архів сповіщень',
+            archive_search_placeholder: 'Пошук (від 3 символів)...',
+            archive_load_more: 'Завантажити ще',
+            archive_empty_state: 'Архів порожній',
+            archive_no_search_results: 'Нічого не знайдено',
+            unarchive: 'Розархівувати',
+            unarchive_confirm: 'Повернути сповіщення до основного списку?',
+            unarchive_done: 'Повернуто до основного списку',
             cta_complete_profile: 'Заповніть «Квартиру/офіс» у профілі, щоб голосувати',
             members_label: 'Учасників',
             votings_label: 'Голосувань',
@@ -3982,6 +4142,14 @@ const app = {
             archive_empty: 'List is already empty',
             archive_done: 'Moved to archive',
             archive_needs_migration: 'Apply phase12-notif-archive.sql in Supabase SQL Editor first',
+            notifications_archive: 'Notification archive',
+            archive_search_placeholder: 'Search (3+ characters)...',
+            archive_load_more: 'Load more',
+            archive_empty_state: 'Archive is empty',
+            archive_no_search_results: 'Nothing found',
+            unarchive: 'Unarchive',
+            unarchive_confirm: 'Return notification to the main list?',
+            unarchive_done: 'Returned to the main list',
             cta_complete_profile: 'Fill in "Apartment/office" in your profile to vote',
             members_label: 'Members',
             votings_label: 'Votings',
@@ -4379,6 +4547,14 @@ const app = {
             archive_empty: 'Список уже пуст',
             archive_done: 'Перенесено в архив',
             archive_needs_migration: 'Сначала накатите phase12-notif-archive.sql в Supabase SQL Editor',
+            notifications_archive: 'Архив уведомлений',
+            archive_search_placeholder: 'Поиск (от 3 символов)...',
+            archive_load_more: 'Загрузить ещё',
+            archive_empty_state: 'Архив пуст',
+            archive_no_search_results: 'Ничего не найдено',
+            unarchive: 'Разархивировать',
+            unarchive_confirm: 'Вернуть уведомление в основной список?',
+            unarchive_done: 'Возвращено в основной список',
             cta_complete_profile: 'Заполните «Квартиру/офис» в профиле, чтобы голосовать',
             members_label: 'Участников',
             votings_label: 'Голосований',
