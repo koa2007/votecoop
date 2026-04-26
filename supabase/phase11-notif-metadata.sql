@@ -94,7 +94,7 @@ END$$;
 -- (best effort — match by text suffix, leave others alone)
 UPDATE notifications n
 SET metadata = jsonb_build_object('group_id', g.id, 'group_name', g.name)
+FROM groups g
 WHERE n.type IN ('member', 'join_request')
   AND n.metadata IS NULL
-  AND EXISTS (SELECT 1 FROM groups g2 WHERE n.text LIKE '%"' || g2.name || '"%' AND g2.id = g.id)
-  AND g.id IS NOT NULL;
+  AND n.text LIKE '%"' || g.name || '"%';
