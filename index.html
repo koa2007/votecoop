@@ -55,32 +55,6 @@
         </div>
     </div>
 
-    <!-- Admin panel screen (visible only for koa2007@gmail.com) -->
-    <div class="screen hidden" id="admin-panel-screen">
-        <div class="screen-header">
-            <button class="btn-icon back-btn" onclick="app.showScreen('main-screens'); document.getElementById('profile-screen').classList.remove('hidden');" aria-label="Back">←</button>
-            <h2 data-lang="admin_panel">Адмін-панель</h2>
-            <button class="btn-icon" onclick="app.refreshAdminPanel()" aria-label="Refresh"><i class="ph ph-arrows-clockwise" aria-hidden="true"></i></button>
-        </div>
-        <div class="screen-content">
-            <!-- Stats grid -->
-            <div class="admin-stats-grid" id="admin-stats-grid">
-                <div class="empty-state" data-lang="loading">Завантаження…</div>
-            </div>
-
-            <!-- Tabs -->
-            <div class="segmented-control">
-                <button class="segment active" data-admin-tab="users" data-lang="admin_tab_users">Користувачі</button>
-                <button class="segment" data-admin-tab="groups" data-lang="admin_tab_groups">Групи</button>
-                <button class="segment" data-admin-tab="feedback" data-lang="admin_tab_feedback">Відгуки</button>
-            </div>
-
-            <div class="admin-tab-content" id="admin-tab-users"></div>
-            <div class="admin-tab-content hidden" id="admin-tab-groups"></div>
-            <div class="admin-tab-content hidden" id="admin-tab-feedback"></div>
-        </div>
-    </div>
-
     <!-- Confirm dialog (replaces window.confirm for destructive actions) -->
     <div class="modal hidden" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <div class="modal-overlay" onclick="app.confirmDialogCancel()"></div>
@@ -101,7 +75,29 @@
 
     <!-- App Container -->
     <div id="app">
-        
+
+        <!-- Admin panel screen (visible only for koa2007@gmail.com) -->
+        <div class="screen hidden" id="admin-panel-screen">
+            <div class="screen-header">
+                <button class="btn-icon back-btn" onclick="app.showScreen('main-screens'); document.getElementById('profile-screen').classList.remove('hidden');" aria-label="Back">←</button>
+                <h2 data-lang="admin_panel">Адмін-панель</h2>
+                <button class="btn-icon" onclick="app.refreshAdminPanel()" aria-label="Refresh"><i class="ph ph-arrows-clockwise" aria-hidden="true"></i></button>
+            </div>
+            <div class="screen-content">
+                <div class="admin-stats-grid" id="admin-stats-grid">
+                    <div class="empty-state" data-lang="loading">Завантаження…</div>
+                </div>
+                <div class="segmented-control">
+                    <button class="segment active" data-admin-tab="users" data-lang="admin_tab_users">Користувачі</button>
+                    <button class="segment" data-admin-tab="groups" data-lang="admin_tab_groups">Групи</button>
+                    <button class="segment" data-admin-tab="feedback" data-lang="admin_tab_feedback">Відгуки</button>
+                </div>
+                <div class="admin-tab-content" id="admin-tab-users"></div>
+                <div class="admin-tab-content hidden" id="admin-tab-groups"></div>
+                <div class="admin-tab-content hidden" id="admin-tab-feedback"></div>
+            </div>
+        </div>
+
         <!-- Loading Screen -->
         <div class="screen" id="loading-screen">
             <div class="auth-container">
