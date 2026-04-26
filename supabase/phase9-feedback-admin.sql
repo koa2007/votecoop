@@ -58,7 +58,7 @@ CREATE INDEX IF NOT EXISTS feedback_created_at_idx ON feedback(created_at DESC);
 CREATE OR REPLACE FUNCTION get_admin_stats()
 RETURNS JSONB AS $$
 DECLARE
-    result JSONB;
+    v_result JSONB;
 BEGIN
     IF NOT is_admin() THEN
         RAISE EXCEPTION 'forbidden';
@@ -80,9 +80,9 @@ BEGIN
         'feedback_total',      (SELECT count(*) FROM feedback),
         'feedback_new',        (SELECT count(*) FROM feedback WHERE status = 'new'),
         'memberships_total',   (SELECT count(*) FROM group_members)
-    ) INTO result;
+    ) INTO v_result;
 
-    RETURN result;
+    RETURN v_result;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public;
 
