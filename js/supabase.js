@@ -304,8 +304,10 @@ const supabaseService = {
             this.client.from('group_members')
                 .select('user_id, role, is_frozen, frozen_until, user:profiles(id, first_name, last_name, phone, address, apartment)')
                 .eq('group_id', groupId),
+            // Explicit FK: join_requests has TWO refs to profiles
+            // (user_id and resolved_by), so PostgREST needs the FK name.
             this.client.from('join_requests')
-                .select('id, user_id, status, created_at, user:profiles(id, first_name, last_name, address, apartment)')
+                .select('id, user_id, status, created_at, user:profiles!join_requests_user_id_fkey(id, first_name, last_name, address, apartment)')
                 .eq('group_id', groupId)
                 .eq('status', 'pending'),
             this.client.from('group_history')
@@ -617,11 +619,24 @@ const supabaseService = {
         const userId = await this._getUserId();
         if (!userId) return { data: null, error: { message: 'User not authenticated' } };
 
-        const { data, error } = await this.client.from('notifications')
+        // Try with metadata column first; if the migration hasn't been
+        // applied yet (phase11), fall back to the legacy column set so
+        // notifications still load.
+        let { data, error } = await this.client.from('notifications')
             .select('id, type, text, is_read, created_at, metadata')
             .eq('user_id', userId)
             .order('created_at', { ascending: false })
             .limit(100);
+
+        if (error && /metadata.*does not exist/i.test(error.message || '')) {
+            const fallback = await this.client.from('notifications')
+                .select('id, type, text, is_read, created_at')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: false })
+                .limit(100);
+            data = fallback.data;
+            error = fallback.error;
+        }
 
         return { data, error };
     },
