@@ -2661,6 +2661,47 @@ const app = {
     },
 
     // Group detail
+    // Force a hard refresh: clear local caches + ask SW to skip-waiting +
+    // re-fetch group data + reload current group detail. Bypasses any
+    // stale PWA cache so the user always sees what's actually in the DB.
+    async refreshGroupAndReload() {
+        const t = this.translations[this.currentLanguage] || {};
+        this.hideModal('group-menu-modal');
+        this.showGlobalLoader('refresh_in_progress');
+        try {
+            // Drop the local groups cache so loadMyGroups doesn't use stale data
+            try { localStorage.removeItem('vc_groups'); } catch (e) {}
+            try { localStorage.removeItem('vc_notifications'); } catch (e) {}
+
+            // Ask any installed service worker to skip-waiting (so the next
+            // reload picks up the latest deployed code).
+            if ('serviceWorker' in navigator) {
+                try {
+                    const reg = await navigator.serviceWorker.getRegistration();
+                    if (reg && reg.waiting) {
+                        reg.waiting.postMessage('SKIP_WAITING');
+                    }
+                } catch (e) { /* ignore */ }
+            }
+
+            // Re-pull data and re-render the current group page.
+            const groupId = this.state.currentGroupId;
+            await Promise.all([
+                this.loadMyGroups(),
+                this.loadMyVotings(),
+                this.loadMyNotifications()
+            ]);
+            if (groupId) {
+                await this.showGroupDetail(groupId);
+            }
+            this.toastSuccess(t.refresh_done || 'Дані оновлено');
+        } catch (e) {
+            this.toastError(e.message || 'Не вдалося оновити');
+        } finally {
+            this.hideGlobalLoader();
+        }
+    },
+
     async showGroupDetail(groupId) {
         const t = this.translations[this.currentLanguage];
         const group = this.state.groups.find(g => g.id === groupId);
@@ -3279,6 +3320,9 @@ const app = {
             request_approved: 'Запит схвалено',
             request_rejected: 'Запит відхилено',
             loader_signing_in: 'Входимо в акаунт…',
+            refresh_group: 'Оновити дані',
+            refresh_in_progress: 'Оновлюємо…',
+            refresh_done: 'Дані оновлено',
             cta_complete_profile: 'Заповніть «Квартиру/офіс» у профілі, щоб голосувати',
             members_label: 'Учасників',
             votings_label: 'Голосувань',
@@ -3646,6 +3690,9 @@ const app = {
             request_approved: 'Request approved',
             request_rejected: 'Request rejected',
             loader_signing_in: 'Signing you in…',
+            refresh_group: 'Refresh data',
+            refresh_in_progress: 'Refreshing…',
+            refresh_done: 'Data refreshed',
             cta_complete_profile: 'Fill in "Apartment/office" in your profile to vote',
             members_label: 'Members',
             votings_label: 'Votings',
@@ -4013,6 +4060,9 @@ const app = {
             request_approved: 'Запрос одобрен',
             request_rejected: 'Запрос отклонён',
             loader_signing_in: 'Входим в аккаунт…',
+            refresh_group: 'Обновить данные',
+            refresh_in_progress: 'Обновляем…',
+            refresh_done: 'Данные обновлены',
             cta_complete_profile: 'Заполните «Квартиру/офис» в профиле, чтобы голосовать',
             members_label: 'Участников',
             votings_label: 'Голосований',

@@ -772,6 +772,10 @@
                     <button class="btn-icon" onclick="app.hideModal('group-menu-modal')" aria-label="Close">✕</button>
                 </div>
                 <div class="modal-body action-sheet-body">
+                    <button class="action-sheet-item" onclick="app.refreshGroupAndReload()">
+                        <span class="action-icon"><i class="ph ph-arrows-clockwise" aria-hidden="true"></i></span>
+                        <span data-lang="refresh_group">Оновити дані</span>
+                    </button>
                     <button class="action-sheet-item" onclick="app.editGroup()">
                         <span class="action-icon">✏️</span>
                         <span data-lang="edit_group">Редагувати групу</span>
@@ -1077,12 +1081,38 @@
     <script src="js/supabase.js"></script>
     <script src="js/app.js"></script>
     <script>
-        // Service worker — registered with relative path so it works under any base URL
-        // (root, GitHub Pages /votecoop/, etc.). Skipped on file:// where SW is unsupported.
+        // Service worker — registered with relative path so it works under any base URL.
+        // Auto-update flow:
+        //   1. SW skipWaiting on install → new SW activates immediately.
+        //   2. We listen for `controllerchange` → reload the page so the new
+        //      JS/CSS is actually used (otherwise the open tab keeps stale code).
+        //   3. Periodically call reg.update() — picks up new versions in long-running PWA installs.
         if ('serviceWorker' in navigator && location.protocol !== 'file:') {
             window.addEventListener('load', function () {
-                navigator.serviceWorker.register('service-worker.js')
-                    .catch(function () { /* SW unavailable — app still works online */ });
+                navigator.serviceWorker.register('service-worker.js').then(function (reg) {
+                    if (!reg) return;
+                    // If a new worker becomes installed while page is open, tell it to skip waiting
+                    reg.addEventListener('updatefound', function () {
+                        var nw = reg.installing;
+                        if (!nw) return;
+                        nw.addEventListener('statechange', function () {
+                            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                                nw.postMessage('SKIP_WAITING');
+                            }
+                        });
+                    });
+                    // Re-check for updates every 30 minutes
+                    setInterval(function () { reg.update().catch(function () {}); }, 30 * 60 * 1000);
+                }).catch(function () { /* SW unavailable */ });
+
+                // When the active SW changes (new version took control), reload once
+                // so the page picks up the latest assets.
+                var reloaded = false;
+                navigator.serviceWorker.addEventListener('controllerchange', function () {
+                    if (reloaded) return;
+                    reloaded = true;
+                    window.location.reload();
+                });
             });
         }
 

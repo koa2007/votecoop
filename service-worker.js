@@ -1,7 +1,7 @@
 // VoteCoop service worker — relative paths so it works under any base URL
 // (root domain, GitHub Pages /votecoop/, or any sub-path).
 
-const CACHE_VERSION = 'spilka-v10';
+const CACHE_VERSION = 'spilka-v11';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
