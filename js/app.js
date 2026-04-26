@@ -970,7 +970,8 @@ const app = {
             type: n.type,
             text: n.text,
             time: new Date(n.created_at).toLocaleString(),
-            read: n.is_read
+            read: n.is_read,
+            metadata: n.metadata || null
         }));
 
         try { localStorage.setItem('vc_notifications', JSON.stringify(this.state.notifications)); }
@@ -1027,6 +1028,21 @@ const app = {
                 { event: '*', schema: 'public', table: 'votings' },
                 debouncedReload)
             .subscribe();
+
+        // 3) Join-requests — keep group-detail's "Запити на вступ" list fresh
+        // when admin is already on the group page (otherwise UI stays stale
+        // until a manual reload).
+        this._joinReqChannel = client
+            .channel(`vc-jr-${userId}`)
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'join_requests' },
+                () => {
+                    if (this.state.currentScreen === 'group-detail-screen' && this.state.currentGroupId) {
+                        this.showGroupDetail(this.state.currentGroupId);
+                    }
+                    this.loadMyNotifications();
+                })
+            .subscribe();
     },
 
     unsubscribeFromRealtime() {
@@ -1035,9 +1051,11 @@ const app = {
         try {
             if (this._notifChannel)   client.removeChannel(this._notifChannel);
             if (this._votingsChannel) client.removeChannel(this._votingsChannel);
+            if (this._joinReqChannel) client.removeChannel(this._joinReqChannel);
         } catch (e) { /* ignore */ }
         this._notifChannel = null;
         this._votingsChannel = null;
+        this._joinReqChannel = null;
         if (this._votingReloadTimer) {
             clearTimeout(this._votingReloadTimer);
             this._votingReloadTimer = null;
@@ -1205,21 +1223,89 @@ const app = {
             const icons = {
                 voting: '<i class="ph ph-scales"></i>',
                 member: '<i class="ph ph-user"></i>',
+                join_request: '<i class="ph ph-user-plus"></i>',
                 result: '<i class="ph ph-check-circle"></i>',
                 system: '🔔'
             };
 
+            // Actionable join-request notification: approve/reject inline
+            const meta = notif.metadata || {};
+            const isJoinRequest = (notif.type === 'join_request' || notif.type === 'member')
+                && meta.request_id && meta.group_id;
+            const actions = isJoinRequest ? `
+                <div class="notif-actions">
+                    <button class="btn-notif-approve" title="Прийняти" aria-label="Прийняти"
+                        onclick="event.stopPropagation(); app.approveFromNotification('${notif.id}', '${meta.group_id}', '${meta.request_id}')">
+                        <i class="ph-fill ph-check" aria-hidden="true"></i>
+                    </button>
+                    <button class="btn-notif-reject" title="Відхилити" aria-label="Відхилити"
+                        onclick="event.stopPropagation(); app.rejectFromNotification('${notif.id}', '${meta.group_id}', '${meta.request_id}')">
+                        <i class="ph-fill ph-x" aria-hidden="true"></i>
+                    </button>
+                </div>` : '';
+
+            // Tapping the body marks read AND navigates to the relevant group
+            const targetGroupId = meta.group_id || '';
+            const onClick = `app.handleNotificationTap('${notif.id}', '${this.escapeHTML(targetGroupId)}')`;
+
             return `
-                <div class="notification-item ${notif.read ? 'read' : 'unread'}" role="button" tabindex="0" onclick="app.markRead('${notif.id}')" onkeydown="if(event.key==='Enter')app.markRead('${notif.id}')">
+                <div class="notification-item ${notif.read ? 'read' : 'unread'}" role="button" tabindex="0"
+                    onclick="${onClick}" onkeydown="if(event.key==='Enter')${onClick}">
                     <div class="notification-icon">${icons[notif.type] || '🔔'}</div>
                     <div class="notification-content">
                         <div class="notification-text">${this.escapeHTML(notif.text)}</div>
                         <div class="notification-time">${this.escapeHTML(notif.time)}</div>
                     </div>
+                    ${actions}
                     ${!notif.read ? '<div class="notification-dot"></div>' : ''}
                 </div>
             `;
         }).join('');
+    },
+
+    // Tap on notification body — mark read + route by metadata
+    async handleNotificationTap(notifId, groupId) {
+        await this.markRead(notifId);
+        if (groupId && this.state.groups.find(g => g.id === groupId)) {
+            this.showGroupDetail(groupId);
+        }
+    },
+
+    async approveFromNotification(notifId, groupId, requestId) {
+        const t = this.translations[this.currentLanguage] || {};
+        const { error } = await supabaseService.approveJoinRequest(requestId);
+        if (error) { this.toastError(error.message); return; }
+        this.toastSuccess(t.request_approved || 'Запит схвалено');
+        // Mark notification read + remove the action buttons by re-render
+        this._removeNotifMetadata(notifId);
+        await this.markRead(notifId);
+        // Refresh group if open
+        if (groupId && this.state.currentScreen === 'group-detail-screen') {
+            this.showGroupDetail(groupId);
+        }
+        // Reload notifications + groups list (member count changed)
+        this.loadMyNotifications();
+        this.loadMyGroups();
+    },
+
+    async rejectFromNotification(notifId, groupId, requestId) {
+        const t = this.translations[this.currentLanguage] || {};
+        const { error } = await supabaseService.rejectJoinRequest(requestId);
+        if (error) { this.toastError(error.message); return; }
+        this.toastSuccess(t.request_rejected || 'Запит відхилено');
+        this._removeNotifMetadata(notifId);
+        await this.markRead(notifId);
+        if (groupId && this.state.currentScreen === 'group-detail-screen') {
+            this.showGroupDetail(groupId);
+        }
+        this.loadMyNotifications();
+    },
+
+    // Remove the action-buttons trigger so the notification doesn't keep
+    // them visible after the request was already handled.
+    _removeNotifMetadata(notifId) {
+        const n = this.state.notifications.find(x => String(x.id) === String(notifId));
+        if (n && n.metadata) { delete n.metadata.request_id; }
     },
 
     async markRead(id) {
@@ -3156,6 +3242,8 @@ const app = {
             admin_tab_groups: 'Групи',
             admin_tab_feedback: 'Відгуки',
             loading: 'Завантаження…',
+            request_approved: 'Запит схвалено',
+            request_rejected: 'Запит відхилено',
             cta_complete_profile: 'Заповніть «Квартиру/офіс» у профілі, щоб голосувати',
             members_label: 'Учасників',
             votings_label: 'Голосувань',
@@ -3520,6 +3608,8 @@ const app = {
             admin_tab_groups: 'Groups',
             admin_tab_feedback: 'Feedback',
             loading: 'Loading…',
+            request_approved: 'Request approved',
+            request_rejected: 'Request rejected',
             cta_complete_profile: 'Fill in "Apartment/office" in your profile to vote',
             members_label: 'Members',
             votings_label: 'Votings',
@@ -3884,6 +3974,8 @@ const app = {
             admin_tab_groups: 'Группы',
             admin_tab_feedback: 'Отзывы',
             loading: 'Загрузка…',
+            request_approved: 'Запрос одобрен',
+            request_rejected: 'Запрос отклонён',
             cta_complete_profile: 'Заполните «Квартиру/офис» в профиле, чтобы голосовать',
             members_label: 'Участников',
             votings_label: 'Голосований',

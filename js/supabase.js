@@ -618,7 +618,7 @@ const supabaseService = {
         if (!userId) return { data: null, error: { message: 'User not authenticated' } };
 
         const { data, error } = await this.client.from('notifications')
-            .select('*')
+            .select('id, type, text, is_read, created_at, metadata')
             .eq('user_id', userId)
             .order('created_at', { ascending: false })
             .limit(100);
