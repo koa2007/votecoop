@@ -2881,3 +2881,161 @@ textarea:focus-visible {
         max-height: 50vh;
     }
 }
+/* ===== Phase 14: Voter / Observer Role System ===== */
+
+.role-badge {
+    font-size: 14px;
+    margin-left: 4px;
+    display: inline-block;
+}
+.role-badge.observer {
+    opacity: 0.7;
+}
+
+.role-radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 10px 0;
+}
+.role-radio-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    transition: border-color 0.15s, background 0.15s;
+}
+.role-radio-group label:has(input:checked) {
+    border-color: var(--color-primary);
+    background: rgba(99, 102, 241, 0.08);
+}
+
+.join-group-row {
+    display: flex;
+    gap: 8px;
+}
+.join-group-row input {
+    flex: 1;
+}
+#join-apartment {
+    max-width: 90px;
+}
+
+.join-group-btn-full {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.observer-notice {
+    background: var(--color-warning-bg, #fef3c7);
+    color: var(--color-warning-text, #92400e);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    text-align: center;
+    margin: 16px 0;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.role-breakdown {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-top: 2px;
+}
+
+.role-change-badge {
+    font-size: 11px;
+    background: var(--color-primary);
+    color: #fff;
+    border-radius: 4px;
+    padding: 1px 5px;
+    vertical-align: middle;
+    margin-left: 4px;
+}
+
+.btn-icon-sm {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: var(--color-text-secondary);
+    font-size: 16px;
+    border-radius: var(--radius-sm);
+    transition: color 0.15s, background 0.15s;
+    flex-shrink: 0;
+}
+.btn-icon-sm:hover {
+    color: var(--color-primary);
+    background: var(--color-bg-secondary);
+}
+
+/* Profile: group roles section */
+.profile-roles-section {
+    background: var(--color-bg-card);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    margin-bottom: 12px;
+}
+.section-subheading {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 10px 0;
+}
+.profile-group-role-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-border);
+    flex-wrap: wrap;
+}
+.profile-group-role-row:last-child {
+    border-bottom: none;
+}
+.profile-group-name {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 500;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.profile-role-badge {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+.btn-text-sm {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--color-primary);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.btn-text-sm:hover {
+    background: var(--color-bg-secondary);
+}
+
+/* Dark mode: observer notice */
+[data-theme="dark"] .observer-notice,
+.dark .observer-notice {
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+}

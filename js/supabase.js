@@ -302,12 +302,12 @@ const supabaseService = {
 
         const [membersRes, requestsRes, historyRes, statsRes] = await Promise.all([
             this.client.from('group_members')
-                .select('user_id, role, is_frozen, frozen_until, user:profiles(id, first_name, last_name, phone, address, apartment)')
+                .select('user_id, role, is_frozen, frozen_until, is_observer, apartment, user:profiles(id, first_name, last_name, phone, address, apartment)')
                 .eq('group_id', groupId),
             // Explicit FK: join_requests has TWO refs to profiles
             // (user_id and resolved_by), so PostgREST needs the FK name.
             this.client.from('join_requests')
-                .select('id, user_id, status, created_at, user:profiles!join_requests_user_id_fkey(id, first_name, last_name, address, apartment)')
+                .select('id, user_id, status, created_at, apartment, requested_as_observer, is_role_change, user:profiles!join_requests_user_id_fkey(id, first_name, last_name, address, apartment)')
                 .eq('group_id', groupId)
                 .eq('status', 'pending'),
             this.client.from('group_history')
@@ -753,5 +753,55 @@ const supabaseService = {
         }
         const { error } = await this.client.rpc('notify_join_request', { p_group_id: groupId });
         return { error };
+    },
+
+    // === PHASE 14: VOTER / OBSERVER ROLE SYSTEM ===
+
+    async submitJoinRequestV2(groupId, apartment, asObserver) {
+        if (!this.isReady()) {
+            return { data: null, error: { message: 'Supabase not configured' } };
+        }
+        return await this.client.rpc('submit_join_request_v2', {
+            p_group_id: groupId,
+            p_apartment: apartment,
+            p_as_observer: asObserver
+        });
+    },
+
+    async requestRoleChange(groupId, becomeObserver) {
+        if (!this.isReady()) {
+            return { data: null, error: { message: 'Supabase not configured' } };
+        }
+        return await this.client.rpc('request_role_change', {
+            p_group_id: groupId,
+            p_become_observer: becomeObserver
+        });
+    },
+
+    async approveJoinRequestV2(requestId, forceObserver = false) {
+        if (!this.isReady()) {
+            return { data: null, error: { message: 'Supabase not configured' } };
+        }
+        return await this.client.rpc('approve_join_request_v2', {
+            p_request_id: requestId,
+            p_force_observer: forceObserver
+        });
+    },
+
+    async getVoterCount(groupId) {
+        if (!this.isReady()) {
+            return { data: null, error: { message: 'Supabase not configured' } };
+        }
+        return await this.client.rpc('get_voter_count', { p_group_id: groupId });
+    },
+
+    async adminChangeRole(groupId, userId, makeObserver) {
+        if (!this.isReady()) {
+            return { data: null, error: { message: 'Supabase not configured' } };
+        }
+        return await this.client.from('group_members')
+            .update({ is_observer: makeObserver })
+            .eq('group_id', groupId)
+            .eq('user_id', userId);
     }
 };

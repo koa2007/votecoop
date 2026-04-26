@@ -359,9 +359,23 @@
                 </div>
                 <div class="screen-content" data-ptr="groups">
                     <div class="join-group-section">
-                        <input type="text" id="join-group-id" data-lang-placeholder="enter_group_id" placeholder="Введіть ID групи (6 цифр)" maxlength="6" inputmode="numeric" pattern="[0-9]{6}">
-                        <button class="btn btn-primary join-group-btn" onclick="app.joinGroup()" aria-label="Join group">
+                        <div class="join-group-row">
+                            <input type="text" id="join-group-id" data-lang-placeholder="enter_group_id" placeholder="Введіть ID групи (6 цифр)" maxlength="6" inputmode="numeric" pattern="[0-9]{6}">
+                            <input type="text" id="join-apartment" data-lang-placeholder="apartment_label" placeholder="Квартира" maxlength="10" inputmode="text">
+                        </div>
+                        <div class="role-radio-group" id="join-role-group">
+                            <label>
+                                <input type="radio" name="join-role" value="voter" id="join-role-voter">
+                                <span>👍 <span data-lang="role_voter">Голосуючий</span></span>
+                            </label>
+                            <label>
+                                <input type="radio" name="join-role" value="observer" id="join-role-observer">
+                                <span>👁️ <span data-lang="role_observer">Спостерігач</span></span>
+                            </label>
+                        </div>
+                        <button class="btn btn-primary join-group-btn-full" onclick="app.joinGroup()" aria-label="Join group">
                             <i class="ph ph-sign-in" aria-hidden="true"></i>
+                            <span data-lang="join_group_btn">Приєднатися</span>
                         </button>
                     </div>
                     <div class="groups-list" id="groups-list">
@@ -430,6 +444,10 @@
                             <span class="detail-label" data-lang="groups_count">Груп</span>
                             <span class="detail-value" id="profile-groups-count">2</span>
                         </div>
+                    </div>
+                    <div class="profile-roles-section hidden">
+                        <h4 class="section-subheading" data-lang="my_roles_in_groups">Мої ролі в групах</h4>
+                        <div id="profile-group-roles"></div>
                     </div>
                     <div class="profile-actions">
                         <button class="btn btn-secondary" onclick="app.showEditProfile()">
@@ -661,6 +679,7 @@
                     <div class="stat">
                         <span class="stat-value" id="group-members-count">5</span>
                         <span class="stat-label" id="members-label" data-lang="members_label">Учасників</span>
+                        <div id="role-breakdown" class="role-breakdown"></div>
                         <div id="frozen-count-display" class="frozen-count-display">
                             <i class="ph-fill ph-snowflake" aria-hidden="true"></i> <span id="frozen-count">0</span> <span data-lang="frozen_abbr">замор.</span>
                         </div>

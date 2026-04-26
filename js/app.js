@@ -2210,6 +2210,19 @@ const app = {
             return;
         }
 
+        const apartment = (document.getElementById('join-apartment')?.value || '').trim();
+        if (!apartment) {
+            this.toastError(t.join_apartment_required || 'Введіть номер квартири');
+            return;
+        }
+
+        const roleEl = document.querySelector('input[name="join-role"]:checked');
+        if (!roleEl) {
+            this.toastError(t.join_role_required || 'Оберіть роль');
+            return;
+        }
+        const asObserver = roleEl.value === 'observer';
+
         // Check if already member locally
         const existing = this.state.groups.find(g => g.groupId === code);
         if (existing) {
@@ -2225,18 +2238,31 @@ const app = {
                 return;
             }
 
-            // Send join request
-            const { data: request, error: reqErr } = await supabaseService.sendJoinRequest(group.id);
+            // Send join request v2
+            const { data: requestId, error: reqErr } = await supabaseService.submitJoinRequestV2(group.id, apartment, asObserver);
             if (reqErr) {
-                if (reqErr.code === '23505') {
+                const msg = reqErr.message || '';
+                if (msg.includes('already_member')) {
+                    this.toastError(t.already_member || 'Ви вже є учасником цієї групи');
+                } else if (msg.includes('already_pending')) {
                     this.toastError(t.already_requested || 'Запит вже надіслано');
+                } else if (msg.includes('apartment_taken:')) {
+                    const takenName = msg.split('apartment_taken:')[1] || '';
+                    this.toastError(`${t.apartment_taken || 'Квартира зайнята голосуючим'}: ${this.escapeHTML(takenName)}. ${t.apartment_taken_hint || 'Оберіть роль "спостерігач" або введіть іншу квартиру.'}`);
+                } else if (msg.includes('apartment_required')) {
+                    this.toastError(t.join_apartment_required || 'Введіть номер квартири');
                 } else {
-                    throw new Error(reqErr.message);
+                    throw new Error(msg);
                 }
                 return;
             }
 
             document.getElementById('join-group-id').value = '';
+            document.getElementById('join-apartment').value = '';
+            document.querySelectorAll('input[name="join-role"]').forEach(r => r.checked = false);
+
+            // Notify group admin about the join request
+            await supabaseService.notifyJoinRequest(group.id);
 
             // Create notification in DB for the requester
             await supabaseService.createNotification(
@@ -2245,12 +2271,9 @@ const app = {
                 `${t.join_request_sent || 'Запит на приєднання надіслано'}: ${group.name}`
             );
 
-            // Notify group admin about the join request
-            await supabaseService.notifyJoinRequest(group.id);
-
             // Add notification locally for instant display
             this.state.notifications.unshift({
-                id: request.id,
+                id: requestId,
                 type: 'system',
                 text: `${t.join_request_sent || 'Запит на приєднання надіслано'}: ${group.name}`,
                 time: new Date().toLocaleString(),
@@ -2329,7 +2352,20 @@ const app = {
         const isActive = voting.status === 'active';
         const isAuthor = voting.initiatorId === this.state.user.id;
         const abstainVotes = voting.abstainVotes || 0;
-        const safeTotal = voting.totalMembers > 0 ? voting.totalMembers : 1;
+
+        // Determine if current user is an observer in this group
+        const dvGroup = this.state.groups.find(g => g.id === voting.groupId);
+        const dvCurrentMember = dvGroup?.members?.find(m => m.id === this.state.user.id);
+        const isObserver = dvCurrentMember?.isObserver ?? false;
+
+        // Use voter count (non-observers) as the quorum denominator
+        let voterTotalCount = voting.totalMembers;
+        try {
+            const vcRes = await supabaseService.getVoterCount(voting.groupId);
+            if (vcRes.data != null) voterTotalCount = vcRes.data;
+        } catch (_) { /* keep totalMembers as fallback */ }
+
+        const safeTotal = voterTotalCount > 0 ? voterTotalCount : 1;
         const yesPercent = Math.round((voting.yesVotes / safeTotal) * 100);
         const noPercent = Math.round((voting.noVotes / safeTotal) * 100);
         const abstainPercent = Math.round((abstainVotes / safeTotal) * 100);
@@ -2538,12 +2574,16 @@ const app = {
                 </div>
 
                 <div class="participation-summary">
-                    <span class="result-label">${t.participation_label}: ${participation}% (${totalVoted}/${voting.totalMembers})</span>
+                    <span class="result-label">${t.participation_label}: ${participation}% (${totalVoted}/${voterTotalCount})</span>
                 </div>
             </div>
             ` : freezeResults}
 
-            ${!isFreeze && isActive && !voting.hasVoted ? `
+            ${!isFreeze && isObserver ? `
+                <div class="observer-notice">
+                    👁️ ${t.observer_notice || 'Ви — спостерігач. Голосування для вас недоступне.'}
+                </div>
+            ` : !isFreeze && isActive && !voting.hasVoted ? `
                 <div class="voting-actions-column">
                     <div class="vote-buttons">
                         <button class="btn btn-secondary" onclick="app.vote('${voting.id}', false)"><i class="ph-fill ph-x-circle" aria-hidden="true"></i> ${t.vote_against}</button>
@@ -2601,6 +2641,14 @@ const app = {
 
         const voting = this.state.votings.find(v => v.id === votingId);
         if (!voting || voting.hasVoted) return;
+
+        // Observer check — observers cannot vote
+        const vGroup = this.state.groups.find(g => g.id === voting.groupId);
+        const currentMember = vGroup?.members?.find(m => m.id === this.state.user.id);
+        if (currentMember?.isObserver) {
+            this.toastError(t.observer_cannot_vote || 'Спостерігачі не можуть голосувати');
+            return;
+        }
 
         const commentField = document.getElementById('vote-comment');
         const comment = commentField ? commentField.value.trim().substring(0, 500) : '';
@@ -2786,14 +2834,19 @@ const app = {
                 phone: m.user.phone,
                 address: m.user.address ? `${m.user.address}, кв. ${m.user.apartment}` : `кв. ${m.user.apartment || '-'}`,
                 frozen: m.is_frozen,
-                frozenUntil: m.frozen_until
+                frozenUntil: m.frozen_until,
+                isObserver: m.is_observer === true,
+                apartment: m.apartment || m.user.apartment || ''
             }));
 
             group.requests = (data.requests || []).map(r => ({
                 id: r.id,
                 userId: r.user_id,
                 name: `${r.user.first_name} ${r.user.last_name}`.trim(),
-                address: r.user.address ? `${r.user.address}, кв. ${r.user.apartment}` : `кв. ${r.user.apartment || '-'}`
+                address: r.user.address ? `${r.user.address}, кв. ${r.user.apartment}` : `кв. ${r.user.apartment || '-'}`,
+                apartment: r.apartment || r.user.apartment || '',
+                asObserver: r.requested_as_observer === true,
+                isRoleChange: r.is_role_change === true
             }));
 
             group.history = (data.history || []).map(h => ({
@@ -2826,11 +2879,19 @@ const app = {
             group.memberVotes = group.memberVotes || {};
         }
 
-        // Count frozen members
+        // Count frozen / voter / observer members
         const members = group.members || [];
         const frozenCount = members.filter(m => m.frozen).length;
+        const voterCount = members.filter(m => !m.isObserver).length;
+        const observerCount = members.filter(m => m.isObserver).length;
 
         document.getElementById('group-members-count').textContent = group.membersCount;
+
+        // Show voter/observer breakdown
+        const roleBreakdown = document.getElementById('role-breakdown');
+        if (roleBreakdown) {
+            roleBreakdown.textContent = `👍 ${voterCount} · 👁️ ${observerCount}`;
+        }
 
         // Show frozen count if any
         const frozenDisplay = document.getElementById('frozen-count-display');
@@ -2944,40 +3005,59 @@ const app = {
         // Count frozen members
         const frozenCount = group.members.filter(m => m.frozen).length;
         
+        const group = this.state.groups.find(g => g.id === this.state.currentGroupId);
+        const isAdmin = group && group.isAdmin;
+
         membersList.innerHTML = membersWithStats.map(member => {
             const participationText = `${member.participation.participated}/${member.participation.total}`;
             const frozenIndicator = member.frozen ? `<i class="ph-fill ph-snowflake frozen-indicator" title="${t.frozen_badge}" aria-hidden="true"></i>` : '';
+            const roleBadge = member.isObserver
+                ? `<span class="role-badge observer" title="${t.role_observer || 'Спостерігач'}">👁️</span>`
+                : `<span class="role-badge voter" title="${t.role_voter || 'Голосуючий'}">👍</span>`;
+            const aptDisplay = member.apartment ? `кв. ${this.escapeHTML(member.apartment)}` : '';
+            const adminMenu = isAdmin && member.id !== this.state.user.id
+                ? `<button class="btn-icon-sm member-role-btn" onclick="app.showChangeRoleMenu('${group.id}', '${member.id}', ${member.isObserver})" title="${t.change_role_menu || 'Змінити роль'}" aria-label="${t.change_role_menu || 'Змінити роль'}"><i class="ph ph-swap" aria-hidden="true"></i></button>`
+                : '';
             return `
             <div class="member-card ${member.frozen ? 'frozen' : ''}">
                 <div class="member-avatar">
                     <i class="ph ph-user ${member.frozen ? 'text-info' : ''}" aria-hidden="true"></i>
                 </div>
                 <div class="member-info">
-                    <div class="member-name">${this.escapeHTML(member.name)} ${frozenIndicator}</div>
-                    <div class="member-address">${this.escapeHTML(member.address || 'кв. -')}</div>
+                    <div class="member-name">${this.escapeHTML(member.name)} ${roleBadge} ${frozenIndicator}</div>
+                    <div class="member-address">${aptDisplay || this.escapeHTML(member.address || 'кв. -')}</div>
                 </div>
                 <div class="member-participation ${member.frozen ? 'text-info' : ''}">
                     ${member.frozen ? `<i class="ph-fill ph-snowflake" aria-hidden="true"></i> ${t.frozen_badge}` : participationText}
                 </div>
+                ${adminMenu}
             </div>
         `}).join('');
 
         // Render requests (only for admin)
         const requestsList = document.getElementById('requests-list');
         if (group.isAdmin && group.requests.length > 0) {
-            requestsList.innerHTML = group.requests.map(request => `
+            requestsList.innerHTML = group.requests.map(request => {
+                const roleLabel = request.asObserver
+                    ? `👁️ ${t.role_observer || 'Спостерігач'}`
+                    : `👍 ${t.role_voter || 'Голосуючий'}`;
+                const aptLabel = request.apartment ? `кв. ${this.escapeHTML(request.apartment)}` : '';
+                const roleChangeBadge = request.isRoleChange
+                    ? `<span class="role-change-badge">${t.role_change_badge || 'зміна ролі'}</span>`
+                    : '';
+                return `
                 <div class="request-item">
                     <div class="request-avatar"><i class="ph ph-user" aria-hidden="true"></i></div>
                     <div class="request-info">
-                        <div class="request-name">${this.escapeHTML(request.name)}</div>
-                        <div class="request-address">${this.escapeHTML(request.address)}</div>
+                        <div class="request-name">${this.escapeHTML(request.name)} ${roleChangeBadge}</div>
+                        <div class="request-address">${aptLabel} · ${roleLabel}</div>
                     </div>
                     <div class="request-actions">
                         <button class="btn-small btn-approve" onclick="app.approveRequest('${group.id}', '${request.id}')" aria-label="${t.approve || 'Approve'}"><i class="ph ph-check" aria-hidden="true"></i></button>
                         <button class="btn-small btn-reject" onclick="app.rejectRequest('${group.id}', '${request.id}')" aria-label="${t.reject || 'Reject'}"><i class="ph ph-x" aria-hidden="true"></i></button>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         } else {
             requestsList.innerHTML = `<div class="empty-state-inline">${t.no_requests}</div>`;
         }
@@ -3141,11 +3221,22 @@ const app = {
         }
     },
 
-    async approveRequest(groupId, requestId) {
+    async approveRequest(groupId, requestId, forceObserver = false) {
         const t = this.translations[this.currentLanguage] || {};
         try {
-            const { error } = await supabaseService.approveJoinRequest(requestId);
-            if (error) throw new Error(error.message);
+            const { error } = await supabaseService.approveJoinRequestV2(requestId, forceObserver);
+            if (error) {
+                const msg = error.message || '';
+                if (msg.includes('apartment_taken_now')) {
+                    // Apartment was taken between request submission and approval
+                    const confirmed = window.confirm(t.apartment_taken_now_confirm || 'Квартира вже зайнята. Затвердити як спостерігача?');
+                    if (confirmed) {
+                        await this.approveRequest(groupId, requestId, true);
+                    }
+                    return;
+                }
+                throw new Error(msg);
+            }
             // Refresh BOTH the group detail (members list, requests, frozen
             // count, voting stats) AND the global groups list (so the
             // member count on the Groups screen reflects reality immediately
@@ -3171,6 +3262,58 @@ const app = {
                 this.loadMyNotifications()
             ]);
             this.toastSuccess(t.request_rejected || 'Запит відхилено');
+        } catch (err) {
+            this.toastError(err.message || t.auth_error_network || 'Помилка');
+        }
+    },
+
+    // Show role change confirmation dialog for admin
+    showChangeRoleMenu(groupId, userId, currentlyObserver) {
+        const t = this.translations[this.currentLanguage] || {};
+        const makeObserver = !currentlyObserver;
+        const roleLabel = makeObserver
+            ? (t.role_observer || 'Спостерігач')
+            : (t.role_voter || 'Голосуючий');
+        const confirmed = window.confirm(`${t.change_role_menu || 'Змінити роль'}: ${roleLabel}?`);
+        if (confirmed) {
+            this.adminChangeRole(groupId, userId, makeObserver);
+        }
+    },
+
+    async adminChangeRole(groupId, userId, makeObserver) {
+        const t = this.translations[this.currentLanguage] || {};
+        try {
+            const { error } = await supabaseService.adminChangeRole(groupId, userId, makeObserver);
+            if (error) throw new Error(error.message);
+            await this.showGroupDetail(groupId);
+            this.toastSuccess(t.role_changed || 'Роль змінено');
+        } catch (err) {
+            this.toastError(err.message || t.auth_error_network || 'Помилка');
+        }
+    },
+
+    // Request role change for current user (sends request for admin approval)
+    async requestRoleChange(groupId, becomeObserver) {
+        const t = this.translations[this.currentLanguage] || {};
+        try {
+            const { error } = await supabaseService.requestRoleChange(groupId, becomeObserver);
+            if (error) {
+                const msg = error.message || '';
+                if (msg.includes('already_in_role')) {
+                    this.toastError(t.already_in_role || 'Ви вже маєте цю роль');
+                } else if (msg.includes('already_pending')) {
+                    this.toastError(t.already_requested || 'Запит вже надіслано');
+                } else if (msg.includes('admin_cannot_be_observer')) {
+                    this.toastError(t.admin_cannot_be_observer || 'Адміністратор не може бути спостерігачем');
+                } else if (msg.includes('apartment_taken:')) {
+                    const takenName = msg.split('apartment_taken:')[1] || '';
+                    this.toastError(`${t.apartment_taken || 'Квартира зайнята голосуючим'}: ${this.escapeHTML(takenName)}`);
+                } else {
+                    throw new Error(msg);
+                }
+                return;
+            }
+            this.toastSuccess(t.role_change_requested || 'Запит на зміну ролі надіслано');
         } catch (err) {
             this.toastError(err.message || t.auth_error_network || 'Помилка');
         }
@@ -3330,6 +3473,7 @@ const app = {
 
     updateProfileDisplay() {
         if (!this.state.user) return;
+        const t = this.translations[this.currentLanguage];
         document.getElementById('profile-name').textContent =
             `${this.state.user.firstName || ''} ${this.state.user.lastName || ''}`.trim();
         document.getElementById('profile-email').textContent = this.state.user.email || '';
@@ -3337,6 +3481,47 @@ const app = {
         document.getElementById('profile-address-display').textContent =
             this.state.user.address ? `${this.state.user.address}, кв. ${this.state.user.apartment}` : '';
         document.getElementById('profile-groups-count').textContent = this.state.groups.length;
+
+        // Render group roles section
+        const rolesContainer = document.getElementById('profile-group-roles');
+        if (rolesContainer && this.state.groups.length > 0) {
+            rolesContainer.innerHTML = this.state.groups.map(group => {
+                const myMember = (group.members || []).find(m => m.id === this.state.user.id);
+                const isAdmin = group.isAdmin;
+                const isObserver = myMember?.isObserver ?? false;
+                const roleLabel = isAdmin
+                    ? `<i class="ph-fill ph-crown text-warning" aria-hidden="true"></i> ${t.admin || 'Адмін'}`
+                    : isObserver
+                        ? `👁️ ${t.role_observer || 'Спостерігач'}`
+                        : `👍 ${t.role_voter || 'Голосуючий'}`;
+                const roleChangeBtn = !isAdmin ? `
+                    <button class="btn-text-sm" onclick="app.showRoleChangeDialog('${group.id}', ${isObserver})">
+                        ${t.request_role_change_btn || 'Запросити зміну ролі'}
+                    </button>` : '';
+                return `
+                    <div class="profile-group-role-row">
+                        <span class="profile-group-name">${this.escapeHTML(group.name)}</span>
+                        <span class="profile-role-badge">${roleLabel}</span>
+                        ${roleChangeBtn}
+                    </div>
+                `;
+            }).join('');
+            rolesContainer.closest('.profile-roles-section')?.classList.remove('hidden');
+        } else if (rolesContainer) {
+            rolesContainer.closest('.profile-roles-section')?.classList.add('hidden');
+        }
+    },
+
+    showRoleChangeDialog(groupId, currentlyObserver) {
+        const t = this.translations[this.currentLanguage];
+        const becomeObserver = !currentlyObserver;
+        const targetRole = becomeObserver
+            ? (t.role_observer || 'Спостерігач')
+            : (t.role_voter || 'Голосуючий');
+        const confirmed = window.confirm(`${t.request_role_change_btn || 'Запросити зміну ролі'} → ${targetRole}?`);
+        if (confirmed) {
+            this.requestRoleChange(groupId, becomeObserver);
+        }
     },
 
     // Language Support
@@ -3716,7 +3901,27 @@ const app = {
             group_deleted_by_voting: 'Групу видалено за результатами голосування',
             delete_group_warning: 'Якщо голосування буде прийнято — групу буде видалено автоматично разом з усіма голосуваннями та історією.',
             one_delete_group_at_time: 'Вже існує активне голосування за видалення цієї групи.',
-            min_duration_24h: 'Мінімальна тривалість для цього типу голосування — 24 години.'
+            min_duration_24h: 'Мінімальна тривалість для цього типу голосування — 24 години.',
+            // Phase 14: voter/observer roles
+            apartment_label: 'Квартира',
+            role_voter: 'Голосуючий',
+            role_observer: 'Спостерігач',
+            join_role_required: 'Оберіть роль',
+            join_apartment_required: 'Введіть номер квартири',
+            apartment_taken: 'Квартира зайнята голосуючим',
+            apartment_taken_hint: 'Оберіть роль "спостерігач" або введіть іншу квартиру.',
+            observer_cannot_vote: 'Спостерігачі не можуть голосувати',
+            observer_notice: 'Ви — спостерігач. Голосування для вас недоступне.',
+            apartment_taken_now_confirm: 'Квартира вже зайнята. Затвердити як спостерігача?',
+            request_role_change_btn: 'Запросити зміну ролі',
+            change_role_menu: 'Змінити роль',
+            role_changed: 'Роль змінено',
+            role_change_requested: 'Запит на зміну ролі надіслано',
+            already_in_role: 'Ви вже маєте цю роль',
+            admin_cannot_be_observer: 'Адміністратор не може бути спостерігачем',
+            role_change_badge: 'зміна ролі',
+            my_roles_in_groups: 'Мої ролі в групах',
+            join_group_btn: 'Приєднатися'
         },
         en: {
             profile: 'Profile',
@@ -4093,7 +4298,27 @@ const app = {
             group_deleted_by_voting: 'Group deleted by voting result',
             delete_group_warning: 'If the vote passes — the group will be automatically deleted along with all votings and history.',
             one_delete_group_at_time: 'There is already an active voting to delete this group.',
-            min_duration_24h: 'Minimum duration for this voting type is 24 hours.'
+            min_duration_24h: 'Minimum duration for this voting type is 24 hours.',
+            // Phase 14: voter/observer roles
+            apartment_label: 'Apartment',
+            role_voter: 'Voter',
+            role_observer: 'Observer',
+            join_role_required: 'Select a role',
+            join_apartment_required: 'Enter apartment number',
+            apartment_taken: 'Apartment taken by a voter',
+            apartment_taken_hint: 'Choose "observer" role or enter a different apartment.',
+            observer_cannot_vote: 'Observers cannot vote',
+            observer_notice: 'You are an observer. Voting is not available.',
+            apartment_taken_now_confirm: 'Apartment taken. Approve as observer?',
+            request_role_change_btn: 'Request role change',
+            change_role_menu: 'Change role',
+            role_changed: 'Role changed',
+            role_change_requested: 'Role change request sent',
+            already_in_role: 'You already have this role',
+            admin_cannot_be_observer: 'Admin cannot be an observer',
+            role_change_badge: 'role change',
+            my_roles_in_groups: 'My roles in groups',
+            join_group_btn: 'Join'
         },
         ru: {
             profile: 'Профиль',
@@ -4470,7 +4695,27 @@ const app = {
             group_deleted_by_voting: 'Группа удалена по результатам голосования',
             delete_group_warning: 'Если голосование будет принято — группа будет удалена автоматически вместе со всеми голосованиями и историей.',
             one_delete_group_at_time: 'Уже существует активное голосование за удаление этой группы.',
-            min_duration_24h: 'Минимальная длительность для этого типа голосования — 24 часа.'
+            min_duration_24h: 'Минимальная длительность для этого типа голосования — 24 часа.',
+            // Phase 14: voter/observer roles
+            apartment_label: 'Квартира',
+            role_voter: 'Голосующий',
+            role_observer: 'Наблюдатель',
+            join_role_required: 'Выберите роль',
+            join_apartment_required: 'Введите номер квартиры',
+            apartment_taken: 'Квартира занята голосующим',
+            apartment_taken_hint: 'Выберите роль "наблюдатель" или введите другую квартиру.',
+            observer_cannot_vote: 'Наблюдатели не могут голосовать',
+            observer_notice: 'Вы — наблюдатель. Голосование для вас недоступно.',
+            apartment_taken_now_confirm: 'Квартира занята. Одобрить как наблюдателя?',
+            request_role_change_btn: 'Запросить смену роли',
+            change_role_menu: 'Изменить роль',
+            role_changed: 'Роль изменена',
+            role_change_requested: 'Запрос на смену роли отправлен',
+            already_in_role: 'У вас уже есть эта роль',
+            admin_cannot_be_observer: 'Администратор не может быть наблюдателем',
+            role_change_badge: 'смена роли',
+            my_roles_in_groups: 'Мои роли в группах',
+            join_group_btn: 'Присоединиться'
         }
     },
 
