@@ -3004,8 +3004,7 @@ const app = {
 
         // Count frozen members
         const frozenCount = group.members.filter(m => m.frozen).length;
-        
-        const group = this.state.groups.find(g => g.id === this.state.currentGroupId);
+
         const isAdmin = group && group.isAdmin;
 
         membersList.innerHTML = membersWithStats.map(member => {
