@@ -3084,24 +3084,37 @@ const app = {
     },
 
     async approveRequest(groupId, requestId) {
-        const t = this.translations[this.currentLanguage];
+        const t = this.translations[this.currentLanguage] || {};
         try {
             const { error } = await supabaseService.approveJoinRequest(requestId);
             if (error) throw new Error(error.message);
-            await this.showGroupDetail(groupId);
+            // Refresh BOTH the group detail (members list, requests, frozen
+            // count, voting stats) AND the global groups list (so the
+            // member count on the Groups screen reflects reality immediately
+            // when the user navigates back).
+            await Promise.all([
+                this.showGroupDetail(groupId),
+                this.loadMyGroups(),
+                this.loadMyNotifications()
+            ]);
+            this.toastSuccess(t.request_approved || 'Запит схвалено');
         } catch (err) {
-            this.toastError(t.auth_error_network || 'Помилка');
+            this.toastError(err.message || t.auth_error_network || 'Помилка');
         }
     },
 
     async rejectRequest(groupId, requestId) {
-        const t = this.translations[this.currentLanguage];
+        const t = this.translations[this.currentLanguage] || {};
         try {
             const { error } = await supabaseService.rejectJoinRequest(requestId);
             if (error) throw new Error(error.message);
-            await this.showGroupDetail(groupId);
+            await Promise.all([
+                this.showGroupDetail(groupId),
+                this.loadMyNotifications()
+            ]);
+            this.toastSuccess(t.request_rejected || 'Запит відхилено');
         } catch (err) {
-            this.toastError(t.auth_error_network || 'Помилка');
+            this.toastError(err.message || t.auth_error_network || 'Помилка');
         }
     },
 
