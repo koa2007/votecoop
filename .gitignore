@@ -10,6 +10,8 @@ package-lock.json
 github*login*.txt
 *credentials*.txt
 *password*.txt
+.claude/CREDENTIALS.md
+.claude/credentials*
 
 # OS / editor
 .DS_Store
