@@ -21,6 +21,18 @@
     <!-- Toast container (globally positioned) -->
     <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
+    <!-- Global blocking loader: shown during sign-in/sign-up while the app
+         fetches profile + groups + votings. Stays until the main screen
+         is actually rendered, so users never see a "frozen" auth screen
+         after pressing Login. -->
+    <div id="global-loader" class="global-loader hidden" role="status" aria-live="polite">
+        <div class="global-loader-content">
+            <img src="icons/spilka-mark.png" alt="" class="global-loader-logo">
+            <div class="loading-spinner"></div>
+            <div class="global-loader-text" data-lang="loader_signing_in">Входимо в акаунт…</div>
+        </div>
+    </div>
+
     <!-- Feedback modal — any user can submit a suggestion / complaint -->
     <div class="modal hidden" id="feedback-modal">
         <div class="modal-overlay" onclick="app.hideModal('feedback-modal')"></div>

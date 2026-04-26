@@ -249,8 +249,23 @@ const app = {
         });
     },
 
-    // Navigation
+    // Navigation — also hides the blocking global loader once we've
+    // actually navigated somewhere "user-visible" (post sign-in landing).
     showScreen(screenId) {
+        // Any of these screens means the user can finally see the app and
+        // act on it — drop the global loader.
+        const userVisibleScreens = ['main-screens', 'voting-screen',
+            'groups-screen', 'notifications-screen', 'profile-screen',
+            'profile-setup-screen', 'auth-screen', 'register-screen',
+            'forgot-password-screen', 'reset-password-screen',
+            'admin-panel-screen', 'group-detail-screen'];
+        if (userVisibleScreens.includes(screenId)) {
+            this.hideGlobalLoader();
+        }
+        return this._showScreenInternal(screenId);
+    },
+
+    _showScreenInternal(screenId) {
         const mainScreens = ['voting-screen', 'groups-screen', 'notifications-screen', 'profile-screen'];
         const topLevelScreens = ['loading-screen', 'auth-screen', 'register-screen',
             'forgot-password-screen', 'reset-password-screen', 'profile-setup-screen',
@@ -605,11 +620,17 @@ const app = {
         }
 
         this.hideAuthMessages();
+        // Show full-screen blocking spinner IMMEDIATELY — before the network
+        // request even starts — so users never click Login and see a frozen
+        // page. The loader stays visible until the main app actually renders
+        // (handleAuthSession -> showScreen('main-screens') hides it).
+        this.showGlobalLoader('loader_signing_in');
         this.setBtnLoading('auth-login-btn', true);
 
         const { data, error } = await supabaseService.signInWithEmail(email, password);
 
         if (error) {
+            this.hideGlobalLoader();
             this.setBtnLoading('auth-login-btn', false);
             if (error.message.includes('Invalid login credentials')) {
                 this.showAuthError(t.auth_error_invalid);
@@ -621,12 +642,8 @@ const app = {
             return;
         }
 
-        // Success — keep button visually busy AND switch to the loading screen
-        // so the 3-5s data fetch in handleAuthSession is covered with a spinner
-        // (otherwise the button resets and the user sees a frozen UI).
-        this.showScreen('loading-screen');
-        // Note: setBtnLoading is intentionally not reset — handleAuthSession
-        // will show main-screens, replacing the auth-screen entirely.
+        // Success — global loader stays on until handleAuthSession finishes
+        // loading data and switches to the main screen.
     },
 
     // Register with email/password — uses dedicated register screen if open,
@@ -1321,6 +1338,23 @@ const app = {
         this.state.notifications.forEach(n => n.read = true);
         this.renderNotifications();
         await supabaseService.markAllNotificationsRead();
+    },
+
+    // === GLOBAL LOADER ===
+    // Full-screen blocking spinner. Used during sign-in/sign-up so the
+    // user never sees a frozen UI between "Login" click and the main app.
+    showGlobalLoader(textKey) {
+        const el = document.getElementById('global-loader');
+        if (!el) return;
+        const t = this.translations[this.currentLanguage] || {};
+        const txt = el.querySelector('.global-loader-text');
+        if (txt && textKey && t[textKey]) txt.textContent = t[textKey];
+        el.classList.remove('hidden');
+    },
+
+    hideGlobalLoader() {
+        const el = document.getElementById('global-loader');
+        if (el) el.classList.add('hidden');
     },
 
     // === TOAST NOTIFICATIONS ===
@@ -3244,6 +3278,7 @@ const app = {
             loading: 'Завантаження…',
             request_approved: 'Запит схвалено',
             request_rejected: 'Запит відхилено',
+            loader_signing_in: 'Входимо в акаунт…',
             cta_complete_profile: 'Заповніть «Квартиру/офіс» у профілі, щоб голосувати',
             members_label: 'Учасників',
             votings_label: 'Голосувань',
@@ -3610,6 +3645,7 @@ const app = {
             loading: 'Loading…',
             request_approved: 'Request approved',
             request_rejected: 'Request rejected',
+            loader_signing_in: 'Signing you in…',
             cta_complete_profile: 'Fill in "Apartment/office" in your profile to vote',
             members_label: 'Members',
             votings_label: 'Votings',
@@ -3976,6 +4012,7 @@ const app = {
             loading: 'Загрузка…',
             request_approved: 'Запрос одобрен',
             request_rejected: 'Запрос отклонён',
+            loader_signing_in: 'Входим в аккаунт…',
             cta_complete_profile: 'Заполните «Квартиру/офис» в профиле, чтобы голосовать',
             members_label: 'Участников',
             votings_label: 'Голосований',

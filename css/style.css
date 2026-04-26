@@ -264,6 +264,47 @@ body.modal-open {
     border-radius: var(--radius-xl);
 }
 
+/* Global blocking loader (sign-in / heavy actions) */
+.global-loader {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-bg);
+    backdrop-filter: blur(2px);
+    animation: fade-in 0.18s ease;
+}
+.global-loader.hidden { display: none; }
+
+.global-loader-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 24px;
+    text-align: center;
+}
+
+.global-loader-logo {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    opacity: 0.95;
+}
+
+.global-loader-text {
+    font-size: 15px;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+}
+
+@keyframes fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
 /* Toast container — fixed at top, mobile-first */
 .toast-container {
     position: fixed;
