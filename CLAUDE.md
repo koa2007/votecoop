@@ -84,6 +84,26 @@ No build step. No npm install needed for runtime (only for icon generation scrip
 - `FEATURES_CHECKLIST.md` — what's done / what's left
 - `design-system.md`, `ux-structure.md` — design notes
 
+## 🧠 Two-agent coordination (claude-laptop ↔ brain-vps)
+
+Це проєкт на якому одночасно можуть працювати два агенти: я (Claude на ноуті Ігоря) і `autonomus-brain` (Claude на VPS Hetzner, доступний через Telegram). У мозку є прямий DB-доступ через psql (`$VOTECOOP_DB`) — він може накатувати міграції самостійно.
+
+**Shared state** = `D:\claudeprojects\Obsidian\autonomus-memory\projects\votecoop\` (синкається GitHub-ом, мозок auto-pulls що 5 хв):
+- `profile.md` — стабільні факти проєкту (стек, креди, конвенції, phase-міграції)
+- `log.md` — append-only журнал що зробили обидва агенти + користувач
+
+**Мій протокол на старті сесії votecoop:**
+```bash
+cd D:\claudeprojects\Obsidian\autonomus-memory && git pull --quiet
+# Прочитати останні 3-5 записів у projects/votecoop/log.md
+```
+
+**Перед кінцем сесії якщо була значуща робота:**
+- Додати запис у `log.md` форматом `### YYYY-MM-DD HH:MM — [claude-laptop]` + bullet'и
+- `git add projects/votecoop/log.md && git commit -m 'log: votecoop ...' && git push`
+
+**Не редагувати чужі записи** — лише додавати свої. Користувач може писати від `[user]` для координації.
+
 ## ⚠️ Known traps
 
 - `js/config.js` is in `.gitignore` BUT it was committed before the rule was added. The current anon key is public-safe; if rotated, ensure new key isn't committed accidentally.
