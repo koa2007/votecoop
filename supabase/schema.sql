@@ -88,8 +88,10 @@ CREATE TABLE join_requests (
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     resolved_at TIMESTAMPTZ,
-    resolved_by UUID REFERENCES profiles(id),
-    UNIQUE(group_id, user_id)
+    resolved_by UUID REFERENCES profiles(id)
+    -- partial UNIQUE on (group_id,user_id) WHERE status='pending' is created
+    -- below as join_requests_pending_uniq (phase16) — full UNIQUE removed so
+    -- a rejected user can re-apply.
 );
 
 -- ============================================
@@ -186,16 +188,36 @@ CREATE TABLE group_history (
 -- VIEWS (for convenient querying)
 -- ============================================
 
--- Vote counts per voting (without revealing who voted what in secret votings)
-CREATE VIEW voting_results AS
-SELECT
-    voting_id,
-    COUNT(*) FILTER (WHERE choice = 'yes') AS yes_votes,
-    COUNT(*) FILTER (WHERE choice = 'no') AS no_votes,
-    COUNT(*) FILTER (WHERE choice = 'abstain') AS abstain_votes,
-    COUNT(*) AS total_votes
-FROM votes
-GROUP BY voting_id;
+-- Vote counts: exposed via SECURITY DEFINER function with is_group_member()
+-- gate (see phase16) instead of a view, because PG views default to
+-- definer-style execution and would leak counts cross-group.
+CREATE OR REPLACE FUNCTION public.get_voting_results(p_voting_ids uuid[])
+RETURNS TABLE(
+    voting_id uuid,
+    yes_votes bigint,
+    no_votes bigint,
+    abstain_votes bigint,
+    total_votes bigint
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+    SELECT
+        v.voting_id,
+        count(*) FILTER (WHERE v.choice = 'yes')     AS yes_votes,
+        count(*) FILTER (WHERE v.choice = 'no')      AS no_votes,
+        count(*) FILTER (WHERE v.choice = 'abstain') AS abstain_votes,
+        count(*)                                     AS total_votes
+    FROM public.votes v
+    JOIN public.votings vt ON vt.id = v.voting_id
+    WHERE v.voting_id = ANY(p_voting_ids)
+      AND public.is_group_member(vt.group_id, auth.uid())
+    GROUP BY v.voting_id;
+$function$;
+
+REVOKE ALL ON FUNCTION public.get_voting_results(uuid[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_voting_results(uuid[]) TO authenticated;
 
 -- Member count per group
 CREATE VIEW group_stats AS
@@ -221,7 +243,7 @@ CREATE INDEX idx_votings_ends_at ON votings(ends_at) WHERE status = 'active';
 CREATE INDEX idx_votes_voting ON votes(voting_id);
 CREATE INDEX idx_notifications_user ON notifications(user_id);
 CREATE INDEX idx_notifications_unread ON notifications(user_id) WHERE is_read = FALSE;
-CREATE INDEX idx_join_requests_pending ON join_requests(group_id) WHERE status = 'pending';
+CREATE UNIQUE INDEX join_requests_pending_uniq ON join_requests(group_id, user_id) WHERE status = 'pending';
 CREATE INDEX idx_group_history_group ON group_history(group_id);
 
 -- ============================================
@@ -302,9 +324,23 @@ CREATE POLICY "Group members can create votings"
         AND EXISTS (SELECT 1 FROM group_members gm WHERE gm.group_id = votings.group_id AND gm.user_id = auth.uid())
     );
 
-CREATE POLICY "Authors can delete own votings"
+-- phase15: lock down RLS forgery — author may only soft-delete their own
+-- ACTIVE voting. WITH CHECK forbids forging result / status='completed'
+-- / completed_at. System functions (complete_expired_votings,
+-- check_freeze_objections) run SECURITY DEFINER as table owner and
+-- bypass RLS, so they remain free to set status='completed'.
+CREATE POLICY "Authors can soft-delete own active votings"
     ON votings FOR UPDATE TO authenticated
-    USING (created_by = auth.uid());
+    USING (
+        created_by = auth.uid()
+        AND status = 'active'
+    )
+    WITH CHECK (
+        created_by = auth.uid()
+        AND status = 'deleted'
+        AND result IS NULL
+        AND completed_at IS NULL
+    );
 
 -- VOTES: members can vote, see own votes; secret voting hides voter identity
 CREATE POLICY "Members can cast votes"
@@ -374,70 +410,100 @@ CREATE POLICY "History visible to group members"
 -- FUNCTIONS (business logic)
 -- ============================================
 
--- Auto-complete votings when time expires
+-- Auto-complete votings when time expires.
+-- phase14 introduced observers (is_observer=TRUE) — non-voting witnesses
+-- who must NOT count toward the majority denominator, otherwise an obvious
+-- yes can flip to rejected just because observers were present.
+-- phase15 fixes the denominator + adds the delete-group side-effect.
 CREATE OR REPLACE FUNCTION complete_expired_votings()
 RETURNS void AS $$
 DECLARE
     v RECORD;
-    yes_count INT;
-    no_count INT;
-    total_members INT;
-    voting_result TEXT;
+    yes_count INTEGER;
+    no_count INTEGER;
+    total_voters INTEGER;
+    v_result TEXT;
+    v_group_name TEXT;
 BEGIN
-    FOR v IN SELECT * FROM votings WHERE status = 'active' AND ends_at <= now()
+    FOR v IN
+        SELECT * FROM votings
+        WHERE status = 'active' AND ends_at <= now()
     LOOP
-        SELECT
-            COUNT(*) FILTER (WHERE choice = 'yes'),
-            COUNT(*) FILTER (WHERE choice = 'no')
-        INTO yes_count, no_count
-        FROM votes WHERE voting_id = v.id;
+        SELECT COUNT(*) INTO yes_count FROM votes
+            WHERE voting_id = v.id AND choice = 'yes';
+        SELECT COUNT(*) INTO no_count FROM votes
+            WHERE voting_id = v.id AND choice = 'no';
 
-        SELECT COUNT(*) INTO total_members
-        FROM group_members WHERE group_id = v.group_id;
+        -- phase15: voters-only denominator, exclude observers
+        SELECT COUNT(*) INTO total_voters
+            FROM group_members
+            WHERE group_id = v.group_id
+              AND is_observer = FALSE;
 
-        IF yes_count > total_members / 2 THEN
-            voting_result := 'accepted';
+        -- defensive: a group with zero voters cannot accept anything
+        IF total_voters > 0 AND yes_count > total_voters / 2 THEN
+            v_result := 'accepted';
         ELSE
-            voting_result := 'rejected';
+            v_result := 'rejected';
         END IF;
 
         UPDATE votings
-        SET status = 'completed', result = voting_result, completed_at = now()
+        SET status = 'completed',
+            result = v_result,
+            completed_at = now()
         WHERE id = v.id;
 
-        -- Apply side effects for accepted special votings
-        IF voting_result = 'accepted' THEN
-            IF v.type = 'admin-change' AND v.target_member_id IS NOT NULL THEN
-                UPDATE group_members SET role = 'member'
-                WHERE group_id = v.group_id AND role = 'admin';
+        IF v_result = 'accepted' THEN
+            CASE v.type
+                WHEN 'admin-change' THEN
+                    UPDATE group_members SET role = 'member'
+                        WHERE group_id = v.group_id AND role = 'admin';
+                    UPDATE group_members SET role = 'admin'
+                        WHERE group_id = v.group_id AND user_id = v.target_member_id;
 
-                UPDATE group_members SET role = 'admin'
-                WHERE group_id = v.group_id AND user_id = v.target_member_id;
+                    INSERT INTO group_history (group_id, action, details, voting_id)
+                    VALUES (v.group_id, 'admin_change',
+                        jsonb_build_object('new_admin', v.target_member_id), v.id);
 
-                INSERT INTO group_history (group_id, action, details, voting_id)
-                VALUES (v.group_id, 'admin_change', jsonb_build_object('new_admin', v.target_member_id), v.id);
-            END IF;
+                WHEN 'remove-member' THEN
+                    DELETE FROM group_members
+                        WHERE group_id = v.group_id AND user_id = v.target_member_id;
 
-            IF v.type = 'remove-member' AND v.target_member_id IS NOT NULL THEN
-                DELETE FROM group_members
-                WHERE group_id = v.group_id AND user_id = v.target_member_id;
+                    INSERT INTO group_history (group_id, action, details, voting_id)
+                    VALUES (v.group_id, 'member_removed',
+                        jsonb_build_object('removed_user', v.target_member_id,
+                            'reason', v.removal_reason), v.id);
 
-                INSERT INTO group_history (group_id, action, details, voting_id)
-                VALUES (v.group_id, 'member_removed', jsonb_build_object('removed_user', v.target_member_id, 'reason', v.removal_reason), v.id);
-            END IF;
+                WHEN 'freeze' THEN
+                    UPDATE group_members
+                        SET is_frozen = TRUE,
+                            frozen_until = now() + ((COALESCE(v.freeze_duration_days, 7))::TEXT || ' days')::INTERVAL
+                        WHERE group_id = v.group_id
+                          AND user_id IN (SELECT user_id FROM freeze_targets WHERE voting_id = v.id);
 
-            IF v.type = 'freeze' THEN
-                UPDATE group_members SET is_frozen = TRUE, frozen_until = now() + INTERVAL '7 days'
-                WHERE group_id = v.group_id
-                AND user_id IN (SELECT user_id FROM freeze_targets WHERE voting_id = v.id);
+                    INSERT INTO group_history (group_id, action, details, voting_id)
+                    VALUES (v.group_id, 'members_frozen',
+                        jsonb_build_object('voting_id', v.id), v.id);
 
-                INSERT INTO group_history (group_id, action, details, voting_id)
-                VALUES (v.group_id, 'members_frozen', jsonb_build_object('voting_id', v.id), v.id);
-            END IF;
+                WHEN 'delete-group' THEN
+                    SELECT name INTO v_group_name FROM groups WHERE id = v.group_id;
+
+                    INSERT INTO notifications (user_id, type, text)
+                    SELECT gm.user_id, 'system',
+                        'Групу "' || COALESCE(v_group_name, '') || '" видалено за результатами голосування'
+                    FROM group_members gm
+                    WHERE gm.group_id = v.group_id;
+
+                    DELETE FROM groups WHERE id = v.group_id;
+
+                ELSE
+                    -- 'simple' / 'secret' / fallback — no side-effects beyond status
+                    NULL;
+            END CASE;
         END IF;
     END LOOP;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- Auto-reject freeze if 2+ objections
 CREATE OR REPLACE FUNCTION check_freeze_objections()

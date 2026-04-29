@@ -479,7 +479,7 @@ const supabaseService = {
         return { data, error };
     },
 
-    // Get vote counts for votings (from view)
+    // Get vote counts for votings (RPC, gated by is_group_member — see phase16)
     async getVotingResults(votingIds) {
         if (!this.isReady()) {
             return { data: null, error: null };
@@ -489,9 +489,9 @@ const supabaseService = {
             return { data: [], error: null };
         }
 
-        const { data, error } = await this.client.from('voting_results')
-            .select('*')
-            .in('voting_id', votingIds);
+        const { data, error } = await this.client.rpc('get_voting_results', {
+            p_voting_ids: votingIds
+        });
 
         return { data, error };
     },
