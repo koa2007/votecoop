@@ -1169,21 +1169,29 @@ html, body {
 }
 
 /* Group Cards */
+/* Join-group section is a vertical stack: row(id+apt) -> role radios -> button.
+   Earlier this used `display: flex` (row) which was correct when the section had
+   only one input + one button; with the apartment + role split added later that
+   layout pushed the role buttons and CTA off-screen on mobile. */
 .join-group-section {
     display: flex;
-    gap: 8px;
+    flex-direction: column;
+    gap: 10px;
     margin-bottom: 16px;
     min-width: 0;
-    align-items: center;
 }
 
 .join-group-section input {
-    flex: 1;
     min-width: 0;
     padding: 12px 16px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     font-size: 16px;
+}
+
+/* The 6-digit group ID input keeps the wider letter-spacing for legibility;
+   the apartment field is short text and shouldn't be tracked. */
+#join-group-id {
     letter-spacing: 2px;
 }
 

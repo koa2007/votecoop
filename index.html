@@ -363,13 +363,13 @@
                             <input type="text" id="join-group-id" data-lang-placeholder="enter_group_id" placeholder="Введіть ID групи (6 цифр)" maxlength="6" inputmode="numeric" pattern="[0-9]{6}">
                             <input type="text" id="join-apartment" data-lang-placeholder="apartment_label" placeholder="Квартира" maxlength="10" inputmode="text">
                         </div>
-                        <div class="role-radio-group" id="join-role-group">
+                        <div class="role-radio-group" id="join-role-group" role="radiogroup" aria-label="Role in the group">
                             <label>
-                                <input type="radio" name="join-role" value="voter" id="join-role-voter">
+                                <input type="radio" name="join-role" value="voter" id="join-role-voter" aria-label="Voter">
                                 <span>👍 <span data-lang="role_voter">Голосуючий</span></span>
                             </label>
                             <label>
-                                <input type="radio" name="join-role" value="observer" id="join-role-observer">
+                                <input type="radio" name="join-role" value="observer" id="join-role-observer" aria-label="Observer">
                                 <span>👁️ <span data-lang="role_observer">Спостерігач</span></span>
                             </label>
                         </div>
@@ -396,13 +396,13 @@
                 <div class="screen-content" data-ptr="notif">
                     <!-- Top action row: Mark all read + Archive -->
                     <div class="notif-toolbar">
-                        <button class="notif-toolbar-btn" onclick="app.markAllRead()" data-lang="mark_all_read">
+                        <button class="notif-toolbar-btn" onclick="app.markAllRead()" aria-label="Mark all read">
                             <i class="ph ph-checks" aria-hidden="true"></i>
-                            <span>Прочитано все</span>
+                            <span data-lang="mark_all_read">Прочитано все</span>
                         </button>
-                        <button class="notif-toolbar-btn" onclick="app.archiveAllNotifications()" data-lang="archive_all">
+                        <button class="notif-toolbar-btn" onclick="app.archiveAllNotifications()" aria-label="Archive all">
                             <i class="ph ph-clipboard-text" aria-hidden="true"></i>
-                            <span>В архів</span>
+                            <span data-lang="archive_all">В архів</span>
                             <i class="ph ph-arrow-right" aria-hidden="true"></i>
                         </button>
                     </div>

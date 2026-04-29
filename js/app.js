@@ -1250,13 +1250,15 @@ const app = {
             const meta = notif.metadata || {};
             const isJoinRequest = (notif.type === 'join_request' || notif.type === 'member')
                 && meta.request_id && meta.group_id;
+            const approveLbl = t.approve || 'Прийняти';
+            const rejectLbl = t.reject || 'Відхилити';
             const actions = isJoinRequest ? `
                 <div class="notif-actions">
-                    <button class="btn-notif-approve" title="Прийняти" aria-label="Прийняти"
+                    <button class="btn-notif-approve" title="${this.escapeHTML(approveLbl)}" aria-label="${this.escapeHTML(approveLbl)}"
                         onclick="event.stopPropagation(); app.approveFromNotification('${notif.id}', '${meta.group_id}', '${meta.request_id}')">
                         <i class="ph-fill ph-check" aria-hidden="true"></i>
                     </button>
-                    <button class="btn-notif-reject" title="Відхилити" aria-label="Відхилити"
+                    <button class="btn-notif-reject" title="${this.escapeHTML(rejectLbl)}" aria-label="${this.escapeHTML(rejectLbl)}"
                         onclick="event.stopPropagation(); app.rejectFromNotification('${notif.id}', '${meta.group_id}', '${meta.request_id}')">
                         <i class="ph-fill ph-x" aria-hidden="true"></i>
                     </button>
@@ -1788,7 +1790,8 @@ const app = {
         if (!supabaseService.isReady() || !this.isAdmin()) return;
         const c = supabaseService.client;
         const grid = document.getElementById('admin-stats-grid');
-        if (grid) grid.innerHTML = '<div class="empty-state">Завантаження…</div>';
+        const t = this.translations[this.currentLanguage] || {};
+        if (grid) grid.innerHTML = `<div class="empty-state">${this.escapeHTML(t.loading || 'Loading…')}</div>`;
 
         const [statsRes, usersRes, groupsRes, fbRes] = await Promise.all([
             c.rpc('get_admin_stats'),
@@ -3380,7 +3383,12 @@ const app = {
                 const msg = error.message || '';
                 if (msg.includes('apartment_taken_now')) {
                     // Apartment was taken between request submission and approval
-                    const confirmed = window.confirm(t.apartment_taken_now_confirm || 'Квартира вже зайнята. Затвердити як спостерігача?');
+                    const confirmed = await this.confirm({
+                        message: t.apartment_taken_now_confirm || 'Квартира вже зайнята. Затвердити як спостерігача?',
+                        okText: t.confirm_ok || 'Підтвердити',
+                        cancelText: t.cancel || 'Скасувати',
+                        danger: false
+                    });
                     if (confirmed) {
                         await this.approveRequest(groupId, requestId, true);
                     }
@@ -3419,13 +3427,19 @@ const app = {
     },
 
     // Show role change confirmation dialog for admin
-    showChangeRoleMenu(groupId, userId, currentlyObserver) {
+    async showChangeRoleMenu(groupId, userId, currentlyObserver) {
         const t = this.translations[this.currentLanguage] || {};
         const makeObserver = !currentlyObserver;
         const roleLabel = makeObserver
             ? (t.role_observer || 'Спостерігач')
             : (t.role_voter || 'Голосуючий');
-        const confirmed = window.confirm(`${t.change_role_menu || 'Змінити роль'}: ${roleLabel}?`);
+        const confirmed = await this.confirm({
+            title: t.change_role_menu || 'Змінити роль',
+            message: roleLabel,
+            okText: t.confirm_ok || 'Підтвердити',
+            cancelText: t.cancel || 'Скасувати',
+            danger: false
+        });
         if (confirmed) {
             this.adminChangeRole(groupId, userId, makeObserver);
         }
@@ -3663,13 +3677,19 @@ const app = {
         }
     },
 
-    showRoleChangeDialog(groupId, currentlyObserver) {
+    async showRoleChangeDialog(groupId, currentlyObserver) {
         const t = this.translations[this.currentLanguage];
         const becomeObserver = !currentlyObserver;
         const targetRole = becomeObserver
             ? (t.role_observer || 'Спостерігач')
             : (t.role_voter || 'Голосуючий');
-        const confirmed = window.confirm(`${t.request_role_change_btn || 'Запросити зміну ролі'} → ${targetRole}?`);
+        const confirmed = await this.confirm({
+            title: t.request_role_change_btn || 'Запросити зміну ролі',
+            message: `→ ${targetRole}`,
+            okText: t.confirm_ok || 'Підтвердити',
+            cancelText: t.cancel || 'Скасувати',
+            danger: false
+        });
         if (confirmed) {
             this.requestRoleChange(groupId, becomeObserver);
         }
@@ -3726,6 +3746,8 @@ const app = {
             loading: 'Завантаження…',
             request_approved: 'Запит схвалено',
             request_rejected: 'Запит відхилено',
+            approve: 'Прийняти',
+            reject: 'Відхилити',
             loader_signing_in: 'Входимо в акаунт…',
             refresh_group: 'Оновити дані',
             refresh_in_progress: 'Оновлюємо…',
@@ -4131,6 +4153,8 @@ const app = {
             loading: 'Loading…',
             request_approved: 'Request approved',
             request_rejected: 'Request rejected',
+            approve: 'Approve',
+            reject: 'Reject',
             loader_signing_in: 'Signing you in…',
             refresh_group: 'Refresh data',
             refresh_in_progress: 'Refreshing…',
@@ -4536,6 +4560,8 @@ const app = {
             loading: 'Загрузка…',
             request_approved: 'Запрос одобрен',
             request_rejected: 'Запрос отклонён',
+            approve: 'Принять',
+            reject: 'Отклонить',
             loader_signing_in: 'Входим в аккаунт…',
             refresh_group: 'Обновить данные',
             refresh_in_progress: 'Обновляем…',
