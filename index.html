@@ -136,9 +136,11 @@
 
                 <form class="auth-form" id="auth-form" onsubmit="return false;">
                     <div class="form-group">
+                        <label for="auth-email" class="sr-only" data-lang="auth_email_label">Email</label>
                         <input type="email" id="auth-email" data-lang-placeholder="auth_email_placeholder" placeholder="Email" required autocomplete="email">
                     </div>
                     <div class="form-group password-group">
+                        <label for="auth-password" class="sr-only" data-lang="auth_password_label">Пароль</label>
                         <input type="password" id="auth-password" data-lang-placeholder="auth_password_placeholder" placeholder="Пароль" required minlength="6" autocomplete="current-password">
                         <button type="button" class="password-toggle" onclick="app.togglePasswordVisibility()" aria-label="Show password">
                             <i class="ph ph-eye" id="password-toggle-icon" aria-hidden="true"></i>
@@ -191,9 +193,11 @@
 
                 <form class="auth-form" id="register-form" onsubmit="return false;">
                     <div class="form-group">
+                        <label for="register-email" class="sr-only" data-lang="auth_email_label">Email</label>
                         <input type="email" id="register-email" data-lang-placeholder="auth_email_placeholder" placeholder="Email" required autocomplete="email">
                     </div>
                     <div class="form-group password-group">
+                        <label for="register-password" class="sr-only" data-lang="register_password_label">Пароль</label>
                         <input type="password" id="register-password" data-lang-placeholder="register_password_placeholder" placeholder="Пароль (мін. 6 символів)" required minlength="6" autocomplete="new-password">
                         <button type="button" class="password-toggle" onclick="app.toggleRegisterPasswordVisibility()" aria-label="Show password">
                             <i class="ph ph-eye" id="register-password-toggle-icon" aria-hidden="true"></i>
@@ -240,6 +244,7 @@
 
                 <form class="auth-form" id="forgot-form" onsubmit="return false;">
                     <div class="form-group">
+                        <label for="forgot-email" class="sr-only" data-lang="auth_email_label">Email</label>
                         <input type="email" id="forgot-email" data-lang-placeholder="auth_email_placeholder" placeholder="Email" required autocomplete="email">
                     </div>
                     <button class="btn btn-primary" id="forgot-submit-btn" type="submit" onclick="app.submitForgotPassword()">
@@ -270,12 +275,14 @@
 
                 <form class="auth-form" id="reset-form" onsubmit="return false;">
                     <div class="form-group password-group">
+                        <label for="reset-password-1" class="sr-only" data-lang="reset_pass1_label">Новий пароль</label>
                         <input type="password" id="reset-password-1" data-lang-placeholder="reset_pass1_placeholder" placeholder="Новий пароль (мін. 6 символів)" required minlength="6" autocomplete="new-password">
                         <button type="button" class="password-toggle" onclick="app.toggleResetPasswordVisibility()" aria-label="Show password">
                             <i class="ph ph-eye" id="reset-password-toggle-icon" aria-hidden="true"></i>
                         </button>
                     </div>
                     <div class="form-group">
+                        <label for="reset-password-2" class="sr-only" data-lang="reset_pass2_label">Повторіть новий пароль</label>
                         <input type="password" id="reset-password-2" data-lang-placeholder="reset_pass2_placeholder" placeholder="Повторіть новий пароль" required minlength="6" autocomplete="new-password">
                     </div>
                     <button class="btn btn-primary" id="reset-submit-btn" type="submit" onclick="app.submitNewPassword()">
@@ -292,27 +299,27 @@
             </div>
             <div class="screen-content">
                 <div class="form-group">
-                    <label>Email</label>
+                    <label for="profile-email-display">Email</label>
                     <input type="email" id="profile-email-display" class="input-readonly" readonly>
                 </div>
                 <div class="form-group">
-                    <label data-lang="firstname">Ім'я</label>
+                    <label for="profile-firstname" data-lang="firstname">Ім'я</label>
                     <input type="text" id="profile-firstname" data-lang-placeholder="firstname_placeholder" placeholder="Ваше ім'я">
                 </div>
                 <div class="form-group">
-                    <label data-lang="lastname">Прізвище</label>
+                    <label for="profile-lastname" data-lang="lastname">Прізвище</label>
                     <input type="text" id="profile-lastname" data-lang-placeholder="lastname_placeholder" placeholder="Ваше прізвище">
                 </div>
                 <div class="form-group">
-                    <label data-lang="phone">Телефон</label>
+                    <label for="profile-phone" data-lang="phone">Телефон</label>
                     <input type="tel" id="profile-phone" data-lang-placeholder="phone_placeholder" placeholder="+380 XX XXX XXXX">
                 </div>
                 <div class="form-group">
-                    <label data-lang="address">Адреса об'єкта</label>
+                    <label for="profile-address" data-lang="address">Адреса об'єкта</label>
                     <input type="text" id="profile-address" data-lang-placeholder="address_placeholder" placeholder="вул. Шевченка, буд. 61">
                 </div>
                 <div class="form-group">
-                    <label data-lang="apartment">Квартира/офіс</label>
+                    <label for="profile-apartment" data-lang="apartment">Квартира/офіс</label>
                     <input type="text" id="profile-apartment" data-lang-placeholder="apartment_placeholder" placeholder="№ 15">
                 </div>
                 <button class="btn btn-primary" id="profile-save-btn" onclick="app.saveProfile()" data-lang="save">Зберегти</button>
@@ -360,8 +367,8 @@
                 <div class="screen-content" data-ptr="groups">
                     <div class="join-group-section">
                         <div class="join-group-row">
-                            <input type="text" id="join-group-id" data-lang-placeholder="enter_group_id" placeholder="Введіть ID групи (6 цифр)" maxlength="6" inputmode="numeric" pattern="[0-9]{6}">
-                            <input type="text" id="join-apartment" data-lang-placeholder="apartment_label" placeholder="Квартира" maxlength="10" inputmode="text">
+                            <input type="text" id="join-group-id" data-lang-placeholder="enter_group_id" placeholder="Введіть ID групи (6 цифр)" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" aria-label="ID групи (6 цифр)">
+                            <input type="text" id="join-apartment" data-lang-placeholder="apartment_label" placeholder="Квартира" maxlength="10" inputmode="text" aria-label="Квартира/офіс">
                         </div>
                         <div class="role-radio-group" id="join-role-group" role="radiogroup" aria-label="Role in the group">
                             <label>
@@ -421,6 +428,7 @@
                 <div class="screen-content">
                     <div class="archive-search-bar">
                         <i class="ph ph-magnifying-glass" aria-hidden="true"></i>
+                        <label for="archive-search-input" class="sr-only" data-lang="archive_search_label">Пошук в архіві</label>
                         <input type="text" id="archive-search-input" data-lang-placeholder="archive_search_placeholder" placeholder="Пошук (від 3 символів)..." maxlength="100">
                         <button class="archive-search-clear hidden" id="archive-search-clear" onclick="app.clearArchiveSearch()" aria-label="Clear"><i class="ph ph-x" aria-hidden="true"></i></button>
                     </div>
@@ -534,7 +542,7 @@
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
-                        <label data-lang="group_name">Назва групи</label>
+                        <label for="group-name" data-lang="group_name">Назва групи</label>
                         <input type="text" id="group-name" data-lang-placeholder="group_name_placeholder" placeholder="Наприклад: Будинок 61">
                     </div>
                     <div class="form-group">
@@ -560,7 +568,7 @@
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
-                        <label data-lang="question">Питання</label>
+                        <label for="voting-title" data-lang="question">Питання</label>
                         <input type="text" id="voting-title" data-lang-placeholder="question_placeholder" placeholder="Текст питання для голосування">
                     </div>
                     <div class="form-group">
@@ -591,7 +599,7 @@
                         <label data-lang="freeze_members">Учасники для заморозки</label>
                         <div class="member-chips-search">
                             <input type="text" id="freeze-search" data-lang-placeholder="search_members" placeholder="Пошук учасників…"
-                                   oninput="app.searchFreezeMembers(this.value)" autocomplete="off">
+                                   oninput="app.searchFreezeMembers(this.value)" autocomplete="off" aria-label="Пошук учасників для заморозки">
                             <div id="freeze-search-results" class="freeze-search-results hidden"></div>
                         </div>
                         <div id="freeze-selected-members" class="member-chips"></div>
@@ -626,7 +634,7 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label data-lang="materials_link">Посилання на матеріали</label>
+                        <label for="voting-link" data-lang="materials_link">Посилання на матеріали</label>
                         <input type="url" id="voting-link" data-lang-placeholder="link_placeholder" placeholder="Google Drive, Dropbox...">
                     </div>
                 </div>
@@ -743,6 +751,7 @@
                             <i class="ph ph-sort-ascending" id="name-sort-icon" aria-hidden="true"></i>
                         </button>
                         <div class="search-input-wrapper">
+                            <label for="member-search" class="sr-only" data-lang="search_members_label">Пошук учасників</label>
                             <input type="text" id="member-search" data-lang-placeholder="search_members" placeholder="Пошук за ПІБ або телефоном…"
                                    oninput="app.searchMembers(this.value)" autocomplete="off">
                             <button id="clear-search" class="clear-search-btn" onclick="app.clearMemberSearch()" aria-label="Clear search">
@@ -785,23 +794,23 @@
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
-                        <label data-lang="firstname">Ім'я</label>
+                        <label for="edit-firstname" data-lang="firstname">Ім'я</label>
                         <input type="text" id="edit-firstname" placeholder="Ваше ім'я">
                     </div>
                     <div class="form-group">
-                        <label data-lang="lastname">Прізвище</label>
+                        <label for="edit-lastname" data-lang="lastname">Прізвище</label>
                         <input type="text" id="edit-lastname" placeholder="Ваше прізвище">
                     </div>
                     <div class="form-group">
-                        <label data-lang="phone">Телефон</label>
+                        <label for="edit-phone" data-lang="phone">Телефон</label>
                         <input type="tel" id="edit-phone" placeholder="+380 XX XXX XXXX">
                     </div>
                     <div class="form-group">
-                        <label data-lang="address">Адреса об'єкта</label>
+                        <label for="edit-address" data-lang="address">Адреса об'єкта</label>
                         <input type="text" id="edit-address" placeholder="вул. Шевченка, буд. 61">
                     </div>
                     <div class="form-group">
-                        <label data-lang="apartment">Квартира/офіс</label>
+                        <label for="edit-apartment" data-lang="apartment">Квартира/офіс</label>
                         <input type="text" id="edit-apartment" placeholder="№ 15">
                     </div>
                 </div>
@@ -854,7 +863,7 @@
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
-                        <label data-lang="group_name">Назва групи</label>
+                        <label for="edit-group-name" data-lang="group_name">Назва групи</label>
                         <input type="text" id="edit-group-name" placeholder="Назва групи">
                     </div>
                     <div class="form-group">
