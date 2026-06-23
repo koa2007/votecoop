@@ -1241,10 +1241,10 @@ html, body {
     font-size: 16px;
 }
 
-/* The 6-digit group ID input keeps the wider letter-spacing for legibility;
-   the apartment field is short text and shouldn't be tracked. */
+/* Slight tracking on the 6-digit code value; kept small so the placeholder
+   doesn't look visually larger than the other fields. */
 #join-group-id {
-    letter-spacing: 2px;
+    letter-spacing: 0.5px;
 }
 
 .join-group-section input:focus {
@@ -2956,17 +2956,16 @@ textarea:focus-visible {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin: 10px 0;
 }
 .role-radio-group label {
     display: flex;
     align-items: center;
     gap: 8px;
     cursor: pointer;
-    padding: 10px 12px;
+    padding: 12px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
-    font-size: 14px;
+    font-size: 16px;
     transition: border-color 0.15s, background 0.15s;
 }
 .role-radio-group label:has(input:checked) {
@@ -2974,15 +2973,24 @@ textarea:focus-visible {
     background: rgba(99, 102, 241, 0.08);
 }
 
-.join-group-row {
+/* Each field stacks vertically full-width with a label above. */
+.field-group {
     display: flex;
-    gap: 8px;
+    flex-direction: column;
 }
-.join-group-row input {
-    flex: 1;
+.field-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    margin-bottom: 6px;
 }
-#join-apartment {
-    max-width: 90px;
+.field-hint {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin: 6px 0 0;
+}
+.join-group-body input:not([type="radio"]) {
+    width: 100%;
 }
 
 .join-group-btn-full {

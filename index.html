@@ -371,19 +371,27 @@
                             <i class="ph ph-caret-down join-group-caret" aria-hidden="true"></i>
                         </button>
                         <div class="join-group-body" id="join-group-body">
-                            <div class="join-group-row">
-                                <input type="text" id="join-group-id" data-lang-placeholder="enter_group_id" placeholder="Введіть ID групи (6 цифр)" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" aria-label="ID групи (6 цифр)">
-                                <input type="text" id="join-apartment" data-lang-placeholder="apartment_label" placeholder="Квартира" maxlength="10" inputmode="text" aria-label="Квартира/офіс">
+                            <div class="field-group">
+                                <label class="field-label" for="join-group-id" data-lang="join_id_label">ID групи</label>
+                                <input type="text" id="join-group-id" data-lang-placeholder="join_id_ph" placeholder="6 цифр, напр. 123456" maxlength="6" inputmode="numeric" pattern="[0-9]{6}">
                             </div>
-                            <div class="role-radio-group" id="join-role-group" role="radiogroup" aria-label="Role in the group">
-                                <label>
-                                    <input type="radio" name="join-role" value="voter" id="join-role-voter" aria-label="Voter">
-                                    <span>👍 <span data-lang="role_voter">Голосуючий</span></span>
-                                </label>
-                                <label>
-                                    <input type="radio" name="join-role" value="observer" id="join-role-observer" aria-label="Observer">
-                                    <span>👁️ <span data-lang="role_observer">Спостерігач</span></span>
-                                </label>
+                            <div class="field-group">
+                                <label class="field-label" for="join-apartment" data-lang="join_apartment_label_full">Номер вашої квартири / офісу</label>
+                                <input type="text" id="join-apartment" data-lang-placeholder="join_apartment_ph" placeholder="напр. 12 або 12А" maxlength="10" inputmode="text">
+                                <p class="field-hint" data-lang="join_apartment_hint">Одна квартира — один голос.</p>
+                            </div>
+                            <div class="field-group">
+                                <label class="field-label" data-lang="join_role_label">Ваша роль</label>
+                                <div class="role-radio-group" id="join-role-group" role="radiogroup" aria-label="Role in the group">
+                                    <label>
+                                        <input type="radio" name="join-role" value="voter" id="join-role-voter" aria-label="Voter">
+                                        <span>👍 <span data-lang="role_voter">Голосуючий</span></span>
+                                    </label>
+                                    <label>
+                                        <input type="radio" name="join-role" value="observer" id="join-role-observer" aria-label="Observer">
+                                        <span>👁️ <span data-lang="role_observer">Спостерігач</span></span>
+                                    </label>
+                                </div>
                             </div>
                             <button class="btn btn-primary join-group-btn-full" onclick="app.joinGroup()" aria-label="Join group">
                                 <i class="ph ph-sign-in" aria-hidden="true"></i>

@@ -4171,7 +4171,13 @@ const app = {
             role_change_badge: 'зміна ролі',
             my_roles_in_groups: 'Мої ролі в групах',
             join_group_btn: 'Приєднатися',
-            join_group_section_title: 'Вступити до групи'
+            join_group_section_title: 'Вступити до групи',
+            join_id_label: 'ID групи',
+            join_id_ph: '6 цифр, напр. 123456',
+            join_apartment_label_full: 'Номер вашої квартири / офісу',
+            join_apartment_ph: 'напр. 12 або 12А',
+            join_apartment_hint: 'Одна квартира — один голос.',
+            join_role_label: 'Ваша роль'
         },
         en: {
             profile: 'Profile',
@@ -4579,7 +4585,13 @@ const app = {
             role_change_badge: 'role change',
             my_roles_in_groups: 'My roles in groups',
             join_group_btn: 'Join',
-            join_group_section_title: 'Join a group'
+            join_group_section_title: 'Join a group',
+            join_id_label: 'Group ID',
+            join_id_ph: '6 digits, e.g. 123456',
+            join_apartment_label_full: 'Your apartment / office number',
+            join_apartment_ph: 'e.g. 12 or 12A',
+            join_apartment_hint: 'One apartment — one vote.',
+            join_role_label: 'Your role'
         },
         ru: {
             profile: 'Профиль',
@@ -4987,7 +4999,13 @@ const app = {
             role_change_badge: 'смена роли',
             my_roles_in_groups: 'Мои роли в группах',
             join_group_btn: 'Присоединиться',
-            join_group_section_title: 'Вступить в группу'
+            join_group_section_title: 'Вступить в группу',
+            join_id_label: 'ID группы',
+            join_id_ph: '6 цифр, напр. 123456',
+            join_apartment_label_full: 'Номер вашей квартиры / офиса',
+            join_apartment_ph: 'напр. 12 или 12А',
+            join_apartment_hint: 'Одна квартира — один голос.',
+            join_role_label: 'Ваша роль'
         }
     },
 
