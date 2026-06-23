@@ -987,7 +987,7 @@
                         <div class="instruction-item">
                             <p data-lang="instr_qs_step1">1. <strong>Зареєструйтесь</strong> через email і пароль (або увійдіть, якщо акаунт уже є)</p>
                             <p data-lang="instr_qs_step2">2. <strong>Заповніть профіль</strong> — вкажіть ім'я, прізвище, телефон та номер квартири/ділянки (обов'язково для голосування)</p>
-                            <p data-lang="instr_qs_step3">3. <strong>Створіть групу</strong> або <strong>приєднайтесь</strong> до існуючої за 6-значним кодом</p>
+                            <p data-lang="instr_qs_step3">3. <strong>Створіть групу</strong> або <strong>приєднайтесь</strong> до існуючої за 6-значним кодом (вкажіть квартиру і роль)</p>
                             <p data-lang="instr_qs_step4">4. <strong>Голосуйте</strong> у активних голосуваннях або створюйте власні</p>
                             <p data-lang="instr_qs_step5">5. Слідкуйте за результатами у вкладці <strong>Сповіщення</strong></p>
                         </div>
@@ -1008,6 +1008,22 @@
                             <h5 data-lang="instr_profile_lang_title">Зміна мови</h5>
                             <p data-lang="instr_profile_lang_desc">У вкладці «Профіль» виберіть мову: українська, English або русский. Вибір зберігається автоматично.</p>
                         </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_profile_password_title">Зміна пароля</h5>
+                            <p data-lang="instr_profile_password_desc">У вкладці «Профіль» натисніть «Змінити пароль». Введіть новий пароль двічі — і він одразу почне діяти.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_profile_theme_title">Тема оформлення</h5>
+                            <p data-lang="instr_profile_theme_desc">Кнопка «Тема» у профілі перемикає вигляд: світла, темна або системна (автоматично за налаштуваннями телефону). Вибір зберігається.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_profile_install_title">Встановити на телефон</h5>
+                            <p data-lang="instr_profile_install_desc">Якщо з'явилася кнопка «Встановити на головний екран» — натисніть її, і Spilka додасться як застосунок (окрема іконка, працює як звичайна програма, без браузера).</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_profile_feedback_title">Пропозиція або зауваження</h5>
+                            <p data-lang="instr_profile_feedback_desc">Кнопка «Пропозиція / зауваження» у профілі дозволяє надіслати нам ідею або повідомити про проблему. Ми читаємо всі повідомлення.</p>
+                        </div>
                     </div>
 
                     <!-- 3. Groups -->
@@ -1019,7 +1035,7 @@
                         </div>
                         <div class="instruction-item">
                             <h5 data-lang="instr_join_group_title">Вступ до групи</h5>
-                            <p data-lang="instr_join_group_desc">Введіть 6-значний код групи у поле «Приєднатися» і натисніть кнопку. Адміністратор отримає запит і має його схвалити або відхилити.</p>
+                            <p data-lang="instr_join_group_desc">У вкладці «Групи» розгорніть «Вступити до групи». Введіть 6-значний код, номер своєї квартири/офісу/будинку та оберіть роль (голосуючий чи спостерігач). Натисніть «Приєднатися» — адміністратор отримає запит і має його схвалити або відхилити.</p>
                         </div>
                         <div class="instruction-item">
                             <h5 data-lang="instr_group_detail_title">Сторінка групи</h5>
@@ -1040,6 +1056,31 @@
                         <div class="instruction-item">
                             <h5 data-lang="instr_delete_group_admin_title"><i class="ph ph-trash"></i> Видалення групи (адмін)</h5>
                             <p data-lang="instr_delete_group_admin_desc">Адміністратор може видалити групу напряму тільки якщо він єдиний учасник. Якщо в групі 2+ учасників — потрібно створити голосування «Видалення групи».</p>
+                        </div>
+                    </div>
+
+                    <!-- 3b. Roles: voter / observer -->
+                    <div class="instruction-section" data-instr-section="roles">
+                        <h4 data-lang="instr_roles"><i class="ph ph-identification-badge"></i> Ролі: голосуючий і спостерігач</h4>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_roles_apartment_title">Номер квартири = один голос</h5>
+                            <p data-lang="instr_roles_apartment_desc">При вступі ви вказуєте номер своєї квартири / офісу / будинку. Правило просте: <strong>одна квартира — один голос</strong>. Голосувати від цієї квартири може лише одна людина (голосуючий), решта мешканців можуть вступити як спостерігачі.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_roles_voter_title">👍 Голосуючий</h5>
+                            <p data-lang="instr_roles_voter_desc">Повноцінний учасник: бачить голосування, голосує «За/Проти/Утримуюсь», створює власні голосування. Його голос рахується у результаті.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_roles_observer_title">👁️ Спостерігач</h5>
+                            <p data-lang="instr_roles_observer_desc">Бачить усі голосування та результати, але <strong>не голосує</strong>. Спостерігачі не враховуються при підрахунку (кворум рахується тільки серед голосуючих). Підходить для членів сім'ї, орендарів чи тих, хто хоче лише стежити.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_roles_change_title">Як змінити свою роль</h5>
+                            <p data-lang="instr_roles_change_desc">Відкрийте вкладку «Профіль» → у списку «Мої ролі в групах» натисніть «Запросити зміну ролі» біля потрібної групи. Запит піде адміністратору на підтвердження. Якщо у вашій квартирі вже є голосуючий — стати голосуючим не вийде, поки місце зайняте.</p>
+                        </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_roles_admin_title">Зміна ролі адміністратором</h5>
+                            <p data-lang="instr_roles_admin_desc">Адміністратор може сам змінити роль учасника: на сторінці групи у списку учасників натисніть кнопку зміни ролі (↔) біля потрібної людини.</p>
                         </div>
                     </div>
 
@@ -1099,6 +1140,10 @@
                         <div class="instruction-item">
                             <p data-lang="instr_notif_desc">Ви отримуєте сповіщення про: нові голосування, запити на вступ, результати голосувань, зміни адміністратора, видалення та заморозку учасників. Непрочитані позначені синім. Можна позначити все як прочитане.</p>
                         </div>
+                        <div class="instruction-item">
+                            <h5 data-lang="instr_notif_archive_title">Архів сповіщень</h5>
+                            <p data-lang="instr_notif_archive_desc">Кнопка «В архів» ховає всі поточні сповіщення зі списку (вони не видаляються, а зберігаються). Щоб переглянути їх, натисніть значок архіву (вгорі на вкладці «Сповіщення»). В архіві є пошук від 3 літер, а кнопка повернення (↩) повертає сповіщення назад до основного списку.</p>
+                        </div>
                     </div>
 
                     <!-- 7. Badges -->
@@ -1126,7 +1171,7 @@
                         </div>
                         <div class="instruction-item">
                             <h5 data-lang="instr_decision_title">Прийняття рішень</h5>
-                            <p data-lang="instr_decision_desc">Для прийняття рішення потрібно 50%+1 голос від усіх учасників групи. Результат визначається автоматично по завершенню терміну.</p>
+                            <p data-lang="instr_decision_desc">Для прийняття рішення потрібно 50%+1 голос від <strong>голосуючих</strong> учасників групи (спостерігачі не враховуються). Результат визначається автоматично по завершенню терміну.</p>
                         </div>
                         <div class="instruction-item">
                             <h5 data-lang="instr_limits_title">Обмеження</h5>
