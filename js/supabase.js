@@ -26,6 +26,9 @@ const supabaseService = {
 
     _uid() { return this.pb?.authStore?.record?.id || null; },
     async _getUserId() { return this._uid(); },
+    // PocketBase returns dates as "YYYY-MM-DD HH:MM:SS.sssZ" (space); app.js
+    // expects ISO. Normalize so new Date(...) parses everywhere.
+    _d(s) { return s ? String(s).replace(' ', 'T') : (s || null); },
     _err(e) { return { message: (e && (e.message || e.data?.message)) || String(e), code: e?.status, data: e?.response || e?.data }; },
 
     // ---- profile helpers ----
@@ -168,9 +171,9 @@ const supabaseService = {
             const pmap = await this._profilesMap([...members.map(m => m.user), ...reqs.map(r => r.user)]);
             const prof = (uid) => { const p = pmap[uid]; return p ? { id: uid, first_name: p.first_name || '', last_name: p.last_name || '', phone: p.phone || '', address: p.address || '', apartment: p.apartment || '' } : { id: uid, first_name: '', last_name: '', apartment: '' }; };
             return { data: {
-                members: members.map(m => ({ user_id: m.user, role: m.role, is_frozen: !!m.is_frozen, frozen_until: m.frozen_until || null, is_observer: !!m.is_observer, apartment: m.apartment || '', user: prof(m.user) })),
-                requests: reqs.map(r => ({ id: r.id, user_id: r.user, status: r.status, created_at: r.created, apartment: r.apartment || '', requested_as_observer: !!r.requested_as_observer, is_role_change: !!r.is_role_change, user: prof(r.user) })),
-                history: history.map(h => ({ id: h.id, action: h.action, details: h.details || {}, created_at: h.created, voting_id: h.voting || null })),
+                members: members.map(m => ({ user_id: m.user, role: m.role, is_frozen: !!m.is_frozen, frozen_until: this._d(m.frozen_until), is_observer: !!m.is_observer, apartment: m.apartment || '', user: prof(m.user) })),
+                requests: reqs.map(r => ({ id: r.id, user_id: r.user, status: r.status, created_at: this._d(r.created), apartment: r.apartment || '', requested_as_observer: !!r.requested_as_observer, is_role_change: !!r.is_role_change, user: prof(r.user) })),
+                history: history.map(h => ({ id: h.id, action: h.action, details: h.details || {}, created_at: this._d(h.created), voting_id: h.voting || null })),
                 stats: { members_count: members.length }
             }, error: null };
         } catch (e) { return { data: null, error: this._err(e) }; }
@@ -247,7 +250,7 @@ const supabaseService = {
                 id: v.id, group_id: v.group, title: v.title, description: v.description, type: v.type, status: v.status,
                 result: v.result || null, link: v.link || null, target_member_id: v.target_member || null,
                 removal_reason: v.removal_reason || null, freeze_duration_days: v.freeze_duration_days,
-                ends_at: v.ends_at, completed_at: v.completed_at || null, created_at: v.created,
+                ends_at: this._d(v.ends_at), completed_at: this._d(v.completed_at), created_at: this._d(v.created),
                 group: { name: gmap[v.group]?.name || '' },
                 creator: pmap[v.created_by] ? { first_name: pmap[v.created_by].first_name, last_name: pmap[v.created_by].last_name } : null,
                 target: v.target_member && pmap[v.target_member] ? { first_name: pmap[v.target_member].first_name, last_name: pmap[v.target_member].last_name } : null
@@ -267,7 +270,7 @@ const supabaseService = {
         try {
             const votes = await this.pb.collection('votes').getFullList({ filter: `voting="${votingId}"`, sort: 'created' });
             const pmap = await this._profilesMap(votes.map(v => v.user));
-            return { data: votes.map(v => ({ id: v.id, user_id: v.user, choice: v.choice, comment: v.comment || '', created_at: v.created,
+            return { data: votes.map(v => ({ id: v.id, user_id: v.user, choice: v.choice, comment: v.comment || '', created_at: this._d(v.created),
                 voter: pmap[v.user] ? { first_name: pmap[v.user].first_name, last_name: pmap[v.user].last_name, apartment: pmap[v.user].apartment } : null })), error: null };
         } catch (e) { return { data: null, error: this._err(e) }; }
     },
@@ -292,7 +295,7 @@ const supabaseService = {
     async getFreezeObjections(votingId) {
         try { const rows = await this.pb.collection('freeze_objections').getFullList({ filter: `voting="${votingId}"` });
             const pmap = await this._profilesMap(rows.map(r => r.user));
-            return { data: rows.map(r => ({ user_id: r.user, time: r.created, user: pmap[r.user] ? { first_name: pmap[r.user].first_name, last_name: pmap[r.user].last_name } : null })), error: null }; }
+            return { data: rows.map(r => ({ user_id: r.user, time: this._d(r.created), user: pmap[r.user] ? { first_name: pmap[r.user].first_name, last_name: pmap[r.user].last_name } : null })), error: null }; }
         catch (e) { return { data: [], error: this._err(e) }; }
     },
     async getFreezeTargets(votingId) {
@@ -311,7 +314,7 @@ const supabaseService = {
     async getMyNotifications() {
         const uid = this._uid(); if (!uid) return { data: [], error: null };
         try { const rows = await this.pb.collection('notifications').getFullList({ filter: `user="${uid}" && archived_at=""`, sort: '-created' });
-            return { data: rows.map(n => ({ id: n.id, type: n.type, text: n.text, is_read: !!n.is_read, created_at: n.created, metadata: n.metadata || {}, archived_at: n.archived_at || null })), error: null }; }
+            return { data: rows.map(n => ({ id: n.id, type: n.type, text: n.text, is_read: !!n.is_read, created_at: this._d(n.created), metadata: n.metadata || {}, archived_at: this._d(n.archived_at) || null })), error: null }; }
         catch (e) { return { data: [], error: this._err(e) }; }
     },
     async createNotification() { return { error: null }; }, // server-side via routes
@@ -332,7 +335,7 @@ const supabaseService = {
     async getArchivedNotifications() {
         const uid = this._uid(); if (!uid) return { data: [], error: null };
         try { const rows = await this.pb.collection('notifications').getFullList({ filter: `user="${uid}" && archived_at!=""`, sort: '-archived_at' });
-            return { data: rows.map(n => ({ id: n.id, type: n.type, text: n.text, is_read: !!n.is_read, created_at: n.created, metadata: n.metadata || {}, archived_at: n.archived_at })), error: null }; }
+            return { data: rows.map(n => ({ id: n.id, type: n.type, text: n.text, is_read: !!n.is_read, created_at: this._d(n.created), metadata: n.metadata || {}, archived_at: this._d(n.archived_at) })), error: null }; }
         catch (e) { return { data: [], error: this._err(e) }; }
     },
     async searchNotifications(query, archivedOnly, limit = 50, offset = 0) {
@@ -341,7 +344,7 @@ const supabaseService = {
         if (archivedOnly === true) f += ` && archived_at!=""`; else if (archivedOnly === false) f += ` && archived_at=""`;
         if (query && query.trim().length >= 3) f += ` && text~"${query.trim().replace(/"/g, '')}"`;
         try { const res = await this.pb.collection('notifications').getList(Math.floor(offset / limit) + 1, limit, { filter: f, sort: '-created' });
-            return { data: res.items.map(n => ({ id: n.id, type: n.type, text: n.text, is_read: !!n.is_read, created_at: n.created, metadata: n.metadata || {}, archived_at: n.archived_at || null })), error: null }; }
+            return { data: res.items.map(n => ({ id: n.id, type: n.type, text: n.text, is_read: !!n.is_read, created_at: this._d(n.created), metadata: n.metadata || {}, archived_at: this._d(n.archived_at) || null })), error: null }; }
         catch (e) { return { data: [], error: this._err(e) }; }
     },
     async unarchiveNotification(id) { try { await this.pb.collection('notifications').update(id, { archived_at: null }); return { error: null }; } catch (e) { return { error: this._err(e) }; } },
