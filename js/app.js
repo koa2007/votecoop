@@ -1262,7 +1262,7 @@ const app = {
                 member: '<i class="ph ph-user"></i>',
                 join_request: '<i class="ph ph-user-plus"></i>',
                 result: '<i class="ph ph-check-circle"></i>',
-                system: '🔔'
+                system: '<i class="ph ph-bell"></i>'
             };
 
             // Actionable join-request notification: approve/reject inline
@@ -1290,7 +1290,7 @@ const app = {
             return `
                 <div class="notification-item ${notif.read ? 'read' : 'unread'}" role="button" tabindex="0"
                     onclick="${onClick}" onkeydown="if(event.key==='Enter')${onClick}">
-                    <div class="notification-icon">${icons[notif.type] || '🔔'}</div>
+                    <div class="notification-icon">${icons[notif.type] || '<i class="ph ph-bell"></i>'}</div>
                     <div class="notification-content">
                         <div class="notification-text">${this.escapeHTML(notif.text)}</div>
                         <div class="notification-time">${this.escapeHTML(notif.time)}</div>
@@ -1844,7 +1844,7 @@ const app = {
                 const sqlEditorUrl = 'https://supabase.com/dashboard/project/ygbhiorheuovtlmmyvjr/sql/new';
                 grid.innerHTML = `
                     <div class="admin-setup-needed" style="grid-column: 1 / -1;">
-                        <div style="font-size:32px;text-align:center">⚙️</div>
+                        <div style="font-size:32px;text-align:center"><i class="ph ph-gear" aria-hidden="true"></i></div>
                         <h3 style="margin:8px 0">Адмін-панель потребує налаштування</h3>
                         <p style="font-size:14px;color:var(--color-text-secondary);line-height:1.5">
                             Базі бракує таблиці <code>feedback</code> та RPC-функцій адміна.
@@ -2815,7 +2815,7 @@ const app = {
 
             ${isActive && isAuthor ? `
                 <div class="delete-section">
-                    <button class="btn btn-danger" onclick="app.showDeleteVotingModal('${voting.id}')">🗑️ ${t.delete}</button>
+                    <button class="btn btn-danger" onclick="app.showDeleteVotingModal('${voting.id}')"><i class="ph ph-trash" aria-hidden="true"></i> ${t.delete}</button>
                 </div>
             ` : ''}
 

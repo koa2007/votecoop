@@ -79,7 +79,7 @@
         <!-- Admin panel screen (visible only for koa2007@gmail.com) -->
         <div class="screen hidden" id="admin-panel-screen">
             <div class="screen-header">
-                <button class="btn-icon back-btn" onclick="app.showScreen('main-screens'); document.getElementById('profile-screen').classList.remove('hidden');" aria-label="Back">←</button>
+                <button class="btn-icon back-btn" onclick="app.showScreen('main-screens'); document.getElementById('profile-screen').classList.remove('hidden');" aria-label="Back"><i class="ph ph-arrow-left" aria-hidden="true"></i></button>
                 <h2 data-lang="admin_panel">Адмін-панель</h2>
                 <button class="btn-icon" onclick="app.refreshAdminPanel()" aria-label="Refresh"><i class="ph ph-arrows-clockwise" aria-hidden="true"></i></button>
             </div>
@@ -436,7 +436,7 @@
             <!-- Notifications Archive Screen -->
             <div class="screen hidden" id="notifications-archive-screen">
                 <div class="screen-header">
-                    <button class="btn-icon back-btn" onclick="app.showScreen('notifications-screen')" aria-label="Back">←</button>
+                    <button class="btn-icon back-btn" onclick="app.showScreen('notifications-screen')" aria-label="Back"><i class="ph ph-arrow-left" aria-hidden="true"></i></button>
                     <h2 data-lang="notifications_archive">Архів сповіщень</h2>
                 </div>
                 <div class="screen-content">
@@ -493,7 +493,7 @@
                     </div>
                     <div class="profile-actions">
                         <button class="btn btn-secondary" onclick="app.showEditProfile()">
-                            <span class="icon">✏️</span>
+                            <span class="icon"><i class="ph ph-pencil-simple" aria-hidden="true"></i></span>
                             <span data-lang="edit_profile">Редагувати профіль</span>
                         </button>
                         <button class="btn btn-secondary" onclick="app.showChangePasswordScreen()">
@@ -517,7 +517,7 @@
                             <span data-lang="install_app">Встановити на головний екран</span>
                         </button>
                         <button class="btn btn-secondary" onclick="app.showInstructions()">
-                            <span class="icon">📖</span>
+                            <span class="icon"><i class="ph ph-book-open" aria-hidden="true"></i></span>
                             <span data-lang="instructions">Інструкції</span>
                         </button>
                     </div>
@@ -703,7 +703,7 @@
         <!-- Group Detail Screen -->
         <div class="screen hidden" id="group-detail-screen">
             <div class="screen-header">
-                <button class="btn-icon back-btn" onclick="app.showScreen('groups-screen')" aria-label="Go back">←</button>
+                <button class="btn-icon back-btn" onclick="app.showScreen('groups-screen')" aria-label="Go back"><i class="ph ph-arrow-left" aria-hidden="true"></i></button>
                 <h2 id="group-detail-name">Група</h2>
                 <button class="btn-icon" onclick="app.showGroupMenu()" aria-label="Group menu">⋮</button>
             </div>
@@ -849,15 +849,15 @@
                         <span data-lang="refresh_group">Оновити дані</span>
                     </button>
                     <button class="action-sheet-item" onclick="app.editGroup()">
-                        <span class="action-icon">✏️</span>
+                        <span class="action-icon"><i class="ph ph-pencil-simple" aria-hidden="true"></i></span>
                         <span data-lang="edit_group">Редагувати групу</span>
                     </button>
                     <button class="action-sheet-item action-leave" id="group-menu-leave-btn" onclick="app.leaveGroup()">
-                        <span class="action-icon">🚪</span>
+                        <span class="action-icon"><i class="ph ph-sign-out" aria-hidden="true"></i></span>
                         <span data-lang="leave_group">Покинути групу</span>
                     </button>
                     <button class="action-sheet-item action-danger" id="group-menu-delete-btn" onclick="app.confirmDeleteGroup()">
-                        <span class="action-icon">🗑️</span>
+                        <span class="action-icon"><i class="ph ph-trash" aria-hidden="true"></i></span>
                         <span data-lang="delete_group">Видалити групу</span>
                     </button>
                 </div>
@@ -905,7 +905,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" onclick="app.hideModal('delete-group-modal')" data-lang="cancel">Скасувати</button>
-                    <button class="btn btn-primary" style="background: var(--color-danger);" onclick="app.deleteGroup()" data-lang="delete">Видалити</button>
+                    <button class="btn btn-danger" onclick="app.deleteGroup()" data-lang="delete">Видалити</button>
                 </div>
             </div>
         </div>
@@ -923,7 +923,7 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" onclick="app.hideModal('leave-group-modal')" data-lang="cancel">Скасувати</button>
-                    <button class="btn btn-primary" style="background: var(--color-warning, #f59e0b);" onclick="app.confirmLeaveGroup()" data-lang="leave">Покинути</button>
+                    <button class="btn btn-warning" onclick="app.confirmLeaveGroup()" data-lang="leave">Покинути</button>
                 </div>
             </div>
         </div>

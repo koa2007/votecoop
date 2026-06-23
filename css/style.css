@@ -53,6 +53,15 @@
     --color-primary-focus: rgba(0, 122, 255, 0.15);
     --color-google-text: #444;
 
+    /* Aliases + warning surface (added 2026-06-23, design audit).
+       The three aliases reference already-themed tokens, so they adapt to
+       dark mode automatically; warning-bg/text get explicit dark overrides. */
+    --color-bg-secondary: var(--color-surface-secondary);
+    --color-bg-card: var(--color-surface);
+    --color-primary-light: var(--color-primary-focus);
+    --color-warning-bg: rgba(255, 149, 0, 0.12);
+    --color-warning-text: #8a5a00;
+
     /* Theme-color meta tag value (used by app.js) */
     --color-theme-meta: #ffffff;
 
@@ -105,6 +114,8 @@
     --color-loader-track-on-primary: rgba(255, 255, 255, 0.3);
     --color-primary-focus: rgba(10, 132, 255, 0.3);
     --color-google-text: #f2f2f7;
+    --color-warning-bg: rgba(255, 159, 10, 0.18);
+    --color-warning-text: #ffd60a;
 
     --color-theme-meta: #1c1c1e;
 
@@ -145,6 +156,8 @@
         --color-loader-track: rgba(255, 255, 255, 0.2);
         --color-primary-focus: rgba(10, 132, 255, 0.3);
         --color-google-text: #f2f2f7;
+        --color-warning-bg: rgba(255, 159, 10, 0.18);
+        --color-warning-text: #ffd60a;
         --color-theme-meta: #1c1c1e;
         --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
         --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.5);
@@ -834,6 +847,12 @@ html, body {
     text-align: center;
     display: block;
     margin-top: 4px;
+    /* 44px tap target (a11y) */
+    min-height: 44px;
+    padding: 12px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .auth-link:hover {
@@ -967,6 +986,11 @@ html, body {
     color: white;
 }
 
+.btn-warning {
+    background: var(--color-warning);
+    color: white;
+}
+
 .btn-google {
     background: var(--color-surface);
     color: var(--color-google-text);
@@ -1027,8 +1051,8 @@ html, body {
 .form-group label {
     display: block;
     margin-bottom: 6px;
-    font-size: 14px;
-    font-weight: 500;
+    font-size: 13px;
+    font-weight: 600;
     color: var(--color-text-secondary);
 }
 
@@ -1201,7 +1225,7 @@ html, body {
     justify-content: space-between;
     width: 100%;
     padding: 12px 16px;
-    background: var(--color-surface, #fff);
+    background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     font-size: 15px;
@@ -1218,7 +1242,7 @@ html, body {
 .join-group-caret {
     transition: transform 0.2s ease;
     font-size: 18px;
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--color-text-secondary);
 }
 .join-group-section:not(.collapsed) .join-group-caret {
     transform: rotate(180deg);
@@ -1707,8 +1731,8 @@ html, body {
     flex-shrink: 0;
 }
 .notif-actions button {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     border: none;
     cursor: pointer;
@@ -2458,7 +2482,7 @@ html, body {
     align-items: center;
     padding: 12px 16px;
     background: var(--color-surface);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-lg);
     margin-bottom: 8px;
     box-shadow: var(--shadow-sm);
     transition: transform 0.1s, box-shadow 0.1s;
@@ -2970,7 +2994,7 @@ textarea:focus-visible {
 }
 .role-radio-group label:has(input:checked) {
     border-color: var(--color-primary);
-    background: rgba(99, 102, 241, 0.08);
+    background: var(--color-primary-light);
 }
 
 /* Each field stacks vertically full-width with a label above. */
@@ -3003,8 +3027,8 @@ textarea:focus-visible {
 }
 
 .observer-notice {
-    background: var(--color-warning-bg, #fef3c7);
-    color: var(--color-warning-text, #92400e);
+    background: var(--color-warning-bg);
+    color: var(--color-warning-text);
     border-radius: var(--radius-md);
     padding: 12px 16px;
     text-align: center;
@@ -3101,13 +3125,6 @@ textarea:focus-visible {
     background: var(--color-bg-secondary);
 }
 
-/* Dark mode: observer notice */
-[data-theme="dark"] .observer-notice,
-.dark .observer-notice {
-    background: rgba(251, 191, 36, 0.15);
-    color: #fbbf24;
-}
-
 /* === Notifications archive === */
 .archive-search-bar {
     position: sticky;
@@ -3115,15 +3132,15 @@ textarea:focus-visible {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: var(--color-surface, #fff);
-    border: 1px solid var(--color-border, #e5e7eb);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-md, 10px);
     padding: 10px 12px;
     margin: 0 0 12px 0;
     z-index: 10;
 }
 .archive-search-bar i.ph-magnifying-glass {
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--color-text-secondary);
     font-size: 18px;
 }
 .archive-search-bar input {
@@ -3139,25 +3156,25 @@ textarea:focus-visible {
     background: none;
     border: none;
     cursor: pointer;
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--color-text-secondary);
     padding: 4px;
-    border-radius: var(--radius-sm, 6px);
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
 }
 .archive-search-clear:hover {
-    background: var(--color-bg-secondary, #f3f4f6);
+    background: var(--color-bg-secondary);
 }
 .notification-item.archived {
     opacity: 0.85;
 }
 .btn-notif-unarchive {
-    background: var(--color-bg-secondary, #f3f4f6);
-    border: 1px solid var(--color-border, #e5e7eb);
-    color: var(--color-text-secondary, #6b7280);
-    border-radius: var(--radius-sm, 6px);
-    width: 36px;
-    height: 36px;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    border-radius: var(--radius-sm);
+    width: 44px;
+    height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3166,7 +3183,7 @@ textarea:focus-visible {
     margin-left: 8px;
 }
 .btn-notif-unarchive:hover {
-    background: var(--color-primary-light, rgba(99,102,241,0.1));
+    background: var(--color-primary-light);
     color: var(--color-primary);
     border-color: var(--color-primary);
 }
