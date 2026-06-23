@@ -1915,6 +1915,20 @@ html, body {
     max-height: calc(85vh - 60px);
 }
 
+/* Instructions: near-full-height sheet (long reference content).
+   dvh accounts for mobile browser chrome; body flexes to fill, header stays. */
+.modal-instructions {
+    height: 94vh;
+    height: 94dvh;
+    max-height: 94vh;
+    max-height: 94dvh;
+}
+.modal-instructions .modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
 @keyframes slideUp {
     from {
         transform: translateY(100%);
@@ -2156,8 +2170,6 @@ html, body {
 
 /* Instructions */
 .instructions-body {
-    max-height: none;
-    height: 100%;
     overflow-y: auto;
     padding-right: 8px;
 }
@@ -2961,9 +2973,6 @@ textarea:focus-visible {
         max-height: calc(100% - 40px);
     }
 
-    .instructions-body {
-        max-height: 50vh;
-    }
 }
 /* ===== Phase 14: Voter / Observer Role System ===== */
 
