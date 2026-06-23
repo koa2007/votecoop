@@ -1,23 +1,19 @@
-// Supabase Service Module — single point of interaction with Supabase
-// Requires: @supabase/supabase-js CDN + js/config.js loaded before this file
+// PocketBase adapter — drop-in replacement for the old Supabase service.
+// Keeps the same `supabaseService` method names + {data,error} shapes so
+// js/app.js works unchanged. Backed by PocketBase at same origin.
+// Requires: pocketbase SDK loaded before this file; js/config.js for URL.
 
 const supabaseService = {
-    client: null,
+    pb: null,
+    client: null,        // compat shim (see bottom)
     initialized: false,
 
-    // Initialize Supabase client
     init() {
-        if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') {
-            throw new Error('Supabase config not found. Copy js/config.example.js to js/config.js');
-        }
-
-        if (SUPABASE_URL === 'https://YOUR_PROJECT.supabase.co' || SUPABASE_ANON_KEY === 'YOUR_ANON_KEY') {
-            this.initialized = false;
-            return false;
-        }
-
         try {
-            this.client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            const url = (typeof POCKETBASE_URL !== 'undefined' && POCKETBASE_URL) || window.location.origin;
+            this.pb = new PocketBase(url);
+            this.pb.autoCancellation(false);
+            this.client = this._buildClientShim();
             this.initialized = true;
             return true;
         } catch (err) {
@@ -26,830 +22,378 @@ const supabaseService = {
         }
     },
 
-    // Check if Supabase is configured and ready
-    isReady() {
-        return this.initialized && this.client !== null;
-    },
+    isReady() { return this.initialized && this.pb !== null; },
 
-    // Safe helper to get current user ID (returns null if not authenticated)
-    async _getUserId() {
-        try {
-            const { data, error } = await this.client.auth.getUser();
-            if (error || !data?.user) return null;
-            return data.user.id;
-        } catch {
-            return null;
-        }
+    _uid() { return this.pb?.authStore?.record?.id || null; },
+    async _getUserId() { return this._uid(); },
+    _err(e) { return { message: (e && (e.message || e.data?.message)) || String(e), code: e?.status, data: e?.response || e?.data }; },
+
+    // ---- profile helpers ----
+    async _profileByUser(uid) {
+        try { return await this.pb.collection('profiles').getFirstListItem(`user="${uid}"`); }
+        catch (e) { return null; }
+    },
+    async _profilesMap(uids) {
+        const map = {};
+        const uniq = [...new Set(uids.filter(Boolean))];
+        for (const u of uniq) { const p = await this._profileByUser(u); if (p) map[u] = p; }
+        return map;
     },
 
     // === AUTH ===
+    async signInWithGoogle() { return { data: null, error: { message: 'google_not_configured_yet' } }; },
 
-    // Sign in with Google OAuth (redirects to Google)
-    async signInWithGoogle() {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const redirectUrl = window.location.origin + window.location.pathname;
-
-        const { data, error } = await this.client.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo: redirectUrl
-            }
-        });
-
-        return { data, error };
-    },
-
-    // Sign in with email and password
     async signInWithEmail(email, password) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const { data, error } = await this.client.auth.signInWithPassword({
-            email: email,
-            password: password
-        });
-
-        return { data, error };
+        try { const r = await this.pb.collection('users').authWithPassword(email, password);
+            return { data: { user: r.record, session: { user: r.record } }, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
     },
 
-    // Register new user with email and password
     async signUpWithEmail(email, password) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const redirectUrl = window.location.origin + window.location.pathname;
-
-        const { data, error } = await this.client.auth.signUp({
-            email: email,
-            password: password,
-            options: {
-                emailRedirectTo: redirectUrl
-            }
-        });
-
-        return { data, error };
+        try {
+            await this.pb.collection('users').create({ email, password, passwordConfirm: password });
+            const r = await this.pb.collection('users').authWithPassword(email, password);
+            return { data: { user: r.record, session: { user: r.record } }, error: null };
+        } catch (e) { return { data: null, error: this._err(e) }; }
     },
 
-    // Send password reset email
     async resetPassword(email) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const redirectUrl = window.location.origin + window.location.pathname;
-
-        const { data, error } = await this.client.auth.resetPasswordForEmail(email, {
-            redirectTo: redirectUrl
-        });
-
-        return { data, error };
+        try { await this.pb.collection('users').requestPasswordReset(email); return { data: {}, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
     },
 
-    // Sign out
-    async signOut() {
-        if (!this.isReady()) {
-            return { error: null };
-        }
-
-        const { error } = await this.client.auth.signOut();
-        return { error };
+    async updatePassword(newPassword) {
+        const uid = this._uid();
+        if (!uid) return { error: { message: 'not_authenticated' } };
+        try { await this.pb.collection('users').update(uid, { password: newPassword, passwordConfirm: newPassword }); return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
     },
 
-    // Get current session
+    async signOut() { try { this.pb.authStore.clear(); } catch (e) {} return { error: null }; },
+
     async getSession() {
-        if (!this.isReady()) {
-            return { session: null, error: null };
-        }
-
-        const { data, error } = await this.client.auth.getSession();
-        return { session: data?.session || null, error };
+        const rec = this.pb?.authStore?.record;
+        return { session: rec ? { user: rec } : null, error: null };
     },
-
-    // Get current user from session
     async getUser() {
-        if (!this.isReady()) {
-            return { user: null, error: null };
-        }
-
-        const { data, error } = await this.client.auth.getUser();
-        return { user: data?.user || null, error };
+        const rec = this.pb?.authStore?.record;
+        return { user: rec || null, error: null };
     },
 
-    // Listen for auth state changes
     onAuthStateChange(callback) {
-        if (!this.isReady()) {
-            return { data: { subscription: { unsubscribe() {} } } };
-        }
-
-        return this.client.auth.onAuthStateChange((event, session) => {
-            callback(event, session);
-        });
+        // Fire once on load + on authStore changes
+        const unsub = this.pb.authStore.onChange((token, record) => {
+            callback(record ? 'SIGNED_IN' : 'SIGNED_OUT', record ? { user: record } : null);
+        }, false);
+        return { data: { subscription: { unsubscribe: unsub } } };
     },
 
     // === PROFILE ===
-
-    // Get profile by user ID
     async getProfile(userId) {
-        if (!this.isReady()) {
-            return { profile: null, error: null };
-        }
-
-        const { data, error } = await this.client.from('profiles')
-            .select('*')
-            .eq('id', userId)
-            .single();
-
-        return { profile: data, error };
+        const p = await this._profileByUser(userId);
+        return { profile: p ? this._mapProfile(p, userId) : null, error: null };
     },
-
-    // Update profile fields
+    _mapProfile(p, userId) {
+        return {
+            id: userId, _pbId: p.id,
+            first_name: p.first_name || '', last_name: p.last_name || '',
+            phone: p.phone || '', address: p.address || '', apartment: p.apartment || '',
+            default_role: p.default_role || 'voter', profile_completed: !!p.profile_completed
+        };
+    },
     async updateProfile(userId, profileData) {
-        if (!this.isReady()) {
-            return { profile: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const { data, error } = await this.client.from('profiles')
-            .update(profileData)
-            .eq('id', userId)
-            .select()
-            .single();
-
-        return { profile: data, error };
+        try {
+            const existing = await this._profileByUser(userId);
+            const payload = {};
+            ['first_name', 'last_name', 'phone', 'address', 'apartment', 'default_role', 'profile_completed'].forEach(k => {
+                if (k in profileData) payload[k] = profileData[k];
+            });
+            let rec;
+            if (existing) rec = await this.pb.collection('profiles').update(existing.id, payload);
+            else rec = await this.pb.collection('profiles').create({ user: userId, ...payload });
+            return { profile: this._mapProfile(rec, userId), error: null };
+        } catch (e) { return { profile: null, error: this._err(e) }; }
     },
-
-    // Check if profile is completed
     async isProfileCompleted(userId) {
-        if (!this.isReady()) {
-            return false;
-        }
-
-        const { profile, error } = await this.getProfile(userId);
-
-        if (error || !profile) {
-            return false;
-        }
-
-        return profile.profile_completed === true;
+        const p = await this._profileByUser(userId);
+        return !!(p && p.profile_completed);
     },
 
     // === GROUPS ===
-
-    // Create group + add creator as admin (atomic RPC)
     async createGroup(name, description) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const { data, error } = await this.client.rpc('create_group_with_member', {
-            p_name: name,
-            p_description: description || ''
-        });
-
-        return { data: data?.[0] || null, error };
+        try { const r = await this.pb.send('/api/spilka/create-group', { method: 'POST', body: { name, description } });
+            return { data: r.data, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
     },
 
-    // Get all groups the current user is a member of
-    async getMyGroups() {
-        if (!this.isReady()) {
-            return { data: null, error: null };
-        }
+    async getMyGroups() { return this.getMyGroupsWithStats(); },
+    async getGroupsStats() { return { data: [], error: null }; }, // folded into my-groups
 
-        const userId = await this._getUserId();
-        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
-
-        const { data, error } = await this.client.from('group_members')
-            .select(`
-                role,
-                group:groups (
-                    id, name, description, group_code, created_by, created_at
-                )
-            `)
-            .eq('user_id', userId);
-
-        return { data, error };
-    },
-
-    async getGroupsStats(groupIds) {
-        if (!this.isReady() || !groupIds.length) {
-            return { data: [], error: null };
-        }
-        const { data, error } = await this.client.from('group_stats')
-            .select('group_id, members_count, active_votings_count, total_votings_count')
-            .in('group_id', groupIds);
-        return { data: data || [], error };
-    },
-
-    // Combined groups + stats in one RPC call (faster than 2 separate queries)
     async getMyGroupsWithStats() {
-        if (!this.isReady()) {
-            return { data: null, error: null };
-        }
-        const { data, error } = await this.client.rpc('get_my_groups_with_stats');
-        return { data, error };
+        try { const r = await this.pb.send('/api/spilka/my-groups', { method: 'POST', body: {} });
+            return { data: r.data, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
     },
 
-    // Current user's per-group role flags (is_observer + apartment) for ALL
-    // groups at once. Lets the votings/profile screens know the user's role
-    // without first opening each group's detail (which is the only other
-    // place group.members gets populated).
     async getMyMemberships() {
-        if (!this.isReady()) {
-            return { data: [], error: null };
-        }
-        const userId = await this._getUserId();
-        if (!userId) return { data: [], error: { message: 'User not authenticated' } };
-        const { data, error } = await this.client.from('group_members')
-            .select('group_id, is_observer, apartment, role')
-            .eq('user_id', userId);
-        return { data: data || [], error };
+        const uid = this._uid(); if (!uid) return { data: [], error: null };
+        try {
+            const rows = await this.pb.collection('group_members').getFullList({ filter: `user="${uid}"` });
+            return { data: rows.map(m => ({ group_id: m.group, is_observer: !!m.is_observer, apartment: m.apartment || '', role: m.role })), error: null };
+        } catch (e) { return { data: [], error: this._err(e) }; }
     },
 
-    // Update group name/description (admin only)
     async updateGroup(groupId, updates) {
-        const userId = await this._getUserId();
-        if (!userId) return { error: { message: 'User not authenticated' } };
-
-        const { data, error } = await this.client
-            .from('groups')
-            .update({
-                name: updates.name,
-                description: updates.description
-            })
-            .eq('id', groupId)
-            .eq('created_by', userId)
-            .select()
-            .single();
-
-        return { data, error };
+        try { const r = await this.pb.collection('groups').update(groupId, { name: updates.name, description: updates.description });
+            return { data: r, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
     },
 
-    // Delete group (admin/creator only)
     async deleteGroup(groupId) {
-        const userId = await this._getUserId();
-        if (!userId) return { error: { message: 'User not authenticated' } };
-
-        const { error } = await this.client
-            .from('groups')
-            .delete()
-            .eq('id', groupId)
-            .eq('created_by', userId);
-
-        return { error };
+        try { await this.pb.collection('groups').delete(groupId); return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
     },
 
     async leaveGroup(groupId) {
-        if (!this.isReady()) {
-            return { error: { message: 'Supabase not configured' } };
-        }
-        const { error } = await this.client.rpc('leave_group', { p_group_id: groupId });
-        return { error };
+        try { await this.pb.send('/api/spilka/leave-group', { method: 'POST', body: { group_id: groupId } }); return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
     },
 
-    // Get detailed group info (members, requests, history, stats)
     async getGroupDetail(groupId) {
-        if (!this.isReady()) {
-            return { data: null, error: null };
-        }
-
-        const [membersRes, requestsRes, historyRes, statsRes] = await Promise.all([
-            this.client.from('group_members')
-                .select('user_id, role, is_frozen, frozen_until, is_observer, apartment, user:profiles(id, first_name, last_name, phone, address, apartment)')
-                .eq('group_id', groupId),
-            // Explicit FK: join_requests has TWO refs to profiles
-            // (user_id and resolved_by), so PostgREST needs the FK name.
-            this.client.from('join_requests')
-                .select('id, user_id, status, created_at, apartment, requested_as_observer, is_role_change, user:profiles!join_requests_user_id_fkey(id, first_name, last_name, address, apartment)')
-                .eq('group_id', groupId)
-                .eq('status', 'pending'),
-            this.client.from('group_history')
-                .select('*')
-                .eq('group_id', groupId)
-                .order('created_at', { ascending: false }),
-            this.client.from('group_stats')
-                .select('*')
-                .eq('group_id', groupId)
-                .maybeSingle()
-        ]);
-
-        return {
-            data: {
-                members: membersRes.data,
-                requests: requestsRes.data,
-                history: historyRes.data,
-                stats: statsRes.data
-            },
-            error: membersRes.error || requestsRes.error || historyRes.error || statsRes.error
-        };
+        try {
+            const members = await this.pb.collection('group_members').getFullList({ filter: `group="${groupId}"` });
+            const reqs = await this.pb.collection('join_requests').getFullList({ filter: `group="${groupId}" && status="pending"` });
+            let history = [];
+            try { history = await this.pb.collection('group_history').getFullList({ filter: `group="${groupId}"`, sort: '-created' }); } catch (e) {}
+            const pmap = await this._profilesMap([...members.map(m => m.user), ...reqs.map(r => r.user)]);
+            const prof = (uid) => { const p = pmap[uid]; return p ? { id: uid, first_name: p.first_name || '', last_name: p.last_name || '', phone: p.phone || '', address: p.address || '', apartment: p.apartment || '' } : { id: uid, first_name: '', last_name: '', apartment: '' }; };
+            return { data: {
+                members: members.map(m => ({ user_id: m.user, role: m.role, is_frozen: !!m.is_frozen, frozen_until: m.frozen_until || null, is_observer: !!m.is_observer, apartment: m.apartment || '', user: prof(m.user) })),
+                requests: reqs.map(r => ({ id: r.id, user_id: r.user, status: r.status, created_at: r.created, apartment: r.apartment || '', requested_as_observer: !!r.requested_as_observer, is_role_change: !!r.is_role_change, user: prof(r.user) })),
+                history: history.map(h => ({ id: h.id, action: h.action, details: h.details || {}, created_at: h.created, voting_id: h.voting || null })),
+                stats: { members_count: members.length }
+            }, error: null };
+        } catch (e) { return { data: null, error: this._err(e) }; }
     },
 
-    // Find group by 6-digit code (bypasses RLS via RPC)
     async findGroupByCode(code) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const { data, error } = await this.client.rpc('find_group_by_code', {
-            p_code: code
-        });
-
-        return { data: data?.[0] || null, error };
+        try { const r = await this.pb.send('/api/spilka/find-group', { method: 'POST', body: { code } });
+            return { data: r.data, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
     },
 
-    // Send join request for a group
-    async sendJoinRequest(groupId) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const userId = await this._getUserId();
-        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
-
-        const { data, error } = await this.client.from('join_requests')
-            .insert({ group_id: groupId, user_id: userId })
-            .select()
-            .single();
-
-        return { data, error };
-    },
-
-    // Approve join request (atomic RPC: update request + add member)
-    async approveJoinRequest(requestId) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const { data, error } = await this.client.rpc('approve_join_request', {
-            p_request_id: requestId
-        });
-
-        return { data, error };
-    },
-
-    // Reject join request
-    async rejectJoinRequest(requestId) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const userId = await this._getUserId();
-        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
-
-        const { data, error } = await this.client.from('join_requests')
-            .update({
-                status: 'rejected',
-                resolved_at: new Date().toISOString(),
-                resolved_by: userId
-            })
-            .eq('id', requestId)
-            .select()
-            .single();
-
-        return { data, error };
-    },
-
-    // === VOTINGS ===
-
-    // Create a new voting
-    async createVoting(votingData) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const userId = await this._getUserId();
-        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
-
-        const { data, error } = await this.client.from('votings')
-            .insert({
-                group_id: votingData.groupId,
-                title: votingData.title,
-                description: votingData.description || '',
-                type: votingData.type,
-                link: votingData.link || null,
-                target_member_id: votingData.targetMemberId || null,
-                removal_reason: votingData.removalReason || null,
-                freeze_duration_days: votingData.freezeDurationDays || 7,
-                ends_at: votingData.endsAt,
-                created_by: userId
-            })
-            .select()
-            .single();
-
-        return { data, error };
-    },
-
-    // Add freeze targets for a freeze voting
-    async addFreezeTargets(votingId, userIds) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const rows = userIds.map(uid => ({ voting_id: votingId, user_id: uid }));
-
-        const { data, error } = await this.client.from('freeze_targets')
-            .insert(rows)
-            .select();
-
-        return { data, error };
-    },
-
-    // Get all votings for the current user's groups
-    async getMyVotings() {
-        if (!this.isReady()) {
-            return { data: null, error: null };
-        }
-
-        const userId = await this._getUserId();
-        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
-
-        // Get group IDs
-        const { data: memberships, error: membershipError } = await this.client.from('group_members')
-            .select('group_id')
-            .eq('user_id', userId);
-
-        if (membershipError) {
-            return { data: null, error: membershipError };
-        }
-
-        if (!memberships || memberships.length === 0) {
-            return { data: [], error: null };
-        }
-
-        const groupIds = memberships.map(m => m.group_id);
-
-        const { data, error } = await this.client.from('votings')
-            .select(`
-                *,
-                group:groups(name),
-                creator:profiles!created_by(first_name, last_name),
-                target:profiles!target_member_id(first_name, last_name)
-            `)
-            .in('group_id', groupIds)
-            .neq('status', 'deleted')
-            .order('created_at', { ascending: false });
-
-        return { data, error };
-    },
-
-    // Get vote counts for votings (RPC, gated by is_group_member — see phase16)
-    async getVotingResults(votingIds) {
-        if (!this.isReady()) {
-            return { data: null, error: null };
-        }
-
-        if (!votingIds || votingIds.length === 0) {
-            return { data: [], error: null };
-        }
-
-        const { data, error } = await this.client.rpc('get_voting_results', {
-            p_voting_ids: votingIds
-        });
-
-        return { data, error };
-    },
-
-    // Get individual votes for a voting (with voter profiles)
-    async getVotingVotes(votingId) {
-        if (!this.isReady()) {
-            return { data: null, error: null };
-        }
-
-        const { data, error } = await this.client.from('votes')
-            .select('*, voter:profiles!user_id(first_name, last_name, apartment)')
-            .eq('voting_id', votingId)
-            .order('created_at', { ascending: true });
-
-        return { data, error };
-    },
-
-    // Cast a vote
-    async castVote(votingId, choice, comment) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const userId = await this._getUserId();
-        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
-
-        const { data, error } = await this.client.from('votes')
-            .insert({
-                voting_id: votingId,
-                user_id: userId,
-                choice,
-                comment: comment || ''
-            })
-            .select()
-            .single();
-
-        return { data, error };
-    },
-
-    // Delete (soft) a voting — only the author can delete
-    async deleteVoting(votingId, reason) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const userId = await this._getUserId();
-        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
-
-        const { data, error } = await this.client.from('votings')
-            .update({
-                status: 'deleted',
-                deleted_at: new Date().toISOString(),
-                deleted_reason: reason
-            })
-            .eq('id', votingId)
-            .eq('created_by', userId)
-            .select()
-            .single();
-
-        return { data, error };
-    },
-
-    // Add a freeze objection
-    async addFreezeObjection(votingId) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const userId = await this._getUserId();
-        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
-
-        const { data, error } = await this.client.from('freeze_objections')
-            .insert({ voting_id: votingId, user_id: userId })
-            .select()
-            .single();
-
-        return { data, error };
-    },
-
-    // Get freeze objections for a voting
-    async getFreezeObjections(votingId) {
-        if (!this.isReady()) {
-            return { data: null, error: null };
-        }
-
-        const { data, error } = await this.client.from('freeze_objections')
-            .select('*, user:profiles(first_name, last_name)')
-            .eq('voting_id', votingId);
-
-        return { data, error };
-    },
-
-    // Get freeze targets for a voting
-    async getFreezeTargets(votingId) {
-        if (!this.isReady()) {
-            return { data: null, error: null };
-        }
-
-        const { data, error } = await this.client.from('freeze_targets')
-            .select('*, user:profiles(first_name, last_name, address, apartment)')
-            .eq('voting_id', votingId);
-
-        return { data, error };
-    },
-
-    // Trigger server-side check for expired votings
-    async checkExpiredVotings() {
-        if (!this.isReady()) {
-            return { error: null };
-        }
-
-        const { error } = await this.client.rpc('check_my_expired_votings');
-        return { error };
-    },
-
-    // === NOTIFICATIONS ===
-
-    // Get current user's notifications
-    async getMyNotifications() {
-        if (!this.isReady()) {
-            return { data: null, error: null };
-        }
-
-        const userId = await this._getUserId();
-        if (!userId) return { data: null, error: { message: 'User not authenticated' } };
-
-        // Try with metadata column first; if the migration hasn't been
-        // applied yet (phase11), fall back to the legacy column set so
-        // notifications still load.
-        // Also try to filter out archived rows; if archived_at column
-        // doesn't exist (phase12 not applied), retry without that filter.
-        let q1 = this.client.from('notifications')
-            .select('id, type, text, is_read, created_at, metadata, archived_at')
-            .eq('user_id', userId)
-            .is('archived_at', null)
-            .order('created_at', { ascending: false })
-            .limit(100);
-        let { data, error } = await q1;
-
-        if (error && /archived_at/i.test(error.message || '')) {
-            // archived_at not yet migrated — retry without it
-            const r = await this.client.from('notifications')
-                .select('id, type, text, is_read, created_at, metadata')
-                .eq('user_id', userId)
-                .order('created_at', { ascending: false })
-                .limit(100);
-            data = r.data; error = r.error;
-        }
-
-        if (error && /metadata.*does not exist/i.test(error.message || '')) {
-            const r = await this.client.from('notifications')
-                .select('id, type, text, is_read, created_at')
-                .eq('user_id', userId)
-                .order('created_at', { ascending: false })
-                .limit(100);
-            data = r.data; error = r.error;
-        }
-
-        return { data, error };
-    },
-
-    // Archive all currently active (non-archived) notifications for this user.
-    async archiveAllNotifications() {
-        if (!this.isReady()) return { error: { message: 'Supabase not configured' } };
-        const userId = await this._getUserId();
-        if (!userId) return { error: { message: 'User not authenticated' } };
-        const { error } = await this.client.from('notifications')
-            .update({ archived_at: new Date().toISOString(), is_read: true })
-            .eq('user_id', userId)
-            .is('archived_at', null);
-        return { error };
-    },
-
-    // Fetch archived notifications (for an Archive view, future use).
-    async getArchivedNotifications() {
-        if (!this.isReady()) return { data: [], error: null };
-        const userId = await this._getUserId();
-        if (!userId) return { data: [], error: { message: 'User not authenticated' } };
-        const { data, error } = await this.client.from('notifications')
-            .select('id, type, text, is_read, created_at, metadata, archived_at')
-            .eq('user_id', userId)
-            .not('archived_at', 'is', null)
-            .order('archived_at', { ascending: false })
-            .limit(200);
-        return { data, error };
-    },
-
-    // Paginated search across notifications. archivedOnly=true → only archive,
-    // false → only active, null → both. Empty query returns recent items.
-    async searchNotifications(query, archivedOnly, limit = 50, offset = 0) {
-        if (!this.isReady()) return { data: [], error: null };
-        const userId = await this._getUserId();
-        if (!userId) return { data: [], error: { message: 'User not authenticated' } };
-        let q = this.client.from('notifications')
-            .select('id, type, text, is_read, created_at, metadata, archived_at')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false })
-            .range(offset, offset + limit - 1);
-        if (archivedOnly === true) q = q.not('archived_at', 'is', null);
-        else if (archivedOnly === false) q = q.is('archived_at', null);
-        if (query && query.trim().length >= 3) {
-            q = q.ilike('text', `%${query.trim()}%`);
-        }
-        const { data, error } = await q;
-        return { data: data || [], error };
-    },
-
-    // Move a single notification back from archive to active list.
-    async unarchiveNotification(notificationId) {
-        if (!this.isReady()) return { error: null };
-        const userId = await this._getUserId();
-        if (!userId) return { error: { message: 'User not authenticated' } };
-        const { error } = await this.client.from('notifications')
-            .update({ archived_at: null })
-            .eq('id', notificationId)
-            .eq('user_id', userId);
-        return { error };
-    },
-
-    // Mark a single notification as read
-    async markNotificationRead(notificationId) {
-        if (!this.isReady()) {
-            return { error: null };
-        }
-
-        const userId = await this._getUserId();
-        if (!userId) return { error: { message: 'User not authenticated' } };
-
-        const { error } = await this.client.from('notifications')
-            .update({ is_read: true })
-            .eq('id', notificationId)
-            .eq('user_id', userId);
-
-        return { error };
-    },
-
-    // Mark all notifications as read
-    async markAllNotificationsRead() {
-        if (!this.isReady()) {
-            return { error: null };
-        }
-
-        const userId = await this._getUserId();
-        if (!userId) return { error: { message: 'User not authenticated' } };
-
-        const { error } = await this.client.from('notifications')
-            .update({ is_read: true })
-            .eq('user_id', userId)
-            .eq('is_read', false);
-
-        return { error };
-    },
-
-    // Create a notification
-    async createNotification(userId, type, text) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-
-        const { data, error } = await this.client.from('notifications')
-            .insert({ user_id: userId, type, text })
-            .select()
-            .single();
-
-        return { data, error };
-    },
-
-    // Notify all members of a group (via RPC)
-    async notifyGroupMembers(groupId, type, text) {
-        if (!this.isReady()) {
-            return { error: { message: 'Supabase not configured' } };
-        }
-
-        const userId = await this._getUserId();
-        if (!userId) return { error: { message: 'User not authenticated' } };
-
-        const { error } = await this.client.rpc('notify_group_members', {
-            p_group_id: groupId,
-            p_type: type,
-            p_text: text,
-            p_exclude_user: userId
-        });
-
-        return { error };
-    },
-
-    async notifyJoinRequest(groupId) {
-        if (!this.isReady()) {
-            return { error: { message: 'Supabase not configured' } };
-        }
-        const { error } = await this.client.rpc('notify_join_request', { p_group_id: groupId });
-        return { error };
-    },
-
-    // === PHASE 14: VOTER / OBSERVER ROLE SYSTEM ===
-
+    // join requests
     async submitJoinRequestV2(groupId, apartment, asObserver) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-        return await this.client.rpc('submit_join_request_v2', {
-            p_group_id: groupId,
-            p_apartment: apartment,
-            p_as_observer: asObserver
-        });
+        try { const r = await this.pb.send('/api/spilka/submit-join', { method: 'POST', body: { group_id: groupId, apartment, as_observer: asObserver } });
+            return { data: r.data, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
+    },
+    async sendJoinRequest(groupId) { return this.submitJoinRequestV2(groupId, '', false); }, // legacy fallback
+
+    async approveJoinRequest(requestId) { return this.approveJoinRequestV2(requestId, false); },
+    async approveJoinRequestV2(requestId, forceObserver) {
+        try { await this.pb.send('/api/spilka/approve-join', { method: 'POST', body: { request_id: requestId, force_observer: !!forceObserver } });
+            return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
+    },
+    async rejectJoinRequest(requestId) {
+        try { await this.pb.send('/api/spilka/reject-join', { method: 'POST', body: { request_id: requestId } }); return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
     },
 
     async requestRoleChange(groupId, becomeObserver) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-        return await this.client.rpc('request_role_change', {
-            p_group_id: groupId,
-            p_become_observer: becomeObserver
-        });
+        try { await this.pb.send('/api/spilka/request-role-change', { method: 'POST', body: { group_id: groupId, become_observer: !!becomeObserver } });
+            return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
     },
-
-    async approveJoinRequestV2(requestId, forceObserver = false) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-        return await this.client.rpc('approve_join_request_v2', {
-            p_request_id: requestId,
-            p_force_observer: forceObserver
-        });
-    },
-
-    async getVoterCount(groupId) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-        return await this.client.rpc('get_voter_count', { p_group_id: groupId });
-    },
-
     async adminChangeRole(groupId, userId, makeObserver) {
-        if (!this.isReady()) {
-            return { data: null, error: { message: 'Supabase not configured' } };
-        }
-        return await this.client.from('group_members')
-            .update({ is_observer: makeObserver })
-            .eq('group_id', groupId)
-            .eq('user_id', userId);
-    }
+        try { await this.pb.send('/api/spilka/admin-change-role', { method: 'POST', body: { group_id: groupId, user_id: userId, make_observer: !!makeObserver } });
+            return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
+    },
+    async getVoterCount(groupId) {
+        try { const r = await this.pb.send('/api/spilka/voter-count', { method: 'POST', body: { group_id: groupId } });
+            return { data: r.data, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
+    },
+
+    // === VOTINGS ===
+    async createVoting(v) {
+        try {
+            const rec = await this.pb.collection('votings').create({
+                group: v.groupId, title: v.title, description: v.description || '', type: v.type,
+                status: 'active', link: v.link || '', target_member: v.targetMemberId || '',
+                removal_reason: v.removalReason || '', freeze_duration_days: v.freezeDurationDays || 7, ends_at: v.endsAt
+            });
+            return { data: rec, error: null };
+        } catch (e) { return { data: null, error: this._err(e) }; }
+    },
+    async addFreezeTargets(votingId, userIds) {
+        try { for (const uid of userIds) await this.pb.collection('freeze_targets').create({ voting: votingId, user: uid }); return { data: true, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
+    },
+
+    async getMyVotings() {
+        const uid = this._uid(); if (!uid) return { data: [], error: null };
+        try {
+            const mems = await this.pb.collection('group_members').getFullList({ filter: `user="${uid}"` });
+            if (!mems.length) return { data: [], error: null };
+            const gfilter = mems.map(m => `group="${m.group}"`).join(' || ');
+            const vts = await this.pb.collection('votings').getFullList({ filter: `(${gfilter}) && status!="deleted"`, sort: '-created' });
+            const gids = [...new Set(mems.map(m => m.group))];
+            const gmap = {}; for (const g of gids) { try { gmap[g] = await this.pb.collection('groups').getOne(g); } catch (e) {} }
+            const pmap = await this._profilesMap([...vts.map(v => v.created_by), ...vts.map(v => v.target_member)]);
+            const data = vts.map(v => ({
+                id: v.id, group_id: v.group, title: v.title, description: v.description, type: v.type, status: v.status,
+                result: v.result || null, link: v.link || null, target_member_id: v.target_member || null,
+                removal_reason: v.removal_reason || null, freeze_duration_days: v.freeze_duration_days,
+                ends_at: v.ends_at, completed_at: v.completed_at || null, created_at: v.created,
+                group: { name: gmap[v.group]?.name || '' },
+                creator: pmap[v.created_by] ? { first_name: pmap[v.created_by].first_name, last_name: pmap[v.created_by].last_name } : null,
+                target: v.target_member && pmap[v.target_member] ? { first_name: pmap[v.target_member].first_name, last_name: pmap[v.target_member].last_name } : null
+            }));
+            return { data, error: null };
+        } catch (e) { return { data: null, error: this._err(e) }; }
+    },
+
+    async getVotingResults(votingIds) {
+        if (!votingIds || !votingIds.length) return { data: [], error: null };
+        try { const r = await this.pb.send('/api/spilka/voting-results', { method: 'POST', body: { voting_ids: votingIds } });
+            return { data: r.data, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
+    },
+
+    async getVotingVotes(votingId) {
+        try {
+            const votes = await this.pb.collection('votes').getFullList({ filter: `voting="${votingId}"`, sort: 'created' });
+            const pmap = await this._profilesMap(votes.map(v => v.user));
+            return { data: votes.map(v => ({ id: v.id, user_id: v.user, choice: v.choice, comment: v.comment || '', created_at: v.created,
+                voter: pmap[v.user] ? { first_name: pmap[v.user].first_name, last_name: pmap[v.user].last_name, apartment: pmap[v.user].apartment } : null })), error: null };
+        } catch (e) { return { data: null, error: this._err(e) }; }
+    },
+
+    async castVote(votingId, choice, comment) {
+        try { const rec = await this.pb.collection('votes').create({ voting: votingId, choice, comment: comment || '' });
+            return { data: rec, error: null }; }
+        catch (e) { const er = this._err(e); if (er.code === 400 && /unique|idx_vote/i.test(JSON.stringify(er.data || ''))) er.code = '23505'; return { data: null, error: er }; }
+    },
+
+    async deleteVoting(votingId, reason) {
+        try { const rec = await this.pb.collection('votings').update(votingId, { status: 'deleted', deleted_at: new Date().toISOString(), deleted_reason: reason });
+            return { data: rec, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
+    },
+
+    // freeze beta
+    async addFreezeObjection(votingId) {
+        try { const rec = await this.pb.collection('freeze_objections').create({ voting: votingId, user: this._uid() }); return { data: rec, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
+    },
+    async getFreezeObjections(votingId) {
+        try { const rows = await this.pb.collection('freeze_objections').getFullList({ filter: `voting="${votingId}"` });
+            const pmap = await this._profilesMap(rows.map(r => r.user));
+            return { data: rows.map(r => ({ user_id: r.user, time: r.created, user: pmap[r.user] ? { first_name: pmap[r.user].first_name, last_name: pmap[r.user].last_name } : null })), error: null }; }
+        catch (e) { return { data: [], error: this._err(e) }; }
+    },
+    async getFreezeTargets(votingId) {
+        try { const rows = await this.pb.collection('freeze_targets').getFullList({ filter: `voting="${votingId}"` });
+            const pmap = await this._profilesMap(rows.map(r => r.user));
+            return { data: rows.map(r => ({ user_id: r.user, user: pmap[r.user] ? { first_name: pmap[r.user].first_name, last_name: pmap[r.user].last_name, address: pmap[r.user].address, apartment: pmap[r.user].apartment } : null })), error: null }; }
+        catch (e) { return { data: [], error: this._err(e) }; }
+    },
+
+    async checkExpiredVotings() {
+        try { await this.pb.send('/api/spilka/complete-expired', { method: 'POST', body: {} }); return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
+    },
+
+    // === NOTIFICATIONS ===
+    async getMyNotifications() {
+        const uid = this._uid(); if (!uid) return { data: [], error: null };
+        try { const rows = await this.pb.collection('notifications').getFullList({ filter: `user="${uid}" && archived_at=""`, sort: '-created' });
+            return { data: rows.map(n => ({ id: n.id, type: n.type, text: n.text, is_read: !!n.is_read, created_at: n.created, metadata: n.metadata || {}, archived_at: n.archived_at || null })), error: null }; }
+        catch (e) { return { data: [], error: this._err(e) }; }
+    },
+    async createNotification() { return { error: null }; }, // server-side via routes
+    async markNotificationRead(id) { try { await this.pb.collection('notifications').update(id, { is_read: true }); return { error: null }; } catch (e) { return { error: this._err(e) }; } },
+    async markAllNotificationsRead() {
+        const uid = this._uid(); if (!uid) return { error: null };
+        try { const rows = await this.pb.collection('notifications').getFullList({ filter: `user="${uid}" && is_read=false` });
+            for (const n of rows) await this.pb.collection('notifications').update(n.id, { is_read: true }); return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
+    },
+    async archiveAllNotifications() {
+        const uid = this._uid(); if (!uid) return { error: null };
+        try { const rows = await this.pb.collection('notifications').getFullList({ filter: `user="${uid}" && archived_at=""` });
+            const now = new Date().toISOString();
+            for (const n of rows) await this.pb.collection('notifications').update(n.id, { archived_at: now, is_read: true }); return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
+    },
+    async getArchivedNotifications() {
+        const uid = this._uid(); if (!uid) return { data: [], error: null };
+        try { const rows = await this.pb.collection('notifications').getFullList({ filter: `user="${uid}" && archived_at!=""`, sort: '-archived_at' });
+            return { data: rows.map(n => ({ id: n.id, type: n.type, text: n.text, is_read: !!n.is_read, created_at: n.created, metadata: n.metadata || {}, archived_at: n.archived_at })), error: null }; }
+        catch (e) { return { data: [], error: this._err(e) }; }
+    },
+    async searchNotifications(query, archivedOnly, limit = 50, offset = 0) {
+        const uid = this._uid(); if (!uid) return { data: [], error: null };
+        let f = `user="${uid}"`;
+        if (archivedOnly === true) f += ` && archived_at!=""`; else if (archivedOnly === false) f += ` && archived_at=""`;
+        if (query && query.trim().length >= 3) f += ` && text~"${query.trim().replace(/"/g, '')}"`;
+        try { const res = await this.pb.collection('notifications').getList(Math.floor(offset / limit) + 1, limit, { filter: f, sort: '-created' });
+            return { data: res.items.map(n => ({ id: n.id, type: n.type, text: n.text, is_read: !!n.is_read, created_at: n.created, metadata: n.metadata || {}, archived_at: n.archived_at || null })), error: null }; }
+        catch (e) { return { data: [], error: this._err(e) }; }
+    },
+    async unarchiveNotification(id) { try { await this.pb.collection('notifications').update(id, { archived_at: null }); return { error: null }; } catch (e) { return { error: this._err(e) }; } },
+    async notifyJoinRequest() { return { error: null }; },     // handled server-side
+    async notifyGroupMembers() { return { error: null }; },
+    async adminBroadcastNotification(userIds, text) {
+        try { const r = await this.pb.send('/api/spilka/broadcast', { method: 'POST', body: { user_ids: userIds, text } }); return { data: r.data, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
+    },
+
+    // === MEMBER VOTES (participation) ===
+    async getGroupMemberVotes(groupId) {
+        try { const r = await this.pb.send('/api/spilka/member-votes', { method: 'POST', body: { group_id: groupId } }); return { data: r.data, error: null }; }
+        catch (e) { return { data: [], error: this._err(e) }; }
+    },
+
+    // === FEEDBACK ===
+    async submitFeedback(text) {
+        try { await this.pb.collection('feedback').create({ text, status: 'new' }); return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
+    },
+    async getAdminFeedback() { return { data: [], error: null }; },
+    async updateFeedbackStatus(id, status) {
+        try { await this.pb.collection('feedback').update(id, { status }); return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
+    },
+
+    // === compat shim for the few direct supabaseService.client.* calls ===
+    _buildClientShim() {
+        const svc = this;
+        return {
+            auth: {
+                updateUser: async ({ password }) => { const r = await svc.updatePassword(password); return { error: r.error }; },
+                onAuthStateChange: (cb) => svc.onAuthStateChange((e, s) => cb(e, s)).data.subscription
+            },
+            from: (table) => svc._queryBuilder(table),
+            channel: () => svc._noopChannel(),
+            removeChannel: () => {}
+        };
+    },
+    _noopChannel() { const ch = { on: () => ch, subscribe: () => ch }; return ch; },
+    _queryBuilder(table) {
+        // minimal builder used by app.js: feedback insert/update, votes select, group_stats select
+        const svc = this;
+        return {
+            insert: (row) => ({ then: undefined, async select() { return this.__run('insert', row); }, async single() { return this.__run('insert', row); },
+                async __run() { try { if (table === 'feedback') { await svc.submitFeedback(row.text); return { data: row, error: null }; } return { data: null, error: null }; } catch (e) { return { data: null, error: svc._err(e) }; } },
+                // direct await (no .select) -> behaves like a promise
+                then(res) { this.__run().then(res); } }),
+            update: (vals) => ({ eq: (col, val) => ({ async then(res) { try { if (table === 'feedback') await svc.updateFeedbackStatus(val, vals.status); res({ error: null }); } catch (e) { res({ error: svc._err(e) }); } } }) }),
+            select: () => svc._noopSelect(table)
+        };
+    },
+    _noopSelect() { return { eq: () => this._noopSelect(), in: () => this._noopSelect(), order: () => this._noopSelect(), async then(res) { res({ data: [], error: null }); } }; }
 };
