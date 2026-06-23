@@ -365,25 +365,31 @@
                     </div>
                 </div>
                 <div class="screen-content" data-ptr="groups">
-                    <div class="join-group-section">
-                        <div class="join-group-row">
-                            <input type="text" id="join-group-id" data-lang-placeholder="enter_group_id" placeholder="Введіть ID групи (6 цифр)" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" aria-label="ID групи (6 цифр)">
-                            <input type="text" id="join-apartment" data-lang-placeholder="apartment_label" placeholder="Квартира" maxlength="10" inputmode="text" aria-label="Квартира/офіс">
-                        </div>
-                        <div class="role-radio-group" id="join-role-group" role="radiogroup" aria-label="Role in the group">
-                            <label>
-                                <input type="radio" name="join-role" value="voter" id="join-role-voter" aria-label="Voter">
-                                <span>👍 <span data-lang="role_voter">Голосуючий</span></span>
-                            </label>
-                            <label>
-                                <input type="radio" name="join-role" value="observer" id="join-role-observer" aria-label="Observer">
-                                <span>👁️ <span data-lang="role_observer">Спостерігач</span></span>
-                            </label>
-                        </div>
-                        <button class="btn btn-primary join-group-btn-full" onclick="app.joinGroup()" aria-label="Join group">
-                            <i class="ph ph-sign-in" aria-hidden="true"></i>
-                            <span data-lang="join_group_btn">Приєднатися</span>
+                    <div class="join-group-section collapsed" id="join-group-section">
+                        <button type="button" class="join-group-toggle" id="join-group-toggle" onclick="app.toggleJoinGroup()" aria-expanded="false" aria-controls="join-group-body">
+                            <span class="join-group-toggle-label"><i class="ph ph-sign-in" aria-hidden="true"></i> <span data-lang="join_group_section_title">Вступити до групи</span></span>
+                            <i class="ph ph-caret-down join-group-caret" aria-hidden="true"></i>
                         </button>
+                        <div class="join-group-body" id="join-group-body">
+                            <div class="join-group-row">
+                                <input type="text" id="join-group-id" data-lang-placeholder="enter_group_id" placeholder="Введіть ID групи (6 цифр)" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" aria-label="ID групи (6 цифр)">
+                                <input type="text" id="join-apartment" data-lang-placeholder="apartment_label" placeholder="Квартира" maxlength="10" inputmode="text" aria-label="Квартира/офіс">
+                            </div>
+                            <div class="role-radio-group" id="join-role-group" role="radiogroup" aria-label="Role in the group">
+                                <label>
+                                    <input type="radio" name="join-role" value="voter" id="join-role-voter" aria-label="Voter">
+                                    <span>👍 <span data-lang="role_voter">Голосуючий</span></span>
+                                </label>
+                                <label>
+                                    <input type="radio" name="join-role" value="observer" id="join-role-observer" aria-label="Observer">
+                                    <span>👁️ <span data-lang="role_observer">Спостерігач</span></span>
+                                </label>
+                            </div>
+                            <button class="btn btn-primary join-group-btn-full" onclick="app.joinGroup()" aria-label="Join group">
+                                <i class="ph ph-sign-in" aria-hidden="true"></i>
+                                <span data-lang="join_group_btn">Приєднатися</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="groups-list" id="groups-list">
                         <!-- Group cards will be inserted here -->

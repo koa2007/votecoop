@@ -2396,6 +2396,15 @@ const app = {
         if (freezeGroup) freezeGroup.classList.add('hidden');
     },
 
+    // Collapse / expand the "Join a group" section (collapsed by default).
+    toggleJoinGroup() {
+        const section = document.getElementById('join-group-section');
+        const toggle = document.getElementById('join-group-toggle');
+        if (!section) return;
+        const nowCollapsed = section.classList.toggle('collapsed');
+        if (toggle) toggle.setAttribute('aria-expanded', String(!nowCollapsed));
+    },
+
     async joinGroup() {
         const t = this.translations[this.currentLanguage];
         const code = document.getElementById('join-group-id').value.trim();
@@ -4161,7 +4170,8 @@ const app = {
             admin_cannot_be_observer: 'Адміністратор не може бути спостерігачем',
             role_change_badge: 'зміна ролі',
             my_roles_in_groups: 'Мої ролі в групах',
-            join_group_btn: 'Приєднатися'
+            join_group_btn: 'Приєднатися',
+            join_group_section_title: 'Вступити до групи'
         },
         en: {
             profile: 'Profile',
@@ -4568,7 +4578,8 @@ const app = {
             admin_cannot_be_observer: 'Admin cannot be an observer',
             role_change_badge: 'role change',
             my_roles_in_groups: 'My roles in groups',
-            join_group_btn: 'Join'
+            join_group_btn: 'Join',
+            join_group_section_title: 'Join a group'
         },
         ru: {
             profile: 'Профиль',
@@ -4975,7 +4986,8 @@ const app = {
             admin_cannot_be_observer: 'Администратор не может быть наблюдателем',
             role_change_badge: 'смена роли',
             my_roles_in_groups: 'Мои роли в группах',
-            join_group_btn: 'Присоединиться'
+            join_group_btn: 'Присоединиться',
+            join_group_section_title: 'Вступить в группу'
         }
     },
 
