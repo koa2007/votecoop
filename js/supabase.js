@@ -253,6 +253,22 @@ const supabaseService = {
         return { data, error };
     },
 
+    // Current user's per-group role flags (is_observer + apartment) for ALL
+    // groups at once. Lets the votings/profile screens know the user's role
+    // without first opening each group's detail (which is the only other
+    // place group.members gets populated).
+    async getMyMemberships() {
+        if (!this.isReady()) {
+            return { data: [], error: null };
+        }
+        const userId = await this._getUserId();
+        if (!userId) return { data: [], error: { message: 'User not authenticated' } };
+        const { data, error } = await this.client.from('group_members')
+            .select('group_id, is_observer, apartment, role')
+            .eq('user_id', userId);
+        return { data: data || [], error };
+    },
+
     // Update group name/description (admin only)
     async updateGroup(groupId, updates) {
         const userId = await this._getUserId();

@@ -881,8 +881,27 @@ const app = {
             votingsCount: item.total_votings_count || 0,
             members: [],
             requests: [],
-            history: []
+            history: [],
+            // Current user's own role in this group — needed on the votings
+            // and profile screens, which never populate group.members.
+            myIsObserver: false,
+            myApartment: ''
         }));
+
+        // Attach the current user's per-group role flags so the votings tab
+        // and profile know who is an observer without opening group detail.
+        try {
+            const { data: memberships } = await supabaseService.getMyMemberships();
+            const byGroup = {};
+            (memberships || []).forEach(m => { byGroup[m.group_id] = m; });
+            this.state.groups.forEach(g => {
+                const m = byGroup[g.id];
+                if (m) {
+                    g.myIsObserver = m.is_observer === true;
+                    g.myApartment = m.apartment || '';
+                }
+            });
+        } catch (e) { /* non-fatal — defaults to voter */ }
 
         // Cache for next load
         try { localStorage.setItem('vc_groups', JSON.stringify(this.state.groups)); }
@@ -1291,10 +1310,30 @@ const app = {
         }
     },
 
-    async approveFromNotification(notifId, groupId, requestId) {
+    async approveFromNotification(notifId, groupId, requestId, forceObserver = false) {
         const t = this.translations[this.currentLanguage] || {};
-        const { error } = await supabaseService.approveJoinRequest(requestId);
-        if (error) { this.toastError(error.message); return; }
+        // Use V2 RPC — honours requested role (voter/observer), copies the
+        // apartment, re-checks the apartment slot, and handles role-change
+        // requests. The legacy V1 ignored all of this (observer→voter,
+        // NULL apartment, role-change became a silent no-op).
+        const { error } = await supabaseService.approveJoinRequestV2(requestId, forceObserver);
+        if (error) {
+            const msg = error.message || '';
+            if (msg.includes('apartment_taken_now')) {
+                const confirmed = await this.confirm({
+                    message: t.apartment_taken_now_confirm || 'Квартира вже зайнята. Затвердити як спостерігача?',
+                    okText: t.confirm_ok || 'Підтвердити',
+                    cancelText: t.cancel || 'Скасувати',
+                    danger: false
+                });
+                if (confirmed) {
+                    await this.approveFromNotification(notifId, groupId, requestId, true);
+                }
+                return;
+            }
+            this.toastError(msg);
+            return;
+        }
         this.toastSuccess(t.request_approved || 'Запит схвалено');
         // Mark notification read + remove the action buttons by re-render
         this._removeNotifMetadata(notifId);
@@ -2464,6 +2503,7 @@ const app = {
                     .map(v => ({
                         userId: v.user_id,
                         userName: v.voter ? `${v.voter.first_name} ${v.voter.last_name}`.trim() : '',
+                        apartment: v.voter?.apartment || '',
                         vote: v.choice,
                         comment: v.comment,
                         time: new Date(v.created_at).toLocaleString()
@@ -2508,10 +2548,14 @@ const app = {
         const isAuthor = voting.initiatorId === this.state.user.id;
         const abstainVotes = voting.abstainVotes || 0;
 
-        // Determine if current user is an observer in this group
+        // Determine if current user is an observer in this group.
+        // Prefer group.myIsObserver (loaded for every group on startup) and
+        // fall back to the members array (only populated after opening group
+        // detail). Without the fallback, observers opening a voting straight
+        // from the votings tab would wrongly see the vote buttons.
         const dvGroup = this.state.groups.find(g => g.id === voting.groupId);
         const dvCurrentMember = dvGroup?.members?.find(m => m.id === this.state.user.id);
-        const isObserver = dvCurrentMember?.isObserver ?? false;
+        const isObserver = (dvGroup?.myIsObserver === true) || (dvCurrentMember?.isObserver === true);
 
         // Use voter count (non-observers) as the quorum denominator
         let voterTotalCount = voting.totalMembers;
@@ -2797,10 +2841,11 @@ const app = {
         const voting = this.state.votings.find(v => v.id === votingId);
         if (!voting || voting.hasVoted) return;
 
-        // Observer check — observers cannot vote
+        // Observer check — observers cannot vote. Use the startup-loaded
+        // myIsObserver flag (members array may be empty on the votings tab).
         const vGroup = this.state.groups.find(g => g.id === voting.groupId);
         const currentMember = vGroup?.members?.find(m => m.id === this.state.user.id);
-        if (currentMember?.isObserver) {
+        if ((vGroup?.myIsObserver === true) || (currentMember?.isObserver === true)) {
             this.toastError(t.observer_cannot_vote || 'Спостерігачі не можуть голосувати');
             return;
         }
@@ -2817,6 +2862,10 @@ const app = {
                 if (error.code === '23505') {
                     this.toastError(t.already_voted || 'Ви вже проголосували');
                     voting.hasVoted = true;
+                } else if (error.code === '42501') {
+                    // RLS rejected the insert — for this app that means the
+                    // user is an observer (votes policy requires is_observer=FALSE).
+                    this.toastError(t.observer_cannot_vote || 'Спостерігачі не можуть голосувати');
                 } else {
                     throw new Error(error.message);
                 }
@@ -2832,6 +2881,7 @@ const app = {
             voting.comments.push({
                 userId: this.state.user.id,
                 userName: `${this.state.user.firstName} ${this.state.user.lastName}`,
+                apartment: this.state.user.apartment || '',
                 vote: choice,
                 comment,
                 time: new Date().toLocaleString()
@@ -3267,6 +3317,11 @@ const app = {
             return;
         }
 
+        // Map userId → per-group apartment (most accurate source) so each
+        // exported vote line carries the VOTER's apartment, not the exporter's.
+        const aptByUser = {};
+        (group.members || []).forEach(m => { if (m.apartment) aptByUser[m.id] = m.apartment; });
+
         // Create CSV content
         const headers = [
             t.export_date,
@@ -3300,9 +3355,11 @@ const app = {
             let votesDetail = '';
             if (voting.comments && voting.comments.length > 0) {
                 votesDetail = voting.comments.map(c => {
-                    const voteType = c.vote === 'yes' ? t.export_yes : 
+                    const voteType = c.vote === 'yes' ? t.export_yes :
                                    c.vote === 'no' ? t.export_no : t.export_abstain;
-                    const unit = this.state.user.apartment || 'N/A';
+                    // Voter's own apartment: per-group membership first, then
+                    // their profile apartment carried on the comment, then N/A.
+                    const unit = aptByUser[c.userId] || c.apartment || 'N/A';
                     return `${unit}: ${voteType}${c.comment ? ' - ' + c.comment : ''}`;
                 }).join(' | ');
             }
@@ -3653,7 +3710,9 @@ const app = {
             rolesContainer.innerHTML = this.state.groups.map(group => {
                 const myMember = (group.members || []).find(m => m.id === this.state.user.id);
                 const isAdmin = group.isAdmin;
-                const isObserver = myMember?.isObserver ?? false;
+                // myIsObserver is loaded for every group on startup; the
+                // members array is only filled after opening group detail.
+                const isObserver = (group.myIsObserver === true) || (myMember?.isObserver === true);
                 const roleLabel = isAdmin
                     ? `<i class="ph-fill ph-crown text-warning" aria-hidden="true"></i> ${t.admin || 'Адмін'}`
                     : isObserver
@@ -5050,8 +5109,12 @@ const app = {
         this.currentLanguage = lang;
         const t = this.translations[lang];
         
-        // Update all elements with data-lang attribute
+        // Update all elements with data-lang attribute.
+        // Skip the Instructions modal — its headings carry an <i> icon as a
+        // child, and a plain textContent assignment here would wipe it.
+        // updateInstructionsContent() owns those elements and preserves icons.
         document.querySelectorAll('[data-lang]').forEach(el => {
+            if (el.closest('#instructions-modal')) return;
             const key = el.getAttribute('data-lang');
             if (t[key]) {
                 if (/<[a-z][\s\S]*>/i.test(t[key])) {
