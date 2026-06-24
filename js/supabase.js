@@ -398,9 +398,32 @@ const supabaseService = {
         try { await this.pb.collection('feedback').create({ text, status: 'new' }); return { error: null }; }
         catch (e) { return { error: this._err(e) }; }
     },
-    async getAdminFeedback() { return { data: [], error: null }; },
+    // Admin panel (only the koa2007 account passes the server-side check).
+    async getAdminStats() {
+        try { const r = await this.pb.send('/api/spilka/admin-stats', { method: 'POST', body: {} }); return { data: r.data, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
+    },
+    async getAdminRecentUsers() {
+        try { const r = await this.pb.send('/api/spilka/admin-users', { method: 'POST', body: {} });
+            return { data: (r.data || []).map(u => ({ ...u, created_at: this._d(u.created_at) })), error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
+    },
+    async getAdminRecentGroups() {
+        try { const r = await this.pb.send('/api/spilka/admin-groups', { method: 'POST', body: {} });
+            return { data: (r.data || []).map(g => ({ ...g, created_at: this._d(g.created_at) })), error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
+    },
+    async getAdminFeedback() {
+        try { const r = await this.pb.send('/api/spilka/admin-feedback', { method: 'POST', body: {} });
+            return { data: (r.data || []).map(f => ({ ...f, created_at: this._d(f.created_at), replied_at: this._d(f.replied_at) })), error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
+    },
+    async replyToFeedback(id, reply) {
+        try { await this.pb.send('/api/spilka/reply-feedback', { method: 'POST', body: { feedback_id: id, reply } }); return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
+    },
     async updateFeedbackStatus(id, status) {
-        try { await this.pb.collection('feedback').update(id, { status }); return { error: null }; }
+        try { await this.pb.send('/api/spilka/feedback-status', { method: 'POST', body: { feedback_id: id, status } }); return { error: null }; }
         catch (e) { return { error: this._err(e) }; }
     },
 

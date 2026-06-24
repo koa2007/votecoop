@@ -1806,46 +1806,19 @@ const app = {
 
     async refreshAdminPanel() {
         if (!supabaseService.isReady() || !this.isAdmin()) return;
-        const c = supabaseService.client;
         const grid = document.getElementById('admin-stats-grid');
         const t = this.translations[this.currentLanguage] || {};
         if (grid) grid.innerHTML = `<div class="empty-state">${this.escapeHTML(t.loading || 'Loading…')}</div>`;
 
         const [statsRes, usersRes, groupsRes, fbRes] = await Promise.all([
-            c.rpc('get_admin_stats'),
-            c.rpc('get_admin_recent_users', { p_limit: 30 }),
-            c.rpc('get_admin_recent_groups', { p_limit: 30 }),
-            c.rpc('get_admin_feedback', { p_limit: 50 })
+            supabaseService.getAdminStats(),
+            supabaseService.getAdminRecentUsers(),
+            supabaseService.getAdminRecentGroups(),
+            supabaseService.getAdminFeedback()
         ]);
 
         if (statsRes.error) {
-            if (grid) {
-                const sqlEditorUrl = 'https://supabase.com/dashboard/project/ygbhiorheuovtlmmyvjr/sql/new';
-                grid.innerHTML = `
-                    <div class="admin-setup-needed" style="grid-column: 1 / -1;">
-                        <div style="font-size:32px;text-align:center"><i class="ph ph-gear" aria-hidden="true"></i></div>
-                        <h3 style="margin:8px 0">Адмін-панель потребує налаштування</h3>
-                        <p style="font-size:14px;color:var(--color-text-secondary);line-height:1.5">
-                            Базі бракує таблиці <code>feedback</code> та RPC-функцій адміна.
-                            Потрібно одноразово накатити SQL-міграції через Supabase SQL Editor.
-                        </p>
-                        <p style="font-size:13px;color:var(--color-text-tertiary);margin-top:8px">
-                            Помилка: ${this.escapeHTML(statsRes.error.message)}
-                        </p>
-                        <ol style="font-size:13px;line-height:1.7;margin:12px 0;padding-left:20px;color:var(--color-text-secondary)">
-                            <li>Відкрити <a href="${sqlEditorUrl}" target="_blank" rel="noopener" style="color:var(--color-primary)">SQL Editor</a></li>
-                            <li>Скопіювати вміст файлів з папки <code>supabase/</code> репо:
-                                <ul style="font-size:12px;margin:4px 0 4px 0;padding-left:18px;color:var(--color-text-tertiary)">
-                                    <li><code>phase9-feedback-admin.sql</code> (адмін RPC + feedback)</li>
-                                    <li><code>phase10-realtime.sql</code> (realtime для нотифікацій)</li>
-                                    <li><code>phase11-notif-metadata.sql</code> (✓✗ кнопки)</li>
-                                </ul>
-                            </li>
-                            <li>Вставити в SQL Editor → Run</li>
-                            <li>Натиснути <strong>⟳ Refresh</strong> у заголовку адмін-панелі</li>
-                        </ol>
-                    </div>`;
-            }
+            if (grid) grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">${this.escapeHTML('Не вдалося завантажити дані адмін-панелі. ' + (statsRes.error.message || ''))}</div>`;
             return;
         }
 
@@ -1892,14 +1865,35 @@ const app = {
             <div class="admin-row feedback-${this.escapeHTML(f.status)}">
                 <div class="row-title">${this.escapeHTML(f.text)}</div>
                 <div class="row-meta">${this.escapeHTML(f.user_name || f.user_email || '—')} · ${new Date(f.created_at).toLocaleString()}</div>
+                ${f.reply ? `<div class="row-meta" style="color:var(--color-success);margin-top:4px"><b>Ваша відповідь:</b> ${this.escapeHTML(f.reply)}</div>` : ''}
                 <div class="admin-row-actions">
+                    <button onclick="app.toggleReplyBox('${f.id}')"><i class="ph ph-chat-circle-text" aria-hidden="true"></i> ${f.reply ? 'Змінити відповідь' : 'Відповісти'}</button>
                     ${f.status !== 'reviewed' ? `<button onclick="app.setFeedbackStatus('${f.id}', 'reviewed')">Переглянуто</button>` : ''}
                     ${f.status !== 'done' ? `<button onclick="app.setFeedbackStatus('${f.id}', 'done')">Виконано</button>` : ''}
                     ${f.status !== 'new' ? `<button onclick="app.setFeedbackStatus('${f.id}', 'new')">Новий</button>` : ''}
                 </div>
+                <div id="reply-box-${f.id}" class="hidden" style="margin-top:8px">
+                    <textarea id="reply-text-${f.id}" rows="2" maxlength="500" placeholder="Ваша відповідь жителю — він побачить її як сповіщення в застосунку…" style="width:100%;box-sizing:border-box">${this.escapeHTML(f.reply || '')}</textarea>
+                    <button class="btn-primary" style="margin-top:6px" onclick="app.sendFeedbackReply('${f.id}')"><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i> Надіслати відповідь</button>
+                </div>
             </div>`).join('');
         const ft = document.getElementById('admin-tab-feedback');
         if (ft) ft.innerHTML = fbList || '<div class="empty-state">Немає відгуків</div>';
+    },
+
+    toggleReplyBox(id) {
+        const el = document.getElementById('reply-box-' + id);
+        if (el) el.classList.toggle('hidden');
+    },
+
+    async sendFeedbackReply(id) {
+        const ta = document.getElementById('reply-text-' + id);
+        const reply = (ta?.value || '').trim();
+        if (reply.length < 2) { this.toastError('Напишіть відповідь'); return; }
+        const { error } = await supabaseService.replyToFeedback(id, reply);
+        if (error) { this.toastError(error.message); return; }
+        this.toastSuccess('Відповідь надіслано жителю');
+        await this.refreshAdminPanel();
     },
 
     async setFeedbackStatus(id, status) {
