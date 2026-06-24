@@ -525,7 +525,7 @@ const app = {
         }
         this._clearAuthMessages();
         this.setBtnLoading('reset-submit-btn', true);
-        const { error } = await supabaseService.client.auth.updateUser({ password: p1 });
+        const { error } = await supabaseService.updatePassword(p1);
         this.setBtnLoading('reset-submit-btn', false);
         if (error) {
             this._showInlineError('reset', error.message);
@@ -929,11 +929,9 @@ const app = {
         const userId = this.state.user.id;
         let votedSet = new Set();
         if (votingIds.length > 0) {
-            const { data: myVotes } = await supabaseService.client.from('votes')
-                .select('voting_id')
-                .eq('user_id', userId)
-                .in('voting_id', votingIds);
-            votedSet = new Set((myVotes || []).map(mv => mv.voting_id));
+            const { data: myVotes } = await supabaseService.getMyVotes();
+            const ids = new Set(votingIds);
+            votedSet = new Set((myVotes || []).map(mv => mv.voting_id).filter(id => ids.has(id)));
         }
 
         this.state.votings = votings.map(v => {
@@ -967,18 +965,12 @@ const app = {
             };
         });
 
-        // Populate totalMembers from group_stats
-        const groupIds = [...new Set(votings.map(v => v.group_id))];
-        if (groupIds.length > 0) {
-            const { data: allStats } = await supabaseService.client.from('group_stats')
-                .select('group_id, members_count')
-                .in('group_id', groupIds);
-            const statsMap = {};
-            (allStats || []).forEach(s => { statsMap[s.group_id] = s.members_count; });
-            this.state.votings.forEach(v => {
-                v.totalMembers = statsMap[v.groupId] || 1;
-            });
-        }
+        // Populate totalMembers from already-loaded groups (membersCount).
+        const statsMap = {};
+        (this.state.groups || []).forEach(g => { statsMap[g.id] = g.membersCount; });
+        this.state.votings.forEach(v => {
+            v.totalMembers = statsMap[v.groupId] || 1;
+        });
 
         this.state.fetched.votings = true;
         this.renderVotings();
@@ -1018,81 +1010,51 @@ const app = {
         this.renderNotifications();
     },
 
-    // === REALTIME (Supabase channels) ===
-    // Subscribes to live updates so users see new votes / notifications without refreshing.
+    // === REALTIME (PocketBase subscriptions) ===
+    // PocketBase delivers events filtered by each collection's view-rule, so the
+    // notifications stream only carries the current user's own records.
     subscribeToRealtime() {
         if (!supabaseService.isReady() || !this.state.user) return;
-        // Tear down any prior channels (idempotent)
         this.unsubscribeFromRealtime();
 
-        const userId = this.state.user.id;
-        const client = supabaseService.client;
-
-        // 1) Notifications addressed to this user
-        this._notifChannel = client
-            .channel(`vc-notif-${userId}`)
-            .on('postgres_changes',
-                { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
-                (payload) => {
-                    const n = payload.new;
-                    if (!n) return;
-                    this.state.notifications.unshift({
-                        id: n.id,
-                        type: n.type,
-                        text: n.text,
-                        time: new Date(n.created_at).toLocaleString(),
-                        read: n.is_read
-                    });
-                    this.renderNotifications();
-                    if (n.type !== 'system' || (n.text && !n.is_read)) {
-                        this.toastInfo(n.text);
-                    }
-                }
-            )
-            .subscribe();
-
-        // 2) Votes & votings — debounced reload of voting list
         const debouncedReload = () => {
             clearTimeout(this._votingReloadTimer);
             this._votingReloadTimer = setTimeout(() => this.loadMyVotings(), 600);
         };
-        this._votingsChannel = client
-            .channel(`vc-vt-${userId}`)
-            .on('postgres_changes',
-                { event: '*', schema: 'public', table: 'votes' },
-                debouncedReload)
-            .on('postgres_changes',
-                { event: '*', schema: 'public', table: 'votings' },
-                debouncedReload)
-            .subscribe();
 
-        // 3) Join-requests — keep group-detail's "Запити на вступ" list fresh
-        // when admin is already on the group page (otherwise UI stays stale
-        // until a manual reload).
-        this._joinReqChannel = client
-            .channel(`vc-jr-${userId}`)
-            .on('postgres_changes',
-                { event: '*', schema: 'public', table: 'join_requests' },
-                () => {
-                    if (this.state.currentScreen === 'group-detail-screen' && this.state.currentGroupId) {
-                        this.showGroupDetail(this.state.currentGroupId);
-                    }
-                    this.loadMyNotifications();
-                })
-            .subscribe();
+        // 1) Notifications addressed to this user
+        supabaseService.realtimeSubscribe('notifications', (e) => {
+            if (e.action !== 'create' || !e.record) return;
+            const n = e.record;
+            this.state.notifications.unshift({
+                id: n.id, type: n.type, text: n.text,
+                time: new Date(String(n.created).replace(' ', 'T')).toLocaleString(),
+                read: n.is_read
+            });
+            this.renderNotifications();
+            if (n.type !== 'system' || (n.text && !n.is_read)) this.toastInfo(n.text);
+        });
+
+        // 2) Votes & votings — debounced reload of voting list
+        supabaseService.realtimeSubscribe('votes', debouncedReload);
+        supabaseService.realtimeSubscribe('votings', debouncedReload);
+
+        // 3) Join-requests — keep group-detail's request list fresh
+        supabaseService.realtimeSubscribe('join_requests', () => {
+            if (this.state.currentScreen === 'group-detail-screen' && this.state.currentGroupId) {
+                this.showGroupDetail(this.state.currentGroupId);
+            }
+            this.loadMyNotifications();
+        });
+
+        this._rtSubscribed = true;
     },
 
     unsubscribeFromRealtime() {
-        const client = supabaseService.client;
-        if (!client) return;
+        if (!supabaseService.isReady()) return;
         try {
-            if (this._notifChannel)   client.removeChannel(this._notifChannel);
-            if (this._votingsChannel) client.removeChannel(this._votingsChannel);
-            if (this._joinReqChannel) client.removeChannel(this._joinReqChannel);
+            ['notifications', 'votes', 'votings', 'join_requests'].forEach(c => supabaseService.realtimeUnsubscribe(c));
         } catch (e) { /* ignore */ }
-        this._notifChannel = null;
-        this._votingsChannel = null;
-        this._joinReqChannel = null;
         if (this._votingReloadTimer) {
             clearTimeout(this._votingReloadTimer);
             this._votingReloadTimer = null;
@@ -1773,13 +1735,7 @@ const app = {
         this.setBtnLoading('feedback-send-btn', true);
         const u = this.state.user;
         const userName = [u.firstName, u.lastName].filter(Boolean).join(' ') || null;
-        const { error } = await supabaseService.client.from('feedback').insert({
-            user_id: u.id,
-            text,
-            user_email: u.email || null,
-            user_name: userName,
-            user_agent: navigator.userAgent.slice(0, 200)
-        });
+        const { error } = await supabaseService.submitFeedback(text);
         this.setBtnLoading('feedback-send-btn', false);
         if (error) {
             this.toastError(error.message);
@@ -1924,7 +1880,7 @@ const app = {
     },
 
     async setFeedbackStatus(id, status) {
-        const { error } = await supabaseService.client.from('feedback').update({ status }).eq('id', id);
+        const { error } = await supabaseService.updateFeedbackStatus(id, status);
         if (error) { this.toastError(error.message); return; }
         this.toastSuccess('Статус оновлено');
         await this.refreshAdminPanel();

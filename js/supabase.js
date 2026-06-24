@@ -310,6 +310,23 @@ const supabaseService = {
         catch (e) { return { error: this._err(e) }; }
     },
 
+    // Which votings the current user has voted on (for hasVoted flags)
+    async getMyVotes() {
+        const uid = this._uid(); if (!uid) return { data: [], error: null };
+        try { const rows = await this.pb.collection('votes').getFullList({ filter: `user="${uid}"` });
+            return { data: rows.map(v => ({ voting_id: v.voting })), error: null }; }
+        catch (e) { return { data: [], error: this._err(e) }; }
+    },
+
+    // PocketBase realtime — collection view-rules gate which events a user gets.
+    async realtimeSubscribe(collection, cb) {
+        try { return await this.pb.collection(collection).subscribe('*', cb); }
+        catch (e) { return () => {}; }
+    },
+    realtimeUnsubscribe(collection) {
+        try { this.pb.collection(collection).unsubscribe('*'); } catch (e) {}
+    },
+
     // === NOTIFICATIONS ===
     async getMyNotifications() {
         const uid = this._uid(); if (!uid) return { data: [], error: null };
