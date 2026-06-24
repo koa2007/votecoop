@@ -115,8 +115,9 @@ const app = {
         if (_pwResetToken) {
             this._pwResetToken = _pwResetToken;
             // If a session is still active (user clicked the link while logged in),
-            // clear it so the reset screen isn't overridden by the main app.
-            try { await supabaseService.signOut(); } catch (e) {}
+            // clear it SYNCHRONOUSLY so the reset screen isn't overridden by the main
+            // app. An async signOut() here yields mid-boot and loses the screen.
+            try { supabaseService.pb.authStore.clear(); } catch (e) {}
             // Strip the token from the address bar so it can't be bookmarked/shared.
             try { window.history.replaceState({}, document.title, window.location.pathname); } catch (e) {}
             this.showResetPasswordScreen();
