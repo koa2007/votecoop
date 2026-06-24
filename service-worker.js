@@ -1,7 +1,7 @@
 // VoteCoop service worker — relative paths so it works under any base URL
 // (root domain, GitHub Pages /votecoop/, or any sub-path).
 
-const CACHE_VERSION = 'spilka-v29';
+const CACHE_VERSION = 'spilka-v30';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -81,8 +81,30 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // 3) Same-origin static assets → cache-first, refresh in background
+    // 3) Same-origin requests
     if (url.origin === self.location.origin) {
+        // 3a) Our own CODE (js/css/html) → NETWORK-FIRST so deploys reach users
+        // immediately. Cache-first here was serving stale JS forever — a returning
+        // user kept running old code until the SW version bumped AND activated.
+        // Fall back to cache only when offline.
+        const isCode = /\.(?:js|css|html)$/.test(url.pathname)
+            || url.pathname === BASE
+            || url.pathname === BASE + 'index.html';
+        if (isCode) {
+            event.respondWith(
+                fetch(req)
+                    .then(res => {
+                        if (res && res.status === 200 && res.type === 'basic') {
+                            const copy = res.clone();
+                            caches.open(RUNTIME_CACHE).then(c => c.put(req, copy));
+                        }
+                        return res;
+                    })
+                    .catch(() => caches.match(req))
+            );
+            return;
+        }
+        // 3b) Other static assets (icons, etc.) → cache-first, refresh in background
         event.respondWith(
             caches.match(req).then(cached => {
                 const fetchPromise = fetch(req)
