@@ -138,7 +138,9 @@ const supabaseService = {
     // === GROUPS ===
     async createGroup(name, description) {
         try { const r = await this.pb.send('/api/spilka/create-group', { method: 'POST', body: { name, description } });
-            return { data: r.data, error: null }; }
+            const d = r.data || r;
+            // Normalize to the Supabase-era shape app.js expects (group_id / group_code).
+            return { data: { group_id: d.id || d.group_id, group_code: d.group_code }, error: null }; }
         catch (e) { return { data: null, error: this._err(e) }; }
     },
 

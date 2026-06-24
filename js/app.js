@@ -159,6 +159,13 @@ const app = {
         const userId = session.user.id;
         const userEmail = session.user.email;
 
+        // Guard against duplicate runs: at boot the auth-state listener fires
+        // immediately AND getSession() resolves; on login loginWithEmail() calls
+        // this AND the listener fires. Running twice raced the realtime subscribe
+        // (clientId clobbered → /api/realtime 404 loop) and flickered the screen.
+        if (this._authHandledFor === userId) return;
+        this._authHandledFor = userId;
+
         // Load profile from DB
         const { profile, error } = await supabaseService.getProfile(userId);
 
@@ -231,6 +238,7 @@ const app = {
     handleSignOut() {
         if (this._expiryInterval) clearInterval(this._expiryInterval);
         this.unsubscribeFromRealtime();
+        this._authHandledFor = null;
         this.state.user = null;
         this.state.groups = [];
         this.state.votings = [];
@@ -1028,6 +1036,7 @@ const app = {
     // notifications stream only carries the current user's own records.
     subscribeToRealtime() {
         if (!supabaseService.isReady() || !this.state.user) return;
+        if (this._rtSubscribed) return;   // already subscribed — don't thrash the SSE connection
         this.unsubscribeFromRealtime();
 
         const debouncedReload = () => {
@@ -1072,6 +1081,7 @@ const app = {
             clearTimeout(this._votingReloadTimer);
             this._votingReloadTimer = null;
         }
+        this._rtSubscribed = false;
     },
 
     async checkExpiredVotingsServer() {
