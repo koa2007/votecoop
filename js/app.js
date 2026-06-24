@@ -114,6 +114,9 @@ const app = {
         const _pwResetToken = new URLSearchParams(window.location.search).get('pwreset');
         if (_pwResetToken) {
             this._pwResetToken = _pwResetToken;
+            // If a session is still active (user clicked the link while logged in),
+            // clear it so the reset screen isn't overridden by the main app.
+            try { await supabaseService.signOut(); } catch (e) {}
             // Strip the token from the address bar so it can't be bookmarked/shared.
             try { window.history.replaceState({}, document.title, window.location.pathname); } catch (e) {}
             this.showResetPasswordScreen();
