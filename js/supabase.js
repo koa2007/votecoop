@@ -87,6 +87,23 @@ const supabaseService = {
 
     async signOut() { try { this.pb.authStore.clear(); } catch (e) {} return { error: null }; },
 
+    // Confirm the stored session still belongs to a real account. Returns false
+    // (and clears the session) ONLY on a definitive auth rejection — a token for
+    // a deleted user. Network errors (offline) keep the session so we never log
+    // a PWA user out just because they had no connection on launch.
+    async validateSession() {
+        if (!this.pb?.authStore?.isValid) return false;
+        try { await this.pb.collection('users').authRefresh(); return true; }
+        catch (e) {
+            const status = e?.status || e?.response?.status || 0;
+            if (status === 401 || status === 403 || status === 404) {
+                try { this.pb.authStore.clear(); } catch (_) {}
+                return false;
+            }
+            return true; // transient/offline — assume still valid
+        }
+    },
+
     async getSession() {
         const rec = this.pb?.authStore?.record;
         return { session: rec ? { user: rec } : null, error: null };

@@ -166,6 +166,12 @@ const app = {
         if (this._authHandledFor === userId) return;
         this._authHandledFor = userId;
 
+        // Confirm the session still belongs to a real account. A leftover token
+        // for a deleted user otherwise traps the person on an unfillable profile
+        // form (or a half-broken main screen). Offline keeps the session.
+        const sessionValid = await supabaseService.validateSession();
+        if (!sessionValid) { this.handleSignOut(); return; }
+
         // Load profile from DB
         const { profile, error } = await supabaseService.getProfile(userId);
 
@@ -3744,6 +3750,7 @@ const app = {
             instructions: 'Інструкції',
             instructions_title: 'Інструкції з використання',
             logout: 'Вийти',
+            not_your_account: 'Це не ваш акаунт? Вийти',
             theme: 'Тема',
             theme_auto: 'Системна',
             theme_light: 'Світла',
@@ -4179,6 +4186,7 @@ const app = {
             instructions: 'Instructions',
             instructions_title: 'User Instructions',
             logout: 'Logout',
+            not_your_account: 'Not your account? Log out',
             theme: 'Theme',
             theme_auto: 'System',
             theme_light: 'Light',
@@ -4614,6 +4622,7 @@ const app = {
             instructions: 'Инструкции',
             instructions_title: 'Инструкции по использованию',
             logout: 'Выйти',
+            not_your_account: 'Это не ваш аккаунт? Выйти',
             theme: 'Тема',
             theme_auto: 'Системная',
             theme_light: 'Светлая',
