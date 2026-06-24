@@ -71,6 +71,13 @@ const supabaseService = {
         catch (e) { return { data: null, error: this._err(e) }; }
     },
 
+    // Complete a password reset using the one-time token from the email link
+    // (no active session — the token proves identity).
+    async confirmPasswordReset(token, newPassword) {
+        try { await this.pb.collection('users').confirmPasswordReset(token, newPassword, newPassword); return { error: null }; }
+        catch (e) { return { error: this._err(e) }; }
+    },
+
     async updatePassword(newPassword) {
         const uid = this._uid();
         if (!uid) return { error: { message: 'not_authenticated' } };

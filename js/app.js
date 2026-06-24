@@ -108,6 +108,18 @@ const app = {
     async initWithSupabase() {
         this.showScreen('loading-screen');
 
+        // PocketBase password-reset: the email link brings the user back here with
+        // ?pwreset=<token>. They are NOT logged in — identity is proven by the token.
+        // Show the standalone reset screen and skip the normal session/main flow.
+        const _pwResetToken = new URLSearchParams(window.location.search).get('pwreset');
+        if (_pwResetToken) {
+            this._pwResetToken = _pwResetToken;
+            // Strip the token from the address bar so it can't be bookmarked/shared.
+            try { window.history.replaceState({}, document.title, window.location.pathname); } catch (e) {}
+            this.showResetPasswordScreen();
+            return;
+        }
+
         // Listen for auth state changes (handles OAuth redirect callback)
         supabaseService.onAuthStateChange(async (event, session) => {
             if (event === 'PASSWORD_RECOVERY') {
@@ -525,13 +537,24 @@ const app = {
         }
         this._clearAuthMessages();
         this.setBtnLoading('reset-submit-btn', true);
-        const { error } = await supabaseService.updatePassword(p1);
+        // Recovery flow proves identity via the email token (no session);
+        // the manual "change password" flow uses the logged-in session.
+        const { error } = this._pwResetToken
+            ? await supabaseService.confirmPasswordReset(this._pwResetToken, p1)
+            : await supabaseService.updatePassword(p1);
         this.setBtnLoading('reset-submit-btn', false);
         if (error) {
             this._showInlineError('reset', error.message);
             return;
         }
         this.toastSuccess(t.reset_done || 'Пароль оновлено');
+        // Recovery: drop the token + any stale session, send the user to log in fresh.
+        if (this._pwResetToken) {
+            this._pwResetToken = null;
+            await supabaseService.signOut();
+            this.showAuthScreen();
+            return;
+        }
         // Decide where to go next:
         //  • If session is fully authenticated and user state is loaded → main app
         //  • Otherwise (post-recovery without prior session) → login screen so they sign in fresh
