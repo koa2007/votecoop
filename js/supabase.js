@@ -49,7 +49,13 @@ const supabaseService = {
     async signInWithEmail(email, password) {
         try { const r = await this.pb.collection('users').authWithPassword(email, password);
             return { data: { user: r.record, session: { user: r.record } }, error: null }; }
-        catch (e) { return { data: null, error: this._err(e) }; }
+        catch (e) {
+            const er = this._err(e);
+            // PocketBase says "Failed to authenticate"; app.js expects the
+            // Supabase wording to show the friendly "invalid credentials" message.
+            if (er.code === 400) er.message = 'Invalid login credentials';
+            return { data: null, error: er };
+        }
     },
 
     async signUpWithEmail(email, password) {
