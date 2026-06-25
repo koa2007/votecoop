@@ -1824,27 +1824,31 @@ const app = {
         ]);
 
         if (statsRes.error) {
-            if (grid) grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">${this.escapeHTML('Не вдалося завантажити дані адмін-панелі. ' + (statsRes.error.message || ''))}</div>`;
-            return;
-        }
-
-        const s = statsRes.data || {};
-        const tile = (label, value, sub) => `
-            <div class="admin-stat-card">
-                <div class="label">${this.escapeHTML(label)}</div>
-                <div class="value">${this.escapeHTML(String(value ?? 0))}</div>
-                ${sub ? `<div class="sub">${this.escapeHTML(sub)}</div>` : ''}
+            const code = statsRes.error.code ? ` (${statsRes.error.code})` : '';
+            if (grid) grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+                ${this.escapeHTML('Не вдалося завантажити статистику' + code + '.')}<br>
+                <span style="font-size:13px;color:var(--color-text-tertiary)">Оновіть сторінку (Ctrl+Shift+R). Якщо не допомогло — вийдіть і увійдіть знову.</span>
             </div>`;
-        if (grid) grid.innerHTML = [
-            tile('Всього користувачів', s.users_total, `${s.users_completed || 0} завершили профіль`),
-            tile('Нові за тиждень', s.users_last_7d, `${s.users_last_24h || 0} за добу`),
-            tile('Груп', s.groups_total, `${s.groups_last_7d || 0} за тиждень`),
-            tile('Учасників (всього)', s.memberships_total),
-            tile('Голосувань', s.votings_total, `${s.votings_active || 0} активних`),
-            tile('Завершені', s.votings_completed, `${s.votings_accepted || 0} прийнято / ${s.votings_rejected || 0} відхилено`),
-            tile('Голосів подано', s.votes_total),
-            tile('Відгуків', s.feedback_total, `${s.feedback_new || 0} нових`)
-        ].join('');
+            // Do NOT stop here — the feedback / users / groups tabs may still load.
+        } else {
+            const s = statsRes.data || {};
+            const tile = (label, value, sub) => `
+                <div class="admin-stat-card">
+                    <div class="label">${this.escapeHTML(label)}</div>
+                    <div class="value">${this.escapeHTML(String(value ?? 0))}</div>
+                    ${sub ? `<div class="sub">${this.escapeHTML(sub)}</div>` : ''}
+                </div>`;
+            if (grid) grid.innerHTML = [
+                tile('Всього користувачів', s.users_total, `${s.users_completed || 0} завершили профіль`),
+                tile('Нові за тиждень', s.users_last_7d, `${s.users_last_24h || 0} за добу`),
+                tile('Груп', s.groups_total, `${s.groups_last_7d || 0} за тиждень`),
+                tile('Учасників (всього)', s.memberships_total),
+                tile('Голосувань', s.votings_total, `${s.votings_active || 0} активних`),
+                tile('Завершені', s.votings_completed, `${s.votings_accepted || 0} прийнято / ${s.votings_rejected || 0} відхилено`),
+                tile('Голосів подано', s.votes_total),
+                tile('Відгуків', s.feedback_total, `${s.feedback_new || 0} нових`)
+            ].join('');
+        }
 
         // Users tab
         const usersList = (usersRes.data || []).map(u => `
