@@ -2219,6 +2219,14 @@ const app = {
             return;
         }
 
+        // Guard against an empty/invalid duration — otherwise the endsAt math
+        // below becomes new Date(NaN).toISOString() which throws and surfaces as
+        // a confusing "network error".
+        if (!duration || isNaN(duration) || duration < 1) {
+            this.toastError(t.select_duration || 'Оберіть тривалість голосування');
+            return;
+        }
+
         const group = this.state.groups.find(g => g.id === groupId);
 
         // Check daily limit for non-admin users
@@ -4031,6 +4039,7 @@ const app = {
             join_requests: 'Запити на вступ',
             target_member: 'Учасник',
             select_member: 'Виберіть учасника',
+            select_duration: 'Оберіть тривалість голосування',
             removal_reason: 'Причина видалення',
             select_reason: 'Виберіть причину',
             reason_dues: 'Не платить внески',
@@ -4467,6 +4476,7 @@ const app = {
             join_requests: 'Join requests',
             target_member: 'Member',
             select_member: 'Select member',
+            select_duration: 'Choose a voting duration',
             removal_reason: 'Reason for removal',
             select_reason: 'Select reason',
             reason_dues: 'Not paying dues',
@@ -4903,6 +4913,7 @@ const app = {
             join_requests: 'Запросы на вступление',
             target_member: 'Участник',
             select_member: 'Выберите участника',
+            select_duration: 'Выберите длительность голосования',
             removal_reason: 'Причина удаления',
             select_reason: 'Выберите причину',
             reason_dues: 'Не платит взносы',
