@@ -37,10 +37,17 @@ const supabaseService = {
         catch (e) { return null; }
     },
     async _profilesMap(uids) {
-        const map = {};
         const uniq = [...new Set(uids.filter(Boolean))];
-        for (const u of uniq) { const p = await this._profileByUser(u); if (p) map[u] = p; }
-        return map;
+        if (!uniq.length) return {};
+        // Single batched query instead of one request per user (was N+1 on the
+        // voting list and group detail — the app's busiest screens).
+        try {
+            const filter = uniq.map(u => `user="${u}"`).join(' || ');
+            const rows = await this.pb.collection('profiles').getFullList({ filter });
+            const map = {};
+            rows.forEach(p => { map[p.user] = p; });
+            return map;
+        } catch (e) { return {}; }
     },
 
     // === AUTH ===
@@ -136,14 +143,27 @@ const supabaseService = {
     },
     async updateProfile(userId, profileData) {
         try {
-            const existing = await this._profileByUser(userId);
             const payload = {};
             ['first_name', 'last_name', 'phone', 'address', 'apartment', 'default_role', 'profile_completed'].forEach(k => {
                 if (k in profileData) payload[k] = profileData[k];
             });
+            // Only treat a real 404 as "no profile yet". A transient error must NOT
+            // fall through to create() — that produced duplicate profiles in prod.
+            let existing = null;
+            try { existing = await this.pb.collection('profiles').getFirstListItem(`user="${userId}"`); }
+            catch (e) { if (e?.status && e.status !== 404) throw e; }
             let rec;
-            if (existing) rec = await this.pb.collection('profiles').update(existing.id, payload);
-            else rec = await this.pb.collection('profiles').create({ user: userId, ...payload });
+            if (existing) {
+                rec = await this.pb.collection('profiles').update(existing.id, payload);
+            } else {
+                try {
+                    rec = await this.pb.collection('profiles').create({ user: userId, ...payload });
+                } catch (e) {
+                    // Lost a race (or unique index hit) — a row now exists; update it.
+                    const p = await this.pb.collection('profiles').getFirstListItem(`user="${userId}"`);
+                    rec = await this.pb.collection('profiles').update(p.id, payload);
+                }
+            }
             return { profile: this._mapProfile(rec, userId), error: null };
         } catch (e) { return { profile: null, error: this._err(e) }; }
     },
@@ -260,7 +280,15 @@ const supabaseService = {
                 status: 'active', link: v.link || '', target_member: v.targetMemberId || '',
                 removal_reason: v.removalReason || '', freeze_duration_days: v.freezeDurationDays || 7, ends_at: v.endsAt
             });
-            return { data: rec, error: null };
+            // Normalize to the shape app.js reads (it builds the new card from
+            // created_at / ends_at). Raw PB record has `created` and space-separated
+            // dates → "Invalid Date" / undefined on the fresh card until reload.
+            return { data: {
+                id: rec.id, group_id: rec.group, title: rec.title, description: rec.description,
+                type: rec.type, status: rec.status, created_by: rec.created_by || null,
+                link: rec.link || '', target_member: rec.target_member || '',
+                ends_at: this._d(rec.ends_at), created_at: this._d(rec.created)
+            }, error: null };
         } catch (e) { return { data: null, error: this._err(e) }; }
     },
     async addFreezeTargets(votingId, userIds) {
@@ -276,10 +304,17 @@ const supabaseService = {
             const gfilter = mems.map(m => `group="${m.group}"`).join(' || ');
             const vts = await this.pb.collection('votings').getFullList({ filter: `(${gfilter}) && status!="deleted"`, sort: '-created' });
             const gids = [...new Set(mems.map(m => m.group))];
-            const gmap = {}; for (const g of gids) { try { gmap[g] = await this.pb.collection('groups').getOne(g); } catch (e) {} }
+            const gmap = {};
+            if (gids.length) {
+                try {
+                    const grows = await this.pb.collection('groups').getFullList({ filter: gids.map(id => `id="${id}"`).join(' || ') });
+                    grows.forEach(g => { gmap[g.id] = g; });
+                } catch (e) { /* group names fall back to '' */ }
+            }
             const pmap = await this._profilesMap([...vts.map(v => v.created_by), ...vts.map(v => v.target_member)]);
             const data = vts.map(v => ({
                 id: v.id, group_id: v.group, title: v.title, description: v.description, type: v.type, status: v.status,
+                created_by: v.created_by || null,
                 result: v.result || null, link: v.link || null, target_member_id: v.target_member || null,
                 removal_reason: v.removal_reason || null, freeze_duration_days: v.freeze_duration_days,
                 ends_at: this._d(v.ends_at), completed_at: this._d(v.completed_at), created_at: this._d(v.created),
@@ -310,7 +345,16 @@ const supabaseService = {
     async castVote(votingId, choice, comment) {
         try { const rec = await this.pb.collection('votes').create({ voting: votingId, choice, comment: comment || '' });
             return { data: rec, error: null }; }
-        catch (e) { const er = this._err(e); if (er.code === 400 && /unique|idx_vote/i.test(JSON.stringify(er.data || ''))) er.code = '23505'; return { data: null, error: er }; }
+        catch (e) {
+            const er = this._err(e);
+            // Normalize the server-side vote-hook rejections to stable codes app.js checks.
+            const raw = (er.message || '') + ' ' + JSON.stringify(er.data || '');
+            if (er.code === 400 && /unique|idx_vote/i.test(raw)) er.code = '23505';
+            else if (/observer_cannot_vote/i.test(raw)) er.code = 'observer';
+            else if (/voting_not_active/i.test(raw)) er.code = 'voting_inactive';
+            else if (/not_member/i.test(raw)) er.code = 'not_member';
+            return { data: null, error: er };
+        }
     },
 
     async deleteVoting(votingId, reason) {
@@ -322,7 +366,7 @@ const supabaseService = {
     // freeze beta
     async addFreezeObjection(votingId) {
         try { const rec = await this.pb.collection('freeze_objections').create({ voting: votingId, user: this._uid() }); return { data: rec, error: null }; }
-        catch (e) { return { data: null, error: this._err(e) }; }
+        catch (e) { const er = this._err(e); if (er.code === 400 && /unique|not_unique/i.test((er.message || '') + JSON.stringify(er.data || ''))) er.code = '23505'; return { data: null, error: er }; }
     },
     async getFreezeObjections(votingId) {
         try { const rows = await this.pb.collection('freeze_objections').getFullList({ filter: `voting="${votingId}"` });
@@ -389,14 +433,15 @@ const supabaseService = {
     },
     async searchNotifications(query, archivedOnly, limit = 50, offset = 0) {
         const uid = this._uid(); if (!uid) return { data: [], error: null };
-        let f = `user="${uid}"`;
+        let f = this.pb.filter('user={:uid}', { uid });
         if (archivedOnly === true) f += ` && archived_at!=""`; else if (archivedOnly === false) f += ` && archived_at=""`;
-        if (query && query.trim().length >= 3) f += ` && text~"${query.trim().replace(/"/g, '')}"`;
+        // Bind the user's search text safely (filter injection otherwise).
+        if (query && query.trim().length >= 3) f += ` && ` + this.pb.filter('text~{:q}', { q: query.trim() });
         try { const res = await this.pb.collection('notifications').getList(Math.floor(offset / limit) + 1, limit, { filter: f, sort: '-created' });
             return { data: res.items.map(n => ({ id: n.id, type: n.type, text: n.text, is_read: !!n.is_read, created_at: this._d(n.created), metadata: n.metadata || {}, archived_at: this._d(n.archived_at) || null })), error: null }; }
         catch (e) { return { data: [], error: this._err(e) }; }
     },
-    async unarchiveNotification(id) { try { await this.pb.collection('notifications').update(id, { archived_at: null }); return { error: null }; } catch (e) { return { error: this._err(e) }; } },
+    async unarchiveNotification(id) { try { await this.pb.collection('notifications').update(id, { archived_at: '' }); return { error: null }; } catch (e) { return { error: this._err(e) }; } },
     async notifyJoinRequest() { return { error: null }; },     // handled server-side
     async notifyGroupMembers() { return { error: null }; },
     async adminBroadcastNotification(userIds, text) {

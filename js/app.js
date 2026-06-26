@@ -2854,10 +2854,13 @@ const app = {
                 if (error.code === '23505') {
                     this.toastError(t.already_voted || 'Ви вже проголосували');
                     voting.hasVoted = true;
-                } else if (error.code === '42501') {
-                    // RLS rejected the insert — for this app that means the
-                    // user is an observer (votes policy requires is_observer=FALSE).
+                } else if (error.code === 'observer' || error.code === '42501') {
+                    // Server rejected the vote because the user is an observer.
                     this.toastError(t.observer_cannot_vote || 'Спостерігачі не можуть голосувати');
+                } else if (error.code === 'voting_inactive') {
+                    this.toastError(t.voting_ended || 'Голосування вже завершено');
+                } else if (error.code === 'not_member') {
+                    this.toastError(t.not_member || 'Ви не учасник цієї групи');
                 } else {
                     throw new Error(error.message);
                 }
@@ -3066,8 +3069,7 @@ const app = {
         // (Without this, getMemberParticipation would always return 0 because
         // votes are not loaded into voting.comments.)
         try {
-            const { data: votesData } = await supabaseService.client
-                .rpc('get_group_member_votes', { p_group_id: group.id });
+            const { data: votesData } = await supabaseService.getGroupMemberVotes(group.id);
             group.memberVotes = {};
             (votesData || []).forEach(row => {
                 group.memberVotes[row.user_id] = Number(row.voted_count) || 0;
@@ -5099,7 +5101,7 @@ const app = {
             resultsContainer.innerHTML = `<div class="freeze-search-empty">${t.nothing_found || 'Нічого не знайдено'}</div>`;
         } else {
             resultsContainer.innerHTML = matches.map(m => `
-                <div class="search-result-item" role="option" onclick="app.selectFreezeMember('${m.id}', '${m.name.replace(/'/g, "\\'")}')">
+                <div class="search-result-item" role="option" onclick="app.selectFreezeMember('${m.id}')">
                     ${this.escapeHTML(m.name)} (${this.escapeHTML(m.address)})
                 </div>
             `).join('');
@@ -5108,7 +5110,7 @@ const app = {
         resultsContainer.classList.remove('hidden');
     },
 
-    selectFreezeMember(id, name) {
+    selectFreezeMember(id) {
         const groupId = document.getElementById('voting-group').value;
         const group = this.state.groups.find(g => g.id === groupId);
         const member = group ? group.members.find(m => m.id === id) : null;
