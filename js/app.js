@@ -1057,7 +1057,14 @@ const app = {
             this._votingReloadTimer = setTimeout(() => this.loadMyVotings(), 600);
         };
 
-        // 1) Notifications addressed to this user
+        // Only the notifications stream is subscribed directly. The group-scoped
+        // collections (votes/votings/join_requests) now carry membership access
+        // rules that PocketBase realtime can't evaluate for a wildcard subscription
+        // — subscribing to them hangs in a /api/realtime retry loop. Instead we
+        // react to the notification TYPE: every meaningful event emits a
+        // notification server-side, so this single working stream keeps the right
+        // screen fresh. (Live per-vote tally updates are the only thing lost —
+        // those refresh on navigation and the 60s expiry check.)
         supabaseService.realtimeSubscribe('notifications', (e) => {
             if (e.action !== 'create' || !e.record) return;
             const n = e.record;
@@ -1068,18 +1075,15 @@ const app = {
             });
             this.renderNotifications();
             if (n.type !== 'system' || (n.text && !n.is_read)) this.toastInfo(n.text);
-        });
 
-        // 2) Votes & votings — debounced reload of voting list
-        supabaseService.realtimeSubscribe('votes', debouncedReload);
-        supabaseService.realtimeSubscribe('votings', debouncedReload);
-
-        // 3) Join-requests — keep group-detail's request list fresh
-        supabaseService.realtimeSubscribe('join_requests', () => {
-            if (this.state.currentScreen === 'group-detail-screen' && this.state.currentGroupId) {
-                this.showGroupDetail(this.state.currentGroupId);
+            // Refresh the relevant data based on what happened.
+            if (n.type === 'new_voting' || n.type === 'voting_completed') {
+                debouncedReload();
+            } else if (n.type === 'join_request' || n.type === 'role_change_request') {
+                if (this.state.currentScreen === 'group-detail-screen' && this.state.currentGroupId) {
+                    this.showGroupDetail(this.state.currentGroupId);
+                }
             }
-            this.loadMyNotifications();
         });
 
         this._rtSubscribed = true;
