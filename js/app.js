@@ -190,10 +190,12 @@ const app = {
             this.setupEventListeners();
             this.updateProfileDisplay();
 
-            // Load data BEFORE showing main screen (keep spinner visible)
+            // Load data BEFORE showing main screen (keep spinner visible).
+            // Groups FIRST — loadMyVotings reads group member counts to compute
+            // participation %; running them in parallel raced totalMembers to 1.
             try {
+                await this.loadMyGroups();
                 await Promise.all([
-                    this.loadMyGroups(),
                     this.loadMyVotings(),
                     this.loadMyNotifications()
                 ]);
@@ -403,6 +405,11 @@ const app = {
     // Switch between top-level auth screens
     showAuthScreen() {
         this._clearAuthMessages();
+        // Drop any leftover password-reset token (e.g. user opened a reset link
+        // but didn't finish) so a later "change password" doesn't wrongly take
+        // the recovery branch. Also un-stick the login button.
+        this._pwResetToken = null;
+        this.setBtnLoading('auth-login-btn', false);
         this.showScreen('auth-screen');
     },
 
@@ -1187,7 +1194,7 @@ const app = {
     getTimeLeft(endDate) {
         const t = this.translations[this.currentLanguage];
         const diff = endDate - new Date();
-        if (diff <= 0) return t.completed;
+        if (isNaN(diff) || diff <= 0) return t.completed;
         
         const hours = Math.floor(diff / 3600000);
         const days = Math.floor(hours / 24);
@@ -1461,7 +1468,9 @@ const app = {
         const arch = this.state.archive;
         if (arch.loading || !arch.hasMore) return;
         arch.offset += arch.pageSize;
-        await this._fetchArchivePage(true);
+        const ok = await this._fetchArchivePage(true);
+        // Roll back the page cursor if the fetch failed, so a retry doesn't skip a page.
+        if (!ok) arch.offset = Math.max(0, arch.offset - arch.pageSize);
     },
 
     async _fetchArchivePage(append) {
@@ -1479,7 +1488,7 @@ const app = {
         arch.loading = false;
         if (error) {
             list.innerHTML = `<div class="empty-state-inline">${this.escapeHTML(error.message || 'Error')}</div>`;
-            return;
+            return false;
         }
         const items = (data || []).map(n => ({
             id: n.id,
@@ -1492,6 +1501,7 @@ const app = {
         arch.items = append ? arch.items.concat(items) : items;
         arch.hasMore = items.length === arch.pageSize;
         this._renderArchiveList();
+        return true;
     },
 
     _renderArchiveList() {
@@ -2059,7 +2069,14 @@ const app = {
         document.getElementById('target-member-group').classList.add('hidden');
         document.getElementById('removal-reason-group').classList.add('hidden');
         document.getElementById('duration-group').classList.remove('hidden');
-        
+
+        // Clear any leftover freeze selection from a previously cancelled session
+        // (otherwise the array stays non-empty while the chips UI shows nothing).
+        this.state.freezeSelectedMembers = [];
+        this.renderFreezeMemberChips();
+        const freezeGroup = document.getElementById('freeze-members-group');
+        if (freezeGroup) freezeGroup.classList.add('hidden');
+
         this.showModal('create-voting-modal');
     },
 
@@ -2365,26 +2382,27 @@ const app = {
                 groupId, 'voting',
                 `${t.new_voting || 'Нове голосування'}: "${title}"`
             );
+
+            // Clear the form ONLY on success — otherwise the user keeps their input
+            // after a network error and can retry without retyping.
+            document.getElementById('voting-title').value = '';
+            document.getElementById('voting-description').value = '';
+            document.getElementById('description-counter').textContent = '0';
+            document.getElementById('voting-link').value = '';
+            document.getElementById('target-member').value = '';
+            document.getElementById('removal-reason-select').value = '';
+            document.getElementById('removal-reason-text').value = '';
+            document.getElementById('target-member-group').classList.add('hidden');
+            document.getElementById('removal-reason-group').classList.add('hidden');
+            this.state.freezeSelectedMembers = [];
+            this.renderFreezeMemberChips();
+            const freezeGroup = document.getElementById('freeze-members-group');
+            if (freezeGroup) freezeGroup.classList.add('hidden');
         } catch (err) {
             this.toastError(t.auth_error_network || 'Error creating voting');
         } finally {
             if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
         }
-
-        // Clear form
-        document.getElementById('voting-title').value = '';
-        document.getElementById('voting-description').value = '';
-        document.getElementById('description-counter').textContent = '0';
-        document.getElementById('voting-link').value = '';
-        document.getElementById('target-member').value = '';
-        document.getElementById('removal-reason-select').value = '';
-        document.getElementById('removal-reason-text').value = '';
-        document.getElementById('target-member-group').classList.add('hidden');
-        document.getElementById('removal-reason-group').classList.add('hidden');
-        this.state.freezeSelectedMembers = [];
-        this.renderFreezeMemberChips();
-        const freezeGroup = document.getElementById('freeze-members-group');
-        if (freezeGroup) freezeGroup.classList.add('hidden');
     },
 
     // Collapse / expand the "Join a group" section (collapsed by default).
@@ -2528,7 +2546,8 @@ const app = {
                 if (objRes.data) {
                     voting.objections = objRes.data.map(o => ({
                         userId: o.user_id,
-                        userName: o.user ? `${o.user.first_name} ${o.user.last_name}`.trim() : ''
+                        userName: o.user ? `${o.user.first_name} ${o.user.last_name}`.trim() : '',
+                        time: o.time || null
                     }));
                 }
                 if (targetsRes.data) {
@@ -3377,7 +3396,13 @@ const app = {
                 abstainVotes,
                 totalVotes,
                 votesDetail
-            ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(';');
+            ].map(field => {
+                let s = String(field);
+                // Mitigate CSV formula injection — Excel/Sheets execute a cell that
+                // starts with = + - @ (or tab/CR). Prefix such values with a quote.
+                if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+                return `"${s.replace(/"/g, '""')}"`;
+            }).join(';');
         });
 
         const csvContent = '\uFEFF' + [headers, ...rows].join('\n');
