@@ -901,6 +901,11 @@ const app = {
         const { data, error } = await supabaseService.getMyGroupsWithStats();
         if (error || !data) {
             this.state.fetched.groups = true;
+            // Surface a real load failure (instead of a silently empty screen)
+            // when there's nothing cached to fall back to.
+            if (error && !this.state.groups.length) {
+                this.toastError((this.translations[this.currentLanguage] || {}).load_failed || 'Не вдалося завантажити. Потягніть вниз, щоб оновити.');
+            }
             this.renderGroups();
             return;
         }
@@ -950,6 +955,9 @@ const app = {
         const { data: votings, error } = await supabaseService.getMyVotings();
         if (error || !votings) {
             this.state.fetched.votings = true;
+            if (error && !this.state.votings.length) {
+                this.toastError((this.translations[this.currentLanguage] || {}).load_failed || 'Не вдалося завантажити. Потягніть вниз, щоб оновити.');
+            }
             this.renderVotings();
             return;
         }
@@ -3794,6 +3802,7 @@ const app = {
             instructions_title: 'Інструкції з використання',
             logout: 'Вийти',
             not_your_account: 'Це не ваш акаунт? Вийти',
+            load_failed: 'Не вдалося завантажити. Потягніть вниз, щоб оновити.',
             theme: 'Тема',
             theme_auto: 'Системна',
             theme_light: 'Світла',
@@ -4231,6 +4240,7 @@ const app = {
             instructions_title: 'User Instructions',
             logout: 'Logout',
             not_your_account: 'Not your account? Log out',
+            load_failed: 'Could not load. Pull down to refresh.',
             theme: 'Theme',
             theme_auto: 'System',
             theme_light: 'Light',
@@ -4668,6 +4678,7 @@ const app = {
             instructions_title: 'Инструкции по использованию',
             logout: 'Выйти',
             not_your_account: 'Это не ваш аккаунт? Выйти',
+            load_failed: 'Не удалось загрузить. Потяните вниз, чтобы обновить.',
             theme: 'Тема',
             theme_auto: 'Системная',
             theme_light: 'Светлая',
