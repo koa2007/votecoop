@@ -12,7 +12,8 @@
 - Voting: yes / no / abstain + comments
 - Notifications (in-app, real-time via Supabase)
 - i18n: UK / EN / RU
-- CSV export of group history
+- CSV export of group history (admin)
+- Printable voting protocol (PDF/print) — "Протокол" button on any completed non-freeze voting, available to every member; window.print() + @media print; secret votes show counts only
 - PWA: manifest + service worker (basic)
 - **Dark theme** (system preference + manual toggle in profile)
 - Mobile: safe-area-inset, 44px tap targets, locked body-scroll on modals
