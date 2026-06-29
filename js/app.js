@@ -2841,6 +2841,12 @@ const app = {
                 </div>
             ` : ''}
 
+            ${voting.status === 'completed' && !isFreeze ? `
+                <div class="protocol-section">
+                    <button class="btn btn-secondary" onclick="app.printProtocol('${voting.id}')"><i class="ph ph-printer" aria-hidden="true"></i> ${t.protocol_btn}</button>
+                </div>
+            ` : ''}
+
             ${!isFreeze ? commentsSection : ''}
         `;
 
@@ -2854,6 +2860,148 @@ const app = {
         }
 
         this.showModal('voting-detail-modal');
+    },
+
+    // Build and show a printable protocol (Друк / Зберегти PDF) for a completed
+    // voting. Available to every member. Secret votes show counts only (no names).
+    async printProtocol(votingId) {
+        const t = this.translations[this.currentLanguage];
+        const voting = this.state.votings.find(v => v.id === votingId);
+        if (!voting) return;
+
+        let votes = [];
+        let counts = { yes: voting.yesVotes || 0, no: voting.noVotes || 0, abstain: voting.abstainVotes || 0 };
+        let voterTotal = voting.totalMembers || 0;
+        try {
+            const [votesRes, resultsRes, vcRes] = await Promise.all([
+                supabaseService.getVotingVotes(votingId),
+                supabaseService.getVotingResults([votingId]),
+                supabaseService.getVoterCount(voting.groupId)
+            ]);
+            if (votesRes.data) votes = votesRes.data;
+            if (resultsRes.data && resultsRes.data[0]) {
+                const r = resultsRes.data[0];
+                counts = { yes: r.yes_votes || 0, no: r.no_votes || 0, abstain: r.abstain_votes || 0 };
+            }
+            if (vcRes.data != null) voterTotal = vcRes.data;
+        } catch (e) { /* fall back to cached numbers */ }
+
+        const esc = (s) => this.escapeHTML(String(s == null ? '' : s));
+        const locale = this.currentLanguage === 'en' ? 'en-GB' : (this.currentLanguage === 'ru' ? 'ru-RU' : 'uk-UA');
+        const fmt = (d) => { if (!d) return '—'; const dt = new Date(d); return isNaN(dt) ? '—' : dt.toLocaleString(locale); };
+        const isSecret = voting.type === 'secret';
+        const typeLabel = isSecret ? t.type_secret
+            : voting.type === 'admin-change' ? t.type_admin
+            : voting.type === 'remove-member' ? t.type_remove
+            : voting.type === 'delete-group' ? (t.type_delete_group || t.type_simple)
+            : t.type_simple;
+        const total = voterTotal > 0 ? voterTotal : 1;
+        const cast = counts.yes + counts.no + counts.abstain;
+        const turnout = Math.round((cast / total) * 100);
+        const share = (n) => cast > 0 ? Math.round((n / cast) * 100) : 0;
+        const needed = Math.floor(total / 2) + 1;
+        const accepted = voting.result === 'accepted';
+        const voteWord = (ch) => ch === 'yes' ? t.vote_yes : ch === 'no' ? t.vote_no : t.vote_abstain;
+        const voteColor = (ch) => ch === 'yes' ? '#1d7a4d' : ch === 'no' ? '#b3261e' : '#5f5e5a';
+
+        const metaRow = (label, value) => `<tr><td style="color:#666;padding:3px 0;width:150px;vertical-align:top;">${esc(label)}</td><td style="padding:3px 0;font-weight:500;">${value}</td></tr>`;
+        let targetRow = '';
+        if ((voting.type === 'admin-change' || voting.type === 'remove-member') && voting.targetMemberName) {
+            targetRow = metaRow(voting.type === 'admin-change' ? t.target_admin_candidate : t.target_member_remove, esc(voting.targetMemberName));
+        }
+
+        const bar = (label, n, color) => `
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px;">
+                <div style="width:90px;font-size:13px;">${esc(label)}</div>
+                <div style="flex:1;height:18px;background:#eee;border-radius:4px;overflow:hidden;"><div style="width:${share(n)}%;height:100%;background:${color};"></div></div>
+                <div style="width:74px;text-align:right;font-size:13px;font-weight:500;">${n} · ${share(n)}%</div>
+            </div>`;
+
+        let listSection;
+        if (isSecret) {
+            listSection = `<div style="font-size:12.5px;color:#666;margin-top:6px;">${esc(t.protocol_secret_note)}</div>`;
+        } else if (votes.length) {
+            const rows = votes.map(v => {
+                const nm = v.voter ? `${v.voter.first_name || ''} ${v.voter.last_name || ''}`.trim() : '';
+                return `<tr>
+                    <td style="padding:5px 4px;border-bottom:0.5px solid #ddd;">${esc(v.voter && v.voter.apartment ? v.voter.apartment : '—')}</td>
+                    <td style="padding:5px 4px;border-bottom:0.5px solid #ddd;">${esc(nm)}</td>
+                    <td style="padding:5px 4px;border-bottom:0.5px solid #ddd;color:${voteColor(v.choice)};">${esc(voteWord(v.choice))}</td>
+                    <td style="padding:5px 4px;border-bottom:0.5px solid #ddd;color:#666;">${esc(fmt(v.created_at))}</td>
+                    <td style="padding:5px 4px;border-bottom:0.5px solid #ddd;color:#444;">${esc(v.comment || '')}</td>
+                </tr>`;
+            }).join('');
+            listSection = `<table style="width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;">
+                <thead><tr style="text-align:left;color:#666;">
+                    <th style="padding:6px 4px;width:46px;font-weight:400;border-bottom:0.5px solid #ccc;">${esc(t.protocol_col_apt)}</th>
+                    <th style="padding:6px 4px;font-weight:400;border-bottom:0.5px solid #ccc;">${esc(t.protocol_col_voter)}</th>
+                    <th style="padding:6px 4px;width:80px;font-weight:400;border-bottom:0.5px solid #ccc;">${esc(t.protocol_col_vote)}</th>
+                    <th style="padding:6px 4px;width:120px;font-weight:400;border-bottom:0.5px solid #ccc;">${esc(t.protocol_col_time)}</th>
+                    <th style="padding:6px 4px;width:150px;font-weight:400;border-bottom:0.5px solid #ccc;">${esc(t.export_comments)}</th>
+                </tr></thead><tbody>${rows}</tbody></table>`;
+        } else {
+            listSection = `<div style="font-size:12.5px;color:#666;margin-top:6px;">${esc(t.protocol_no_votes)}</div>`;
+        }
+
+        const descBlock = voting.description
+            ? `<div style="margin:12px 0 16px;padding:10px 12px;background:#f6f6f4;border-radius:8px;color:#444;font-size:12.5px;">${esc(voting.description)}</div>`
+            : '';
+
+        const html = `
+            <div style="text-align:center;border-bottom:0.5px solid #ddd;padding-bottom:14px;margin-bottom:18px;">
+                <div style="font-size:12px;letter-spacing:0.12em;color:#888;">SPILKA · SPILKA.TOP</div>
+                <div style="font-size:21px;font-weight:500;margin-top:10px;">${esc(t.protocol_heading)}</div>
+                <div style="font-size:13px;color:#666;margin-top:2px;">${esc(t.protocol_subtitle)}</div>
+                <div style="font-size:13px;margin-top:10px;">${esc(t.protocol_group)}: «${esc(voting.groupName || '')}»</div>
+            </div>
+            <table style="width:100%;font-size:13px;border-collapse:collapse;">
+                ${metaRow(t.export_question, '<span style="font-weight:500;">' + esc(voting.title) + '</span>')}
+                ${metaRow(t.export_type, esc(typeLabel))}
+                ${targetRow}
+                ${metaRow(t.protocol_initiator, esc(voting.initiatorName || '—'))}
+                ${metaRow(t.protocol_period, esc(fmt(voting.createdAt)) + ' — ' + esc(fmt(voting.endedAt || voting.endsAt)))}
+            </table>
+            ${descBlock}
+            <div style="font-size:14px;font-weight:500;margin:14px 0 10px;">${esc(t.protocol_quorum)}</div>
+            <div style="display:flex;gap:10px;margin-bottom:18px;">
+                <div style="flex:1;background:#f6f6f4;border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#666;">${esc(t.protocol_voters)}</div><div style="font-size:22px;font-weight:500;">${voterTotal}</div></div>
+                <div style="flex:1;background:#f6f6f4;border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#666;">${esc(t.protocol_voted)}</div><div style="font-size:22px;font-weight:500;">${cast}</div></div>
+                <div style="flex:1;background:#f6f6f4;border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#666;">${esc(t.protocol_turnout)}</div><div style="font-size:22px;font-weight:500;">${turnout}%</div></div>
+            </div>
+            <div style="font-size:14px;font-weight:500;margin:0 0 10px;">${esc(t.protocol_results)}</div>
+            ${bar(t.export_yes, counts.yes, '#1d7a4d')}
+            ${bar(t.export_no, counts.no, '#b3261e')}
+            ${bar(t.vote_abstain, counts.abstain, '#b4b2a9')}
+            <div style="margin:16px 0 20px;padding:12px 14px;background:${accepted ? '#e7f4ec' : '#fbeaea'};border-radius:8px;">
+                <div style="font-size:15px;font-weight:500;color:${accepted ? '#1d7a4d' : '#b3261e'};">${esc(accepted ? t.protocol_decision_accepted : t.protocol_decision_rejected)}</div>
+                <div style="font-size:12px;color:#555;margin-top:2px;">${esc(t.protocol_rule)} (≥${needed} / ${total}). «${esc(t.export_yes)}» — ${counts.yes}.</div>
+            </div>
+            <div style="font-size:14px;font-weight:500;margin:0 0 8px;">${esc(t.protocol_namewise)}</div>
+            ${listSection}
+            <div style="display:flex;gap:30px;margin-top:28px;padding-top:18px;border-top:0.5px solid #ddd;">
+                <div style="flex:1;"><div style="border-bottom:0.5px solid #999;height:26px;"></div><div style="font-size:11.5px;color:#666;margin-top:4px;">${esc(t.protocol_chair)}</div></div>
+                <div style="flex:1;"><div style="border-bottom:0.5px solid #999;height:26px;"></div><div style="font-size:11.5px;color:#666;margin-top:4px;">${esc(t.protocol_secretary)}</div></div>
+            </div>
+            <div style="font-size:11px;color:#999;margin-top:16px;text-align:center;">${esc(t.protocol_generated)} · spilka.top · ${esc(fmt(new Date()))} · ID ${esc(voting.id)}</div>
+        `;
+
+        let ov = document.getElementById('protocol-overlay');
+        if (!ov) { ov = document.createElement('div'); ov.id = 'protocol-overlay'; ov.className = 'protocol-overlay'; document.body.appendChild(ov); }
+        ov.innerHTML = `
+            <div class="protocol-toolbar">
+                <button class="btn btn-secondary" onclick="app.closeProtocol()"><i class="ph ph-x" aria-hidden="true"></i> ${t.protocol_close}</button>
+                <button class="btn btn-primary" onclick="window.print()"><i class="ph ph-printer" aria-hidden="true"></i> ${t.protocol_print}</button>
+            </div>
+            <div class="protocol-paper" id="protocol-paper">${html}</div>`;
+        ov.style.display = 'block';
+        document.body.classList.add('protocol-open');
+        ov.scrollTop = 0;
+    },
+
+    closeProtocol() {
+        const ov = document.getElementById('protocol-overlay');
+        if (ov) ov.style.display = 'none';
+        document.body.classList.remove('protocol-open');
     },
 
     async vote(votingId, voteType) {
@@ -3993,6 +4141,31 @@ const app = {
             im_here_done: 'Готово — вас повернуто до підрахунку',
             member_restored_done: 'Учасника повернуто до підрахунку',
             restore_member_menu: 'Повернути до підрахунку',
+            protocol_btn: 'Протокол',
+            protocol_print: 'Друк / Зберегти PDF',
+            protocol_close: 'Закрити',
+            protocol_heading: 'Протокол голосування',
+            protocol_subtitle: 'онлайн-голосування спільноти',
+            protocol_group: 'Спільнота',
+            protocol_initiator: 'Ініціатор',
+            protocol_period: 'Період голосування',
+            protocol_quorum: 'Кворум та участь',
+            protocol_voters: 'Голосуючих',
+            protocol_voted: 'Проголосувало',
+            protocol_turnout: 'Явка',
+            protocol_results: 'Результати',
+            protocol_decision_accepted: 'Рішення прийнято',
+            protocol_decision_rejected: 'Рішення відхилено',
+            protocol_rule: 'Потрібно більше половини голосуючих',
+            protocol_namewise: 'Поіменний список голосів',
+            protocol_secret_note: 'Таємне голосування — поіменний список не розкривається.',
+            protocol_no_votes: 'Голосів не подано',
+            protocol_col_apt: 'Кв.',
+            protocol_col_voter: 'Співвласник',
+            protocol_col_vote: 'Голос',
+            protocol_col_time: 'Час',
+            instr_protocol_title: 'Протокол голосування (друк / PDF)',
+            instr_protocol_desc: 'Будь-який учасник може роздрукувати протокол завершеного голосування. Відкрийте голосування → «Протокол» → «Друк / Зберегти PDF». У протоколі: питання, тип, період, кворум і явка, результат із підрахунком «За/Проти/Утрималися», поіменний список голосів (для відкритого голосування) та місце для підписів. Для таємного — лише підсумкові цифри, без імен.',
             duration: 'Тривалість',
             hour: 'година',
             hours: 'години',
@@ -4436,6 +4609,31 @@ const app = {
             im_here_done: 'Done — you are back in the count',
             member_restored_done: 'Member returned to the count',
             restore_member_menu: 'Return to the count',
+            protocol_btn: 'Protocol',
+            protocol_print: 'Print / Save PDF',
+            protocol_close: 'Close',
+            protocol_heading: 'Voting protocol',
+            protocol_subtitle: 'community online vote',
+            protocol_group: 'Community',
+            protocol_initiator: 'Initiator',
+            protocol_period: 'Voting period',
+            protocol_quorum: 'Quorum and turnout',
+            protocol_voters: 'Eligible voters',
+            protocol_voted: 'Voted',
+            protocol_turnout: 'Turnout',
+            protocol_results: 'Results',
+            protocol_decision_accepted: 'Decision adopted',
+            protocol_decision_rejected: 'Decision rejected',
+            protocol_rule: 'Requires more than half of eligible voters',
+            protocol_namewise: 'Itemized list of votes',
+            protocol_secret_note: 'Secret ballot — the itemized list is not disclosed.',
+            protocol_no_votes: 'No votes were cast',
+            protocol_col_apt: 'Apt.',
+            protocol_col_voter: 'Member',
+            protocol_col_vote: 'Vote',
+            protocol_col_time: 'Time',
+            instr_protocol_title: 'Voting protocol (print / PDF)',
+            instr_protocol_desc: 'Any member can print the protocol of a completed voting. Open the voting → "Protocol" → "Print / Save PDF". The protocol contains: question, type, period, quorum and turnout, the result with Yes/No/Abstain tallies, an itemized list of votes (for open voting) and space for signatures. For a secret ballot only the summary figures are shown, without names.',
             duration: 'Duration',
             hour: 'hour',
             hours: 'hours',
@@ -4879,6 +5077,31 @@ const app = {
             im_here_done: 'Готово — вы снова в подсчёте',
             member_restored_done: 'Участник возвращён в подсчёт',
             restore_member_menu: 'Вернуть в подсчёт',
+            protocol_btn: 'Протокол',
+            protocol_print: 'Печать / Сохранить PDF',
+            protocol_close: 'Закрыть',
+            protocol_heading: 'Протокол голосования',
+            protocol_subtitle: 'онлайн-голосование сообщества',
+            protocol_group: 'Сообщество',
+            protocol_initiator: 'Инициатор',
+            protocol_period: 'Период голосования',
+            protocol_quorum: 'Кворум и участие',
+            protocol_voters: 'Голосующих',
+            protocol_voted: 'Проголосовало',
+            protocol_turnout: 'Явка',
+            protocol_results: 'Результаты',
+            protocol_decision_accepted: 'Решение принято',
+            protocol_decision_rejected: 'Решение отклонено',
+            protocol_rule: 'Нужно больше половины голосующих',
+            protocol_namewise: 'Поименный список голосов',
+            protocol_secret_note: 'Тайное голосование — поименный список не раскрывается.',
+            protocol_no_votes: 'Голосов не подано',
+            protocol_col_apt: 'Кв.',
+            protocol_col_voter: 'Участник',
+            protocol_col_vote: 'Голос',
+            protocol_col_time: 'Время',
+            instr_protocol_title: 'Протокол голосования (печать / PDF)',
+            instr_protocol_desc: 'Любой участник может распечатать протокол завершённого голосования. Откройте голосование → «Протокол» → «Печать / Сохранить PDF». В протоколе: вопрос, тип, период, кворум и явка, результат с подсчётом «За/Против/Воздержались», поименный список голосов (для открытого голосования) и место для подписей. Для тайного — только итоговые цифры, без имён.',
             duration: 'Длительность',
             hour: 'час',
             hours: 'часов',
