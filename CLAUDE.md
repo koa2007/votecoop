@@ -7,7 +7,8 @@
 **Live & working:**
 - Auth (Google OAuth + email/password) via Supabase
 - Groups: create / join by 6-digit code / approve requests / leave / delete-via-voting
-- Votings: 6 types (simple, secret, admin-change, remove-member, freeze, delete-group)
+- Votings: 6 types (simple, secret, admin-change, remove-member, freeze=«exclude-from-count», delete-group)
+  - Freeze reworked 2026-06-29 → "Виключення з підрахунку": removes ghost members (sold flat / gone) from the quorum denominator. Admin-only; fixed 5-day objection window; 2 distinct objections OR the target objecting = instant cancel; self-restore "Я тут" + admin restore; per-voting quorum snapshot; floor guard (≥2 active); new owner replaces ghost. Full backend in pb_hooks (was a no-op stub before). Memory: `freeze-exclude-redesign`.
 - Voting: yes / no / abstain + comments
 - Notifications (in-app, real-time via Supabase)
 - i18n: UK / EN / RU
@@ -23,7 +24,7 @@
 - Native mobile app (React Native) — when web is battle-tested
 - Telegram bot / email digests
 - Real-time presence
-- Advanced freeze flow: daily reminders to frozen members, auto-removal
+- Re-proposal cooldown after a cancelled exclusion (time-based) — only concurrent-duplicate guard is in; full cooldown deemed low-value since self-restore/instant-cancel already defang harassment
 
 ## 🛠 Stack
 
