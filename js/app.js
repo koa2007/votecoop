@@ -2139,9 +2139,9 @@ const app = {
                 reasonGroup.classList.remove('hidden');
             }
         } else if (type === 'freeze') {
-            // Fixed 7 days (168 hours) for freeze votes
+            // Fixed 5-day objection window — the admin cannot shorten it (server enforces it too).
             durationGroup.classList.add('hidden');
-            document.getElementById('voting-duration').value = '168';
+            document.getElementById('voting-duration').value = '120';
 
             // Show freeze member selection
             if (freezeGroup) freezeGroup.classList.remove('hidden');
@@ -2338,7 +2338,7 @@ const app = {
                 link,
                 targetMemberId: targetMemberId || null,
                 removalReason,
-                freezeDurationDays: type === 'freeze' ? 7 : null
+                freezeDurationDays: type === 'freeze' ? 5 : null
             });
 
             if (error) throw new Error(error.message);
@@ -3120,7 +3120,9 @@ const app = {
         // Count frozen / voter / observer members
         const members = group.members || [];
         const frozenCount = members.filter(m => m.frozen).length;
-        const voterCount = members.filter(m => !m.isObserver).length;
+        // Excluded ("frozen") members are out of the quorum denominator, so they
+        // are not counted as active voters here either — keeps the breakdown honest.
+        const voterCount = members.filter(m => !m.isObserver && !m.frozen).length;
         const observerCount = members.filter(m => m.isObserver).length;
 
         document.getElementById('group-members-count').textContent = group.membersCount;
@@ -3158,8 +3160,58 @@ const app = {
         document.getElementById('member-search').value = '';
         document.getElementById('clear-search').style.display = 'none';
 
+        // Show "I'm here" banner if the current user was excluded from the count
+        this.renderExcludedSelfBanner(group);
+
         // Render members with participation data
         this.renderMembersList(group);
+    },
+
+    // If the current user is excluded from the count in this group, show a
+    // prominent self-service banner so a present (wrongly-excluded) person can
+    // restore themselves instantly — a real "ghost" never clicks it.
+    renderExcludedSelfBanner(group) {
+        const t = this.translations[this.currentLanguage];
+        const ml = document.getElementById('members-list');
+        if (!ml) return;
+        let banner = document.getElementById('excluded-self-banner');
+        const me = (group.members || []).find(m => m.id === this.state.user.id);
+        if (me && me.frozen) {
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'excluded-self-banner';
+                ml.parentNode.insertBefore(banner, ml);
+            }
+            banner.className = 'excluded-self-banner';
+            banner.innerHTML = `
+                <div class="esb-text">
+                    <i class="ph-fill ph-snowflake" aria-hidden="true"></i>
+                    <span>${t.excluded_self_text}</span>
+                </div>
+                <button class="btn btn-primary esb-btn" onclick="app.restoreMe('${group.id}')">
+                    <i class="ph ph-hand-waving" aria-hidden="true"></i> ${t.im_here_btn}
+                </button>`;
+        } else if (banner) {
+            banner.remove();
+        }
+    },
+
+    // Self-service restore: the excluded member returns themselves to the count.
+    async restoreMe(groupId) {
+        const t = this.translations[this.currentLanguage];
+        const { error } = await supabaseService.restoreMe(groupId);
+        if (error) { this.toastError(t.auth_error_network || 'Помилка'); return; }
+        this.toastSuccess(t.im_here_done);
+        await this.showGroupDetail(groupId);
+    },
+
+    // Admin manually returns an excluded member to the count.
+    async adminRestoreMember(groupId, userId) {
+        const t = this.translations[this.currentLanguage];
+        const { error } = await supabaseService.setMemberFrozen(groupId, userId, false);
+        if (error) { this.toastError(t.auth_error_network || 'Помилка'); return; }
+        this.toastSuccess(t.member_restored_done);
+        await this.showGroupDetail(groupId);
     },
 
     // Calculate member participation in group votings
@@ -3252,9 +3304,12 @@ const app = {
                 ? `<span class="role-badge observer" title="${t.role_observer || 'Спостерігач'}">👁️</span>`
                 : `<span class="role-badge voter" title="${t.role_voter || 'Голосуючий'}">👍</span>`;
             const aptDisplay = member.apartment ? `кв. ${this.escapeHTML(member.apartment)}` : '';
-            const adminMenu = isAdmin && member.id !== this.state.user.id
-                ? `<button class="btn-icon-sm member-role-btn" onclick="app.showChangeRoleMenu('${group.id}', '${member.id}', ${member.isObserver})" title="${t.change_role_menu || 'Змінити роль'}" aria-label="${t.change_role_menu || 'Змінити роль'}"><i class="ph ph-swap" aria-hidden="true"></i></button>`
+            const restoreBtn = isAdmin && member.frozen
+                ? `<button class="btn-icon-sm member-restore-btn" onclick="app.adminRestoreMember('${group.id}', '${member.id}')" title="${t.restore_member_menu}" aria-label="${t.restore_member_menu}"><i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i></button>`
                 : '';
+            const adminMenu = (isAdmin && member.id !== this.state.user.id
+                ? `<button class="btn-icon-sm member-role-btn" onclick="app.showChangeRoleMenu('${group.id}', '${member.id}', ${member.isObserver})" title="${t.change_role_menu || 'Змінити роль'}" aria-label="${t.change_role_menu || 'Змінити роль'}"><i class="ph ph-swap" aria-hidden="true"></i></button>`
+                : '') + restoreBtn;
             return `
             <div class="member-card ${member.frozen ? 'frozen' : ''}">
                 <div class="member-avatar">
@@ -3911,28 +3966,33 @@ const app = {
             type_secret: 'Тайне голосування',
             type_admin: 'Зміна адміністратора',
             type_remove: 'Видалення учасника',
-            type_freeze: 'Заморозка учасників',
-            freeze_members: 'Учасники для заморозки',
-            freeze_info: 'Заморозка діє 7 днів. Будь-які 2 учасники можуть оскаржити.',
-            freeze_proposal: 'Пропозиція заморозки',
-            freeze_duration_info: 'Термін дії: 7 днів. Якщо 2 учасники не згодні — заморозка скасовується.',
-            freeze_voting: 'Заморозка',
-            only_admin_can_freeze: 'Тільки адміністратор може створити голосування на заморозку',
-            select_freeze_members: 'Виберіть хоча б одного учасника для заморозки',
+            type_freeze: 'Виключити з підрахунку',
+            freeze_members: 'Кого виключити з підрахунку',
+            freeze_info: 'Виключає учасника з підрахунку голосів (напр., квартиру продано або людина не бере участі). На заперечення — 5 днів; будь-які 2 учасники можуть скасувати.',
+            freeze_proposal: 'Пропозиція виключити з підрахунку',
+            freeze_duration_info: 'Заперечити можна 5 днів. Якщо 2 учасники натиснуть «Не згоден» — виключення скасується. Сам учасник може повернути себе будь-коли кнопкою «Я тут».',
+            freeze_voting: 'Виключення з підрахунку',
+            only_admin_can_freeze: 'Тільки адміністратор може запропонувати виключення з підрахунку',
+            select_freeze_members: 'Виберіть хоча б одного учасника',
             i_disagree: 'Я не згоден',
-            disagree_info: 'Якщо збереться 2 учасники, які не згодні — заморозка буде скасована автоматично.',
+            disagree_info: 'Якщо 2 учасники не згодні — виключення буде скасовано автоматично.',
             you_objected: 'Ви висловили незгоду',
             already_objected: 'Ви вже висловили незгоду',
             objection_added: 'Вашу незгоду записано',
             objections_title: 'Незгода',
             no_objections: 'Поки що ніхто не висловив незгоду',
             objections_needed: 'Потрібно ще {count} учасників для скасування',
-            auto_rejected: 'автоматично відхилено',
-            freeze_rejected: 'Заморозку відхилено',
-            freeze_auto_rejected: 'Заморозку автоматично відхилено через 2 незгоди',
-            frozen_badge: 'заморожено',
-            frozen_abbr: 'замор.',
-            frozen_cannot_vote: 'Ви заморожені та не можете голосувати',
+            auto_rejected: 'автоматично скасовано',
+            freeze_rejected: 'Виключення скасовано',
+            freeze_auto_rejected: 'Виключення скасовано: учасники заперечили',
+            frozen_badge: 'поза підрахунком',
+            frozen_abbr: 'поза',
+            frozen_cannot_vote: 'Вас виключено з підрахунку. Натисніть «Я тут», щоб повернутися й голосувати.',
+            excluded_self_text: 'Вас виключено з підрахунку голосів цієї групи. Якщо ви берете участь — поверніть себе одним дотиком.',
+            im_here_btn: 'Я тут',
+            im_here_done: 'Готово — вас повернуто до підрахунку',
+            member_restored_done: 'Учасника повернуто до підрахунку',
+            restore_member_menu: 'Повернути до підрахунку',
             duration: 'Тривалість',
             hour: 'година',
             hours: 'години',
@@ -3997,8 +4057,8 @@ const app = {
             instr_admin_desc: 'Хто створює: будь-який учасник. Кого можна обрати: будь-якого не-адмін учасника зі списку. Вимоги: у групі має бути мінімум 3 учасники. Тривалість фіксована: 72 години (3 доби). Прийнято, якщо «За» проголосувало більше половини всіх учасників групи. При успіху ролі змінюються автоматично: попередній адмін стає звичайним учасником, обраний — адміністратором. У групі може бути лише одне таке голосування одночасно.',
             instr_remove_title: 'Видалення учасника',
             instr_remove_desc: 'Хто створює: будь-який учасник. Обов\'язково: вказати причину (4 готові варіанти або довільний текст). Вимоги: мінімум 3 учасники в групі. Тривалість фіксована: 72 години. Прийнято, якщо «За» проголосувало більше половини всіх учасників групи. При успіху учасник автоматично видаляється з групи і отримує сповіщення з причиною.',
-            instr_freeze_title: 'Заморозка учасника (BETA)',
-            instr_freeze_desc: 'Хто створює: лише адміністратор. Хто заморожується: один або кілька учасників, обраних адміном. Тривалість заморозки: 7 днів — заморожений учасник не може голосувати. Скасування: якщо за час голосування будь-які 2 учасники натиснули «Не згоден» — заморозка автоматично скасовується (звичайних голосів «За/Проти» тут немає). Якщо ніхто не заперечив — заморозка набирає чинності і автоматично знімається через 7 днів.',
+            instr_freeze_title: 'Виключення з підрахунку',
+            instr_freeze_desc: 'Навіщо: щоб «мертві душі» (квартиру продано, людина виїхала чи зовсім не бере участі) не псували підрахунок — їх можна тимчасово прибрати зі знаменника, щоб відсоток участі та кворум відповідали реальності. Хто пропонує: лише адміністратор. Заперечення: 5 днів — будь-які 2 учасники, що натиснуть «Не згоден», скасовують виключення (звичайних голосів «За/Проти» тут немає). Якщо сам учасник заперечить — виключення скасовується одразу (це доказ, що він на місці). Повернення: виключений учасник будь-коли повертає себе кнопкою «Я тут»; адміністратор теж може повернути його вручну. Коли в ту саму квартиру вступає новий власник — виключеного «привида» система прибирає автоматично. Запобіжник: не можна виключити стількох, щоб активних залишилось менше двох.',
             instr_delete_group_title: 'Видалення групи',
             instr_delete_group_desc: 'Хто створює: будь-який учасник (адміністратор зобов\'язаний використати саме це голосування, якщо в групі більше 1 учасника). Тривалість: мінімум 24 години — задає автор. Прийнято, якщо «За» проголосувало більше половини всіх учасників. При успіху група, всі її голосування та історія видаляються безповоротно, всі учасники отримують сповіщення. У групі може бути лише одне таке голосування одночасно.',
             instr_leave_group_title: 'Вихід із групи',
@@ -4022,13 +4082,13 @@ const app = {
             instr_badge_green: 'Прийнято (50%+1 проголосували «За»)',
             instr_badge_red: 'Відхилено (більшість проголосувала «Проти» або недостатньо голосів)',
             instr_badge_blue: 'Тайне голосування (імена голосуючих приховані)',
-            instr_badge_frozen: 'Заморожений учасник (не може голосувати)',
+            instr_badge_frozen: 'Учасник поза підрахунком голосів',
             instr_badge_admin: 'Адміністратор групи',
             instr_rules: 'Правила та терміни',
             instr_duration_title: 'Тривалість',
             instr_duration_1: '• Звичайні/тайні голосування: від 1 години до 5 днів',
             instr_duration_2: '• Зміна адміна / Видалення учасника: фіксовано 72 години',
-            instr_duration_3: '• Заморозка: 7 днів дії після прийняття',
+            instr_duration_3: '• Виключення з підрахунку: 5 днів на заперечення',
             instr_decision_title: 'Прийняття рішень',
             instr_decision_desc: 'Для прийняття рішення потрібно 50%+1 голос від <strong>голосуючих</strong> учасників групи (спостерігачі не враховуються). Результат визначається автоматично по завершенню терміну.',
             instr_limits_title: 'Обмеження',
@@ -4349,28 +4409,33 @@ const app = {
             type_secret: 'Secret voting',
             type_admin: 'Change administrator',
             type_remove: 'Remove member',
-            type_freeze: 'Freeze members',
-            freeze_members: 'Members to freeze',
-            freeze_info: 'Freeze lasts 7 days. Any 2 members can object.',
-            freeze_proposal: 'Freeze proposal',
-            freeze_duration_info: 'Duration: 7 days. If 2 members disagree — freeze is cancelled.',
-            freeze_voting: 'Freeze',
-            only_admin_can_freeze: 'Only administrator can create freeze voting',
-            select_freeze_members: 'Select at least one member to freeze',
+            type_freeze: 'Exclude from count',
+            freeze_members: 'Who to exclude from the count',
+            freeze_info: 'Excludes a member from the vote count (e.g. the flat was sold or the person does not take part). 5 days to object; any 2 members can cancel it.',
+            freeze_proposal: 'Proposal to exclude from the count',
+            freeze_duration_info: 'You have 5 days to object. If 2 members click "I disagree" the exclusion is cancelled. The member can return themselves any time with "I\'m here".',
+            freeze_voting: 'Exclude from count',
+            only_admin_can_freeze: 'Only the administrator can propose excluding a member from the count',
+            select_freeze_members: 'Select at least one member',
             i_disagree: 'I disagree',
-            disagree_info: 'If 2 members disagree — freeze will be automatically cancelled.',
+            disagree_info: 'If 2 members disagree the exclusion is cancelled automatically.',
             you_objected: 'You have objected',
             already_objected: 'You have already objected',
             objection_added: 'Your objection has been recorded',
             objections_title: 'Objections',
             no_objections: 'No objections yet',
             objections_needed: 'Need {count} more members to cancel',
-            auto_rejected: 'automatically rejected',
-            freeze_rejected: 'Freeze rejected',
-            freeze_auto_rejected: 'Freeze automatically rejected due to 2 objections',
-            frozen_badge: 'frozen',
-            frozen_abbr: 'frz.',
-            frozen_cannot_vote: 'You are frozen and cannot vote',
+            auto_rejected: 'automatically cancelled',
+            freeze_rejected: 'Exclusion cancelled',
+            freeze_auto_rejected: 'Exclusion cancelled: members objected',
+            frozen_badge: 'out of count',
+            frozen_abbr: 'out',
+            frozen_cannot_vote: 'You are excluded from the count. Tap "I\'m here" to return and vote.',
+            excluded_self_text: 'You have been excluded from this group\'s vote count. If you take part, return yourself with one tap.',
+            im_here_btn: "I'm here",
+            im_here_done: 'Done — you are back in the count',
+            member_restored_done: 'Member returned to the count',
+            restore_member_menu: 'Return to the count',
             duration: 'Duration',
             hour: 'hour',
             hours: 'hours',
@@ -4435,8 +4500,8 @@ const app = {
             instr_admin_desc: 'Who can create: any member. Who can be elected: any non-admin member from the list. Requirements: at least 3 members in the group. Duration is fixed at 72 hours (3 days). Accepted if more than half of ALL members vote "Yes". On success roles are swapped automatically: the previous admin becomes a regular member and the elected member becomes admin. Only one such voting can run at a time per group.',
             instr_remove_title: 'Remove Member',
             instr_remove_desc: 'Who can create: any member. Required: a reason (4 preset options or free text). Requirements: at least 3 members. Duration fixed at 72 hours. Accepted if more than half of ALL members vote "Yes". On success the member is removed from the group automatically and notified with the reason.',
-            instr_freeze_title: 'Freeze Member (BETA)',
-            instr_freeze_desc: 'Who can create: only the administrator. Who is frozen: one or more members chosen by the admin. Freeze duration: 7 days — a frozen member cannot vote. Cancellation: if any 2 members click "I Disagree" during the voting window, the freeze is automatically cancelled (this type has no normal Yes/No votes). If nobody objected, the freeze takes effect and is automatically lifted after 7 days.',
+            instr_freeze_title: 'Exclude from the count',
+            instr_freeze_desc: 'Why: so "ghost" members (flat sold, person moved out or never takes part) don\'t distort the math — they can be removed from the denominator so participation and quorum reflect reality. Who proposes: only the administrator. Objection: 5 days — any 2 members who click "I disagree" cancel the exclusion (there are no normal Yes/No votes here). If the targeted member objects themselves, it is cancelled at once (proof they are present). Return: an excluded member returns themselves any time with "I\'m here"; the admin can also restore them manually. When a new owner joins the same flat, the excluded "ghost" is removed automatically. Safeguard: you cannot exclude so many that fewer than two active members remain.',
             instr_delete_group_title: 'Delete Group',
             instr_delete_group_desc: 'Who can create: any member (the administrator must use this if the group has more than 1 member). Duration: at least 24 hours, set by the author. Accepted if more than half of ALL members vote "Yes". On success the group, its votings, and history are deleted permanently and every member is notified. Only one such voting can run at a time per group.',
             instr_leave_group_title: 'Leave Group',
@@ -4460,13 +4525,13 @@ const app = {
             instr_badge_green: 'Accepted (50%+1 voted "Yes")',
             instr_badge_red: 'Rejected (majority voted "No" or insufficient votes)',
             instr_badge_blue: 'Secret voting (voter names are hidden)',
-            instr_badge_frozen: 'Frozen member (cannot vote)',
+            instr_badge_frozen: 'Member excluded from the vote count',
             instr_badge_admin: 'Group administrator',
             instr_rules: 'Rules & Timeframes',
             instr_duration_title: 'Duration',
             instr_duration_1: '• Standard/secret votings: 1 hour to 5 days',
             instr_duration_2: '• Change admin / Remove member: fixed 72 hours',
-            instr_duration_3: '• Freeze: 7 days effective after acceptance',
+            instr_duration_3: '• Exclude from the count: 5 days to object',
             instr_decision_title: 'Decision Making',
             instr_decision_desc: 'A 50%+1 vote from the group\'s <strong>voters</strong> is required for any decision (observers are not counted). Results are determined automatically when the time expires.',
             instr_limits_title: 'Limits',
@@ -4787,28 +4852,33 @@ const app = {
             type_secret: 'Тайное голосование',
             type_admin: 'Смена администратора',
             type_remove: 'Удаление участника',
-            type_freeze: 'Заморозка участников',
-            freeze_members: 'Участники для заморозки',
-            freeze_info: 'Заморозка действует 7 дней. Любые 2 участника могут оспорить.',
-            freeze_proposal: 'Предложение заморозки',
-            freeze_duration_info: 'Срок действия: 7 дней. Если 2 участника не согласны — заморозка отменяется.',
-            freeze_voting: 'Заморозка',
-            only_admin_can_freeze: 'Только администратор может создать голосование на заморозку',
-            select_freeze_members: 'Выберите хотя бы одного участника для заморозки',
+            type_freeze: 'Исключить из подсчёта',
+            freeze_members: 'Кого исключить из подсчёта',
+            freeze_info: 'Исключает участника из подсчёта голосов (например, квартиру продали или человек не участвует). На возражение — 5 дней; любые 2 участника могут отменить.',
+            freeze_proposal: 'Предложение исключить из подсчёта',
+            freeze_duration_info: 'Возразить можно 5 дней. Если 2 участника нажмут «Не согласен» — исключение отменяется. Сам участник может вернуть себя в любой момент кнопкой «Я тут».',
+            freeze_voting: 'Исключение из подсчёта',
+            only_admin_can_freeze: 'Только администратор может предложить исключение из подсчёта',
+            select_freeze_members: 'Выберите хотя бы одного участника',
             i_disagree: 'Я не согласен',
-            disagree_info: 'Если соберётся 2 участника, которые не согласны — заморозка будет отменена автоматически.',
+            disagree_info: 'Если 2 участника не согласны — исключение будет отменено автоматически.',
             you_objected: 'Вы выразили несогласие',
             already_objected: 'Вы уже выразили несогласие',
             objection_added: 'Ваше несогласие записано',
             objections_title: 'Несогласие',
             no_objections: 'Пока никто не выразил несогласие',
             objections_needed: 'Нужно ещё {count} участников для отмены',
-            auto_rejected: 'автоматически отклонено',
-            freeze_rejected: 'Заморозка отклонена',
-            freeze_auto_rejected: 'Заморозка автоматически отклонена из-за 2 несогласий',
-            frozen_badge: 'заморожено',
-            frozen_abbr: 'замор.',
-            frozen_cannot_vote: 'Вы заморожены и не можете голосовать',
+            auto_rejected: 'автоматически отменено',
+            freeze_rejected: 'Исключение отменено',
+            freeze_auto_rejected: 'Исключение отменено: участники возразили',
+            frozen_badge: 'вне подсчёта',
+            frozen_abbr: 'вне',
+            frozen_cannot_vote: 'Вы исключены из подсчёта. Нажмите «Я тут», чтобы вернуться и голосовать.',
+            excluded_self_text: 'Вы исключены из подсчёта голосов этой группы. Если вы участвуете — верните себя одним касанием.',
+            im_here_btn: 'Я тут',
+            im_here_done: 'Готово — вы снова в подсчёте',
+            member_restored_done: 'Участник возвращён в подсчёт',
+            restore_member_menu: 'Вернуть в подсчёт',
             duration: 'Длительность',
             hour: 'час',
             hours: 'часов',
@@ -4873,8 +4943,8 @@ const app = {
             instr_admin_desc: 'Кто создаёт: любой участник. Кого можно выбрать: любого не-админа из списка участников. Требования: в группе минимум 3 участника. Длительность фиксированная: 72 часа (3 суток). Принято, если «За» проголосовало более половины ВСЕХ участников. При успехе роли меняются автоматически: прежний админ становится обычным участником, выбранный — администратором. В группе одновременно может идти только одно такое голосование.',
             instr_remove_title: 'Удаление участника',
             instr_remove_desc: 'Кто создаёт: любой участник. Обязательно: указать причину (4 готовых варианта или свой текст). Требования: минимум 3 участника. Длительность фиксированная: 72 часа. Принято, если «За» проголосовало более половины ВСЕХ участников. При успехе участник автоматически удаляется из группы и получает уведомление с причиной.',
-            instr_freeze_title: 'Заморозка участника (BETA)',
-            instr_freeze_desc: 'Кто создаёт: только администратор. Кого замораживают: одного или нескольких участников, выбранных админом. Длительность заморозки: 7 дней — замороженный участник не может голосовать. Отмена: если за время голосования любые 2 участника нажали «Не согласен», заморозка автоматически отменяется (обычных голосов «За/Против» здесь нет). Если никто не возразил, заморозка вступает в силу и автоматически снимается через 7 дней.',
+            instr_freeze_title: 'Исключение из подсчёта',
+            instr_freeze_desc: 'Зачем: чтобы «мёртвые души» (квартиру продали, человек уехал или вовсе не участвует) не искажали подсчёт — их можно убрать из знаменателя, чтобы процент участия и кворум отражали реальность. Кто предлагает: только администратор. Возражение: 5 дней — любые 2 участника, нажавшие «Не согласен», отменяют исключение (обычных голосов «За/Против» здесь нет). Если сам участник возразит — исключение отменяется сразу (это доказательство, что он на месте). Возврат: исключённый участник в любой момент возвращает себя кнопкой «Я тут»; администратор тоже может вернуть его вручную. Когда в ту же квартиру вступает новый владелец — исключённого «призрака» система убирает автоматически. Предохранитель: нельзя исключить столько, чтобы активных осталось меньше двух.',
             instr_delete_group_title: 'Удаление группы',
             instr_delete_group_desc: 'Кто создаёт: любой участник (администратор обязан использовать именно это голосование, если в группе больше 1 участника). Длительность: минимум 24 часа — задаёт автор. Принято, если «За» проголосовало более половины ВСЕХ участников. При успехе группа, все её голосования и история удаляются безвозвратно, все участники получают уведомление. В группе одновременно может идти только одно такое голосование.',
             instr_leave_group_title: 'Выход из группы',
@@ -4898,13 +4968,13 @@ const app = {
             instr_badge_green: 'Принято (50%+1 проголосовали «За»)',
             instr_badge_red: 'Отклонено (большинство проголосовало «Против» или недостаточно голосов)',
             instr_badge_blue: 'Тайное голосование (имена голосующих скрыты)',
-            instr_badge_frozen: 'Замороженный участник (не может голосовать)',
+            instr_badge_frozen: 'Участник вне подсчёта голосов',
             instr_badge_admin: 'Администратор группы',
             instr_rules: 'Правила и сроки',
             instr_duration_title: 'Длительность',
             instr_duration_1: '• Обычные/тайные голосования: от 1 часа до 5 дней',
             instr_duration_2: '• Смена админа / Удаление участника: фиксировано 72 часа',
-            instr_duration_3: '• Заморозка: 7 дней действия после принятия',
+            instr_duration_3: '• Исключение из подсчёта: 5 дней на возражение',
             instr_decision_title: 'Принятие решений',
             instr_decision_desc: 'Для принятия решения нужно 50%+1 голос от <strong>голосующих</strong> участников группы (наблюдатели не учитываются). Результат определяется автоматически по завершении срока.',
             instr_limits_title: 'Ограничения',

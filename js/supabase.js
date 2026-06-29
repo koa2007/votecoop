@@ -352,6 +352,7 @@ const supabaseService = {
             if (er.code === 400 && /unique|idx_vote/i.test(raw)) er.code = '23505';
             else if (/observer_cannot_vote/i.test(raw)) er.code = 'observer';
             else if (/voting_not_active/i.test(raw)) er.code = 'voting_inactive';
+            else if (/frozen_cannot_vote/i.test(raw)) er.code = 'frozen';
             else if (/not_member/i.test(raw)) er.code = 'not_member';
             return { data: null, error: er };
         }
@@ -363,7 +364,18 @@ const supabaseService = {
         catch (e) { return { data: null, error: this._err(e) }; }
     },
 
-    // freeze beta
+    // Self-service "I'm here" — an excluded member returns themselves to the count.
+    async restoreMe(groupId) {
+        try { await this.pb.send('/api/spilka/restore-me', { method: 'POST', body: { group_id: groupId } }); return { data: true, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
+    },
+    // Admin manually toggles a member's exclusion from the count.
+    async setMemberFrozen(groupId, userId, frozen) {
+        try { await this.pb.send('/api/spilka/set-frozen', { method: 'POST', body: { group_id: groupId, user_id: userId, frozen: !!frozen } }); return { data: true, error: null }; }
+        catch (e) { return { data: null, error: this._err(e) }; }
+    },
+
+    // freeze (exclude-from-count)
     async addFreezeObjection(votingId) {
         try { const rec = await this.pb.collection('freeze_objections').create({ voting: votingId, user: this._uid() }); return { data: rec, error: null }; }
         catch (e) { const er = this._err(e); if (er.code === 400 && /unique|not_unique/i.test((er.message || '') + JSON.stringify(er.data || ''))) er.code = '23505'; return { data: null, error: er }; }

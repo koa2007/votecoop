@@ -2509,6 +2509,41 @@ html, body {
     background: var(--color-frozen-gradient);
 }
 
+/* "I'm here" self-restore banner for an excluded member */
+.excluded-self-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: var(--color-info-bg);
+    border: 1px solid var(--color-info-light);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    margin-bottom: 12px;
+}
+.excluded-self-banner .esb-text {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 200px;
+    color: var(--color-text);
+    font-size: 14px;
+    line-height: 1.4;
+}
+.excluded-self-banner .esb-text i {
+    color: var(--color-info);
+    font-size: 20px;
+    flex-shrink: 0;
+}
+.excluded-self-banner .esb-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.member-restore-btn:hover {
+    color: var(--color-success, var(--color-info));
+}
+
 .member-card .member-avatar {
     width: 44px;
     height: 44px;
