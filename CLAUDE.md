@@ -108,6 +108,6 @@ cd D:\claudeprojects\Obsidian\autonomus-memory && git pull --quiet
 
 ## ⚠️ Known traps
 
-- `js/config.js` is in `.gitignore` BUT it was committed before the rule was added. The current anon key is public-safe; if rotated, ensure new key isn't committed accidentally.
+- `js/config.js` is committed intentionally — after the PocketBase migration it holds no secret (just `POCKETBASE_URL = window.location.origin`). Never put a real key or token there.
 - `index.html` is monolithic (~860 lines, all screens). Edits should preserve `id` attributes used by `app.js`.
 - `app.js` uses `onclick="app.foo()"` inline handlers extensively — when adding new buttons, expose the method on `app` object.

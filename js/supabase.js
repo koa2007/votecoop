@@ -33,21 +33,28 @@ const supabaseService = {
 
     // ---- profile helpers ----
     async _profileByUser(uid) {
+        // Only a real 404 means "no profile yet". A transient/network error must
+        // NOT look like a missing profile — that routed real users back to the
+        // profile-setup screen. Callers catch and decide.
         try { return await this.pb.collection('profiles').getFirstListItem(`user="${uid}"`); }
-        catch (e) { return null; }
+        catch (e) { if (e?.status === 404) return null; throw e; }
     },
     async _profilesMap(uids) {
         const uniq = [...new Set(uids.filter(Boolean))];
         if (!uniq.length) return {};
         // Single batched query instead of one request per user (was N+1 on the
-        // voting list and group detail — the app's busiest screens).
-        try {
-            const filter = uniq.map(u => `user="${u}"`).join(' || ');
-            const rows = await this.pb.collection('profiles').getFullList({ filter });
-            const map = {};
-            rows.forEach(p => { map[p.user] = p; });
-            return map;
-        } catch (e) { return {}; }
+        // voting list and group detail — the app's busiest screens). One retry:
+        // a transient blip otherwise blanks every name on those screens.
+        const filter = uniq.map(u => `user="${u}"`).join(' || ');
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                const rows = await this.pb.collection('profiles').getFullList({ filter });
+                const map = {};
+                rows.forEach(p => { map[p.user] = p; });
+                return map;
+            } catch (e) { /* retry once, then degrade to empty names */ }
+        }
+        return {};
     },
 
     // === AUTH ===
@@ -130,8 +137,10 @@ const supabaseService = {
 
     // === PROFILE ===
     async getProfile(userId) {
-        const p = await this._profileByUser(userId);
-        return { profile: p ? this._mapProfile(p, userId) : null, error: null };
+        try {
+            const p = await this._profileByUser(userId);
+            return { profile: p ? this._mapProfile(p, userId) : null, error: null };
+        } catch (e) { return { profile: null, error: this._err(e) }; }
     },
     _mapProfile(p, userId) {
         return {
@@ -168,8 +177,8 @@ const supabaseService = {
         } catch (e) { return { profile: null, error: this._err(e) }; }
     },
     async isProfileCompleted(userId) {
-        const p = await this._profileByUser(userId);
-        return !!(p && p.profile_completed);
+        try { const p = await this._profileByUser(userId); return !!(p && p.profile_completed); }
+        catch (e) { return false; }
     },
 
     // === GROUPS ===
@@ -351,7 +360,7 @@ const supabaseService = {
             const er = this._err(e);
             // Normalize the server-side vote-hook rejections to stable codes app.js checks.
             const raw = (er.message || '') + ' ' + JSON.stringify(er.data || '');
-            if (er.code === 400 && /unique|idx_vote/i.test(raw)) er.code = '23505';
+            if (er.code === 400 && /unique|idx_vote|already_voted/i.test(raw)) er.code = '23505';
             else if (/observer_cannot_vote/i.test(raw)) er.code = 'observer';
             else if (/voting_not_active/i.test(raw)) er.code = 'voting_inactive';
             else if (/frozen_cannot_vote/i.test(raw)) er.code = 'frozen';
@@ -427,17 +436,25 @@ const supabaseService = {
     },
     async createNotification() { return { error: null }; }, // server-side via routes
     async markNotificationRead(id) { try { await this.pb.collection('notifications').update(id, { is_read: true }); return { error: null }; } catch (e) { return { error: this._err(e) }; } },
+    // Update in parallel chunks — the old one-by-one loop took seconds for a
+    // user with hundreds of notifications and hammered the backend.
+    async _updateNotifBatch(rows, payload) {
+        const CHUNK = 10;
+        for (let i = 0; i < rows.length; i += CHUNK) {
+            await Promise.all(rows.slice(i, i + CHUNK).map(n => this.pb.collection('notifications').update(n.id, payload)));
+        }
+    },
     async markAllNotificationsRead() {
         const uid = this._uid(); if (!uid) return { error: null };
         try { const rows = await this.pb.collection('notifications').getFullList({ filter: `user="${uid}" && is_read=false` });
-            for (const n of rows) await this.pb.collection('notifications').update(n.id, { is_read: true }); return { error: null }; }
+            await this._updateNotifBatch(rows, { is_read: true }); return { error: null }; }
         catch (e) { return { error: this._err(e) }; }
     },
     async archiveAllNotifications() {
         const uid = this._uid(); if (!uid) return { error: null };
         try { const rows = await this.pb.collection('notifications').getFullList({ filter: `user="${uid}" && archived_at=""` });
             const now = new Date().toISOString();
-            for (const n of rows) await this.pb.collection('notifications').update(n.id, { archived_at: now, is_read: true }); return { error: null }; }
+            await this._updateNotifBatch(rows, { archived_at: now, is_read: true }); return { error: null }; }
         catch (e) { return { error: this._err(e) }; }
     },
     async getArchivedNotifications() {

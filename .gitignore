@@ -30,3 +30,13 @@ build/
 # Supabase local
 supabase/.temp/
 supabase/.branches/
+resend.com.txt
+resend-api-key.txt
+credentials/
+credentials
+*telegram*.txt
+
+# Local-only (added 2026-07-02)
+uptimerobot.txt
+.playwright-mcp/
+.claude/

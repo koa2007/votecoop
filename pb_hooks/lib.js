@@ -47,7 +47,9 @@ module.exports = {
     if (type === "admin-change") {
       if (!target) return;
       const tm = this.membership(tx, gid, target);
-      if (!tm) return;
+      // Target gone or became an observer mid-vote — an admin must be a voting
+      // member (creation hook rejects observers; this covers role changes since).
+      if (!tm || tm.get("is_observer")) return;
       const admins = tx.findRecordsByFilter("group_members", "group = {:g} && role = 'admin'", "", 0, 0, { g: gid });
       for (const a of admins) { a.set("role", "member"); tx.save(a); }
       tm.set("role", "admin"); tx.save(tm);

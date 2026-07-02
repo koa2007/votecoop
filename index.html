@@ -555,11 +555,11 @@
                 <div class="modal-body">
                     <div class="form-group">
                         <label for="group-name" data-lang="group_name">Назва групи</label>
-                        <input type="text" id="group-name" data-lang-placeholder="group_name_placeholder" placeholder="Наприклад: Будинок 61">
+                        <input type="text" id="group-name" maxlength="80" data-lang-placeholder="group_name_placeholder" placeholder="Наприклад: Будинок 61">
                     </div>
                     <div class="form-group">
                         <label data-lang="group_description">Опис (необов'язково)</label>
-                        <textarea id="group-description" data-lang-placeholder="group_desc_placeholder" placeholder="Короткий опис групи..."></textarea>
+                        <textarea id="group-description" maxlength="500" data-lang-placeholder="group_desc_placeholder" placeholder="Короткий опис групи..."></textarea>
                     </div>
                     <p class="hint" data-lang="group_hint">Після створення ви отримаєте унікальний ID для запрошення учасників</p>
                 </div>
@@ -581,7 +581,7 @@
                 <div class="modal-body">
                     <div class="form-group">
                         <label for="voting-title" data-lang="question">Питання</label>
-                        <input type="text" id="voting-title" data-lang-placeholder="question_placeholder" placeholder="Текст питання для голосування">
+                        <input type="text" id="voting-title" maxlength="200" data-lang-placeholder="question_placeholder" placeholder="Текст питання для голосування">
                     </div>
                     <div class="form-group">
                         <label data-lang="description">Опис</label>
@@ -647,7 +647,7 @@
                     </div>
                     <div class="form-group">
                         <label for="voting-link" data-lang="materials_link">Посилання на матеріали</label>
-                        <input type="url" id="voting-link" data-lang-placeholder="link_placeholder" placeholder="Google Drive, Dropbox...">
+                        <input type="url" id="voting-link" maxlength="500" data-lang-placeholder="link_placeholder" placeholder="Google Drive, Dropbox...">
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -708,9 +708,9 @@
             <div class="screen-content">
                 <div class="group-info-card">
                     <div class="group-id-section">
-                        <span class="label">ID групи:</span>
+                        <span class="label" data-lang="group_id_label">ID групи:</span>
                         <span class="group-id" id="group-detail-id">123456</span>
-                        <button class="btn-text" onclick="app.copyGroupId()">Копіювати</button>
+                        <button class="btn-text" onclick="app.copyGroupId()" data-lang="copy_btn">Копіювати</button>
                     </div>
                     <p class="group-description" id="group-detail-description"></p>
                 </div>
@@ -752,8 +752,8 @@
                 </div>
 
                 <div class="section-header">
-                    <h3>Учасники</h3>
-                    <span class="admin-badge" id="group-admin-badge">Адмін</span>
+                    <h3 data-lang="members_header">Учасники</h3>
+                    <span class="admin-badge" id="group-admin-badge" data-lang="admin">Адмін</span>
                 </div>
                 
                 <!-- Members Controls -->
@@ -807,23 +807,23 @@
                 <div class="modal-body">
                     <div class="form-group">
                         <label for="edit-firstname" data-lang="firstname">Ім'я</label>
-                        <input type="text" id="edit-firstname" placeholder="Ваше ім'я">
+                        <input type="text" id="edit-firstname" maxlength="50" placeholder="Ваше ім'я">
                     </div>
                     <div class="form-group">
                         <label for="edit-lastname" data-lang="lastname">Прізвище</label>
-                        <input type="text" id="edit-lastname" placeholder="Ваше прізвище">
+                        <input type="text" id="edit-lastname" maxlength="50" placeholder="Ваше прізвище">
                     </div>
                     <div class="form-group">
                         <label for="edit-phone" data-lang="phone">Телефон</label>
-                        <input type="tel" id="edit-phone" placeholder="+380 XX XXX XXXX">
+                        <input type="tel" id="edit-phone" maxlength="20" placeholder="+380 XX XXX XXXX">
                     </div>
                     <div class="form-group">
                         <label for="edit-address" data-lang="address">Адреса об'єкта</label>
-                        <input type="text" id="edit-address" placeholder="вул. Шевченка, буд. 61">
+                        <input type="text" id="edit-address" maxlength="120" placeholder="вул. Шевченка, буд. 61">
                     </div>
                     <div class="form-group">
                         <label for="edit-apartment" data-lang="apartment">Квартира/офіс</label>
-                        <input type="text" id="edit-apartment" placeholder="№ 15">
+                        <input type="text" id="edit-apartment" maxlength="10" placeholder="№ 15">
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -876,11 +876,11 @@
                 <div class="modal-body">
                     <div class="form-group">
                         <label for="edit-group-name" data-lang="group_name">Назва групи</label>
-                        <input type="text" id="edit-group-name" placeholder="Назва групи">
+                        <input type="text" id="edit-group-name" maxlength="80" placeholder="Назва групи">
                     </div>
                     <div class="form-group">
                         <label data-lang="group_description">Опис (необов'язково)</label>
-                        <textarea id="edit-group-description" placeholder="Короткий опис групи..." rows="3"></textarea>
+                        <textarea id="edit-group-description" maxlength="500" placeholder="Короткий опис групи..." rows="3"></textarea>
                     </div>
                 </div>
                 <div class="modal-footer">

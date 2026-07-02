@@ -175,9 +175,27 @@ const app = {
         // Load profile from DB
         const { profile, error } = await supabaseService.getProfile(userId);
 
-        if (profile && profile.profile_completed) {
+        // Transient failure ≠ "no profile": don't send a real user to the
+        // profile-setup form because of a network blip. Offline PWA start
+        // continues with the cached profile; otherwise let them retry login.
+        let restoredUser = null;
+        if (error) {
+            try {
+                const cached = JSON.parse(localStorage.getItem('vc_user') || 'null');
+                if (cached && cached.id === userId) restoredUser = cached;
+            } catch (e) { /* ignore */ }
+            if (!restoredUser) {
+                this._authHandledFor = null;
+                const t = this.translations[this.currentLanguage] || {};
+                this.toastError(t.load_failed || 'Не вдалося завантажити. Спробуйте ще раз.');
+                this.showAuthScreen();
+                return;
+            }
+        }
+
+        if (restoredUser || (profile && profile.profile_completed)) {
             // Profile complete — show main app
-            this.state.user = {
+            this.state.user = restoredUser || {
                 id: profile.id,
                 firstName: profile.first_name,
                 lastName: profile.last_name,
@@ -186,6 +204,8 @@ const app = {
                 address: profile.address || '',
                 apartment: profile.apartment || ''
             };
+            // Cache for offline PWA starts (cleared on logout).
+            try { localStorage.setItem('vc_user', JSON.stringify(this.state.user)); } catch (e) { /* ignore */ }
 
             this.setupEventListeners();
             this.updateProfileDisplay();
@@ -880,6 +900,7 @@ const app = {
         try {
             localStorage.removeItem('vc_groups');
             localStorage.removeItem('vc_notifications');
+            localStorage.removeItem('vc_user');
         } catch (e) { /* ignore */ }
         // Wipe cached API responses (groups, votes, profiles, notifications) so the
         // next person on a shared device can't be served the previous user's data.
@@ -1349,7 +1370,7 @@ const app = {
                 }
                 return;
             }
-            this.toastError(msg);
+            this.toastError(this.humanError(error));
             return;
         }
         this.toastSuccess(t.request_approved || 'Запит схвалено');
@@ -1368,7 +1389,7 @@ const app = {
     async rejectFromNotification(notifId, groupId, requestId) {
         const t = this.translations[this.currentLanguage] || {};
         const { error } = await supabaseService.rejectJoinRequest(requestId);
-        if (error) { this.toastError(error.message); return; }
+        if (error) { this.toastError(this.humanError(error)); return; }
         this.toastSuccess(t.request_rejected || 'Запит відхилено');
         this._removeNotifMetadata(notifId);
         await this.markRead(notifId);
@@ -1424,7 +1445,7 @@ const app = {
                 this.toastError(t.archive_needs_migration || 'Спочатку накатіть phase12-notif-archive.sql');
                 return;
             }
-            this.toastError(error.message);
+            this.toastError(this.humanError(error));
             return;
         }
         this.state.notifications = [];
@@ -1576,7 +1597,7 @@ const app = {
         });
         if (!ok) return;
         const { error } = await supabaseService.unarchiveNotification(id);
-        if (error) { this.toastError(error.message); return; }
+        if (error) { this.toastError(this.humanError(error)); return; }
         // Remove from local archive list
         const arch = this.state.archive;
         arch.items = arch.items.filter(n => n.id !== id);
@@ -1640,6 +1661,26 @@ const app = {
     },
 
     toastError(msg)   { return this.toast(msg, 'error'); },
+
+    // Turn a raw backend error into a translated, human message. Never show
+    // technical/English server text ("Failed to create record.") to the user.
+    humanError(error) {
+        const t = this.translations[this.currentLanguage] || {};
+        // Route errors carry the code in the response body ({error:"not_admin"}),
+        // not in message — include both so the specific mappings actually fire.
+        let raw = String(error?.message || '');
+        try { raw += ' ' + JSON.stringify(error?.data || error?.response || ''); } catch (e) { /* ignore */ }
+        const map = {
+            apartment_taken: t.apartment_taken,
+            not_admin: t.err_not_admin,
+            request_not_found: t.err_request_not_found,
+            not_member: t.not_member,
+            admin_must_transfer_first: t.admin_cannot_leave,
+            exclusion_only_via_voting: t.err_exclusion_only_via_voting
+        };
+        for (const k in map) { if (raw.includes(k) && map[k]) return map[k]; }
+        return t.error_generic || t.auth_error_network || 'Сталася помилка. Спробуйте ще раз.';
+    },
     toastSuccess(msg) { return this.toast(msg, 'success'); },
     toastWarning(msg) { return this.toast(msg, 'warning'); },
     toastInfo(msg)    { return this.toast(msg, 'info'); },
@@ -1797,7 +1838,7 @@ const app = {
         const { error } = await supabaseService.submitFeedback(text);
         this.setBtnLoading('feedback-send-btn', false);
         if (error) {
-            this.toastError(error.message);
+            this.toastError(this.humanError(error));
             return;
         }
         this.hideModal('feedback-modal');
@@ -1931,14 +1972,14 @@ const app = {
         const reply = (ta?.value || '').trim();
         if (reply.length < 2) { this.toastError('Напишіть відповідь'); return; }
         const { error } = await supabaseService.replyToFeedback(id, reply);
-        if (error) { this.toastError(error.message); return; }
+        if (error) { this.toastError(this.humanError(error)); return; }
         this.toastSuccess('Відповідь надіслано жителю');
         await this.refreshAdminPanel();
     },
 
     async setFeedbackStatus(id, status) {
         const { error } = await supabaseService.updateFeedbackStatus(id, status);
-        if (error) { this.toastError(error.message); return; }
+        if (error) { this.toastError(this.humanError(error)); return; }
         this.toastSuccess('Статус оновлено');
         await this.refreshAdminPanel();
     },
@@ -2526,6 +2567,10 @@ const app = {
         const voting = this.state.votings.find(v => v.id === votingId);
         if (!voting) return;
 
+        // Re-entrancy guard: if the user opens voting B while A's fetch is still
+        // in flight, A's late response must not overwrite B's modal content.
+        const reqToken = (this._detailReq = (this._detailReq || 0) + 1);
+
         // Save current voting ID for delete modal
         this.state.currentVotingToDelete = votingId;
 
@@ -2582,6 +2627,9 @@ const app = {
         } catch (err) {
             // Continue with cached data if fetch fails
         }
+
+        // A newer showVotingDetail call started while we were fetching — bail out.
+        if (reqToken !== this._detailReq) return;
 
         const content = document.getElementById('voting-detail-content');
         const isActive = voting.status === 'active';
@@ -3082,7 +3130,7 @@ const app = {
 
             voting.hasVoted = true;
             this.renderVotings();
-            this.showVotingDetail(votingId);
+            await this.showVotingDetail(votingId);
         } catch (err) {
             this.toastError(t.auth_error_network || 'Помилка голосування');
         }
@@ -4459,6 +4507,14 @@ const app = {
             join_apartment_required: 'Введіть номер квартири',
             apartment_taken: 'Квартира зайнята голосуючим',
             apartment_taken_hint: 'Оберіть роль "спостерігач" або введіть іншу квартиру.',
+            error_generic: 'Сталася помилка. Спробуйте ще раз.',
+            err_not_admin: 'Цю дію може виконати лише адміністратор групи',
+            err_request_not_found: 'Заявку не знайдено — можливо, її вже розглянуто',
+            err_exclusion_only_via_voting: 'Виключення можливе лише через голосування',
+            not_member: 'Ви не учасник цієї групи',
+            group_id_label: 'ID групи:',
+            copy_btn: 'Копіювати',
+            members_header: 'Учасники',
             observer_cannot_vote: 'Спостерігачі не можуть голосувати',
             observer_notice: 'Ви — спостерігач. Голосування для вас недоступне.',
             apartment_taken_now_confirm: 'Квартира вже зайнята. Затвердити як спостерігача?',
@@ -4928,6 +4984,14 @@ const app = {
             join_apartment_required: 'Enter apartment number',
             apartment_taken: 'Apartment taken by a voter',
             apartment_taken_hint: 'Choose "observer" role or enter a different apartment.',
+            error_generic: 'Something went wrong. Please try again.',
+            err_not_admin: 'Only the group administrator can do this',
+            err_request_not_found: 'Request not found — it may already be resolved',
+            err_exclusion_only_via_voting: 'Exclusion is only possible through a voting',
+            not_member: 'You are not a member of this group',
+            group_id_label: 'Group ID:',
+            copy_btn: 'Copy',
+            members_header: 'Members',
             observer_cannot_vote: 'Observers cannot vote',
             observer_notice: 'You are an observer. Voting is not available.',
             apartment_taken_now_confirm: 'Apartment taken. Approve as observer?',
@@ -5397,6 +5461,14 @@ const app = {
             join_apartment_required: 'Введите номер квартиры',
             apartment_taken: 'Квартира занята голосующим',
             apartment_taken_hint: 'Выберите роль "наблюдатель" или введите другую квартиру.',
+            error_generic: 'Произошла ошибка. Попробуйте ещё раз.',
+            err_not_admin: 'Это действие доступно только администратору группы',
+            err_request_not_found: 'Заявка не найдена — возможно, она уже рассмотрена',
+            err_exclusion_only_via_voting: 'Исключение возможно только через голосование',
+            not_member: 'Вы не участник этой группы',
+            group_id_label: 'ID группы:',
+            copy_btn: 'Копировать',
+            members_header: 'Участники',
             observer_cannot_vote: 'Наблюдатели не могут голосовать',
             observer_notice: 'Вы — наблюдатель. Голосование для вас недоступно.',
             apartment_taken_now_confirm: 'Квартира занята. Одобрить как наблюдателя?',

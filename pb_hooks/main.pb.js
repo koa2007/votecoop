@@ -15,6 +15,13 @@ onRecordCreateRequest((e) => {
     if (m.get("role") !== "admin") throw new BadRequestError("only_admin_can_freeze");
     e.record.set("ends_at", new Date(Date.now() + 5 * 86400000).toISOString()); // fixed 5-day objection window
   }
+  if (e.record.get("type") === "admin-change") {
+    // An admin must be a voting member: promoting an observer would violate
+    // the admin_cannot_be_observer invariant enforced everywhere else.
+    const tm = L.membership(e.app, gid, e.record.get("target_member"));
+    if (!tm) throw new BadRequestError("target_not_member");
+    if (tm.get("is_observer")) throw new BadRequestError("observer_cannot_be_admin");
+  }
   e.next();
 }, "votings");
 onRecordAfterCreateSuccess((e) => {
@@ -48,6 +55,8 @@ onRecordCreateRequest((e) => {
   // this, an admin could approve new members mid-vote to push a result past a frozen (lower)
   // denominator.
   if (m.getString("created") > v.getString("created")) throw new BadRequestError("joined_after_voting_started");
+  // Friendly duplicate check; the idx_vote_unique index remains the hard guarantee.
+  if (e.app.findRecordsByFilter("votes", "voting = {:v} && user = {:u}", "", 1, 0, { v: v.id, u: e.auth.id }).length) throw new BadRequestError("already_voted");
   e.next();
 }, "votes");
 onRecordCreateRequest((e) => { if (e.auth) e.record.set("user", e.auth.id); e.next(); }, "feedback");
@@ -163,7 +172,11 @@ routerAdd("POST", "/api/spilka/member-votes", (e) => {
   if (!L.membership(e.app, gid, e.auth.id)) return e.json(403, { error: "not_member" });
   const votings = e.app.findRecordsByFilter("votings", "group = {:g} && status != 'deleted'", "", 0, 0, { g: gid });
   const counts = {};
-  for (const v of votings) { const vts = e.app.findRecordsByFilter("votes", "voting = {:v}", "", 0, 0, { v: v.id });
+  for (const v of votings) {
+    // While a secret ballot is ACTIVE, per-member turnout ("Ivanov already voted,
+    // Petrov didn't") is itself sensitive — count it only after completion.
+    if (v.get("type") === "secret" && v.get("status") === "active") continue;
+    const vts = e.app.findRecordsByFilter("votes", "voting = {:v}", "", 0, 0, { v: v.id });
     for (const vt of vts) { const u = vt.get("user"); counts[u] = (counts[u] || 0) + 1; } }
   return e.json(200, { data: Object.keys(counts).map((u) => ({ user_id: u, voted_count: counts[u] })) });
 });
@@ -441,12 +454,17 @@ routerAdd("POST", "/api/spilka/set-frozen", (e) => {
   const L = require(`${__hooks}/lib.js`);
   if (!e.auth) return e.json(401, { error: "not_authenticated" });
   const b = e.requestInfo().body; const gid = b.group_id, targetUid = b.user_id, frozen = !!b.frozen;
-  if (!L.isAdmin(e.app, gid, targetUid === e.auth.id ? "___none___" : e.auth.id) && !L.isAdmin(e.app, gid, e.auth.id)) return e.json(403, { error: "not_admin" });
+  // Exclusion is ONLY possible through a freeze voting (5-day objection window,
+  // instant-cancel, ≥2-active floor guard). This route is restore-only, otherwise
+  // an admin could bypass every safeguard with one direct request.
+  if (frozen) return e.json(400, { error: "exclusion_only_via_voting" });
+  if (!L.isAdmin(e.app, gid, e.auth.id)) return e.json(403, { error: "not_admin" });
   const m = L.membership(e.app, gid, targetUid); if (!m) return e.json(400, { error: "not_member" });
-  if (m.get("role") === "admin" && frozen) return e.json(400, { error: "cannot_exclude_admin" });
-  m.set("is_frozen", frozen); m.set("frozen_until", ""); e.app.save(m);
-  const h = new Record(e.app.findCollectionByNameOrId("group_history"));
-  h.set("group", gid); h.set("action", frozen ? "member_excluded" : "member_restored"); h.set("details", { user: targetUid, by: "admin" }); e.app.save(h);
+  if (m.get("is_frozen")) {
+    m.set("is_frozen", false); m.set("frozen_until", ""); e.app.save(m);
+    const h = new Record(e.app.findCollectionByNameOrId("group_history"));
+    h.set("group", gid); h.set("action", "member_restored"); h.set("details", { user: targetUid, by: "admin" }); e.app.save(h);
+  }
   return e.json(200, { data: true });
 });
 
@@ -455,4 +473,16 @@ cronAdd("complete_expired", "* * * * *", () => { const L = require(`${__hooks}/l
 onBootstrap((e) => {
   e.next();
   try { e.app.db().newQuery("CREATE UNIQUE INDEX IF NOT EXISTS idx_voter_apartment ON group_members (`group`, apartment) WHERE is_observer = 0 AND apartment != ''").execute(); } catch (er) {}
+  // Backfill quorum snapshots for active votings created before snapshots existed
+  // (or saved as 0), so the live-count fallback in completeExpired can't let a
+  // mid-vote exclusion shrink the denominator and flip the result.
+  try {
+    const L = require(`${__hooks}/lib.js`);
+    const act = e.app.findRecordsByFilter("votings", "status = 'active'", "", 0, 0, {});
+    for (const v of act) {
+      if (v.get("voter_snapshot")) continue;
+      const n = L.activeVoters(e.app, v.get("group"));
+      if (n > 0) { v.set("voter_snapshot", n); e.app.save(v); }
+    }
+  } catch (er) {}
 });
