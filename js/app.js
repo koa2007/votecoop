@@ -881,6 +881,14 @@ const app = {
             localStorage.removeItem('vc_groups');
             localStorage.removeItem('vc_notifications');
         } catch (e) { /* ignore */ }
+        // Wipe cached API responses (groups, votes, profiles, notifications) so the
+        // next person on a shared device can't be served the previous user's data.
+        try {
+            if (window.caches) {
+                const keys = await caches.keys();
+                await Promise.all(keys.map(k => caches.delete(k)));
+            }
+        } catch (e) { /* ignore */ }
         location.reload();
     },
 
@@ -2470,9 +2478,10 @@ const app = {
                     this.toastError(t.already_member || 'Ви вже є учасником цієї групи');
                 } else if (msg.includes('already_pending')) {
                     this.toastError(t.already_requested || 'Запит вже надіслано');
-                } else if (msg.includes('apartment_taken:')) {
-                    const takenName = msg.split('apartment_taken:')[1] || '';
-                    this.toastError(`${t.apartment_taken || 'Квартира зайнята голосуючим'}: ${this.escapeHTML(takenName)}. ${t.apartment_taken_hint || 'Оберіть роль "спостерігач" або введіть іншу квартиру.'}`);
+                } else if (msg.includes('apartment_taken')) {
+                    const takenName = msg.includes('apartment_taken:') ? (msg.split('apartment_taken:')[1] || '') : '';
+                    const who = takenName ? `: ${this.escapeHTML(takenName)}` : '';
+                    this.toastError(`${t.apartment_taken || 'Квартира зайнята голосуючим'}${who}. ${t.apartment_taken_hint || 'Оберіть роль "спостерігач" або введіть іншу квартиру.'}`);
                 } else if (msg.includes('apartment_required')) {
                     this.toastError(t.join_apartment_required || 'Введіть номер квартири');
                 } else {
@@ -3048,6 +3057,8 @@ const app = {
                     this.toastError(t.voting_ended || 'Голосування вже завершено');
                 } else if (error.code === 'not_member') {
                     this.toastError(t.not_member || 'Ви не учасник цієї групи');
+                } else if (error.code === 'joined_after') {
+                    this.toastError(t.joined_after_vote || 'Ви приєдналися після початку цього голосування і не входите до його складу');
                 } else {
                     throw new Error(error.message);
                 }
@@ -3769,9 +3780,10 @@ const app = {
                     this.toastError(t.already_requested || 'Запит вже надіслано');
                 } else if (msg.includes('admin_cannot_be_observer')) {
                     this.toastError(t.admin_cannot_be_observer || 'Адміністратор не може бути спостерігачем');
-                } else if (msg.includes('apartment_taken:')) {
-                    const takenName = msg.split('apartment_taken:')[1] || '';
-                    this.toastError(`${t.apartment_taken || 'Квартира зайнята голосуючим'}: ${this.escapeHTML(takenName)}`);
+                } else if (msg.includes('apartment_taken')) {
+                    const takenName = msg.includes('apartment_taken:') ? (msg.split('apartment_taken:')[1] || '') : '';
+                    const who = takenName ? `: ${this.escapeHTML(takenName)}` : '';
+                    this.toastError(`${t.apartment_taken || 'Квартира зайнята голосуючим'}${who}`);
                 } else {
                     throw new Error(msg);
                 }
@@ -4303,6 +4315,7 @@ const app = {
             just_now: 'Щойно',
             participation_label: 'Участь',
             already_voted: 'Ви вже проголосували',
+            joined_after_vote: 'Ви приєдналися після початку цього голосування і не входите до його складу',
             vote_against: 'Проти',
             vote_for: 'За',
             admin_full: 'Адміністратор',
@@ -4771,6 +4784,7 @@ const app = {
             just_now: 'Just now',
             participation_label: 'Participation',
             already_voted: 'You have already voted',
+            joined_after_vote: 'You joined after this voting had started and are not part of it',
             vote_against: 'No',
             vote_for: 'Yes',
             admin_full: 'Administrator',
@@ -5239,6 +5253,7 @@ const app = {
             just_now: 'Только что', 
             participation_label: 'Участие',
             already_voted: 'Вы уже проголосовали',
+            joined_after_vote: 'Вы присоединились после начала этого голосования и не входите в его состав',
             vote_against: 'Против',
             vote_for: 'За',
             admin_full: 'Администратор',

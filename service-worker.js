@@ -1,7 +1,7 @@
 // VoteCoop service worker — relative paths so it works under any base URL
 // (root domain, GitHub Pages /votecoop/, or any sub-path).
 
-const CACHE_VERSION = 'spilka-v41';
+const CACHE_VERSION = 'spilka-v42';
 const STATIC_CACHE  = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -45,9 +45,13 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// Helper — true if URL is the Supabase API or any cross-origin call we should not cache
+// Helper — true if URL is a backend API call we must NEVER cache. Covers the
+// current PocketBase backend (same-origin /api/...) AND the legacy Supabase paths.
+// Caching these would (a) stash private data in Cache Storage and (b) serve stale
+// voting state cache-first.
 function isApiRequest(url) {
-    return /\.supabase\.co$/.test(url.hostname)
+    return (url.origin === self.location.origin && url.pathname.startsWith('/api/'))
+        || /\.supabase\.co$/.test(url.hostname)
         || url.pathname.includes('/rest/v1/')
         || url.pathname.includes('/auth/v1/')
         || url.pathname.includes('/realtime/v1/');

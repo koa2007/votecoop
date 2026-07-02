@@ -334,11 +334,13 @@ const supabaseService = {
     },
 
     async getVotingVotes(votingId) {
+        // Reads via the server route, NOT the votes collection directly. For secret
+        // votings the server returns only the caller's own row (no other names/choices),
+        // so a secret ballot stays secret even against the raw API.
         try {
-            const votes = await this.pb.collection('votes').getFullList({ filter: `voting="${votingId}"`, sort: 'created' });
-            const pmap = await this._profilesMap(votes.map(v => v.user));
-            return { data: votes.map(v => ({ id: v.id, user_id: v.user, choice: v.choice, comment: v.comment || '', created_at: this._d(v.created),
-                voter: pmap[v.user] ? { first_name: pmap[v.user].first_name, last_name: pmap[v.user].last_name, apartment: pmap[v.user].apartment } : null })), error: null };
+            const r = await this.pb.send('/api/spilka/voting-ballots', { method: 'POST', body: { voting_id: votingId } });
+            return { data: (r.data || []).map(v => ({ id: v.id, user_id: v.user_id, choice: v.choice, comment: v.comment || '', created_at: this._d(v.created),
+                voter: { first_name: v.first_name || '', last_name: v.last_name || '', apartment: v.apartment || '' } })), error: null };
         } catch (e) { return { data: null, error: this._err(e) }; }
     },
 
@@ -353,6 +355,7 @@ const supabaseService = {
             else if (/observer_cannot_vote/i.test(raw)) er.code = 'observer';
             else if (/voting_not_active/i.test(raw)) er.code = 'voting_inactive';
             else if (/frozen_cannot_vote/i.test(raw)) er.code = 'frozen';
+            else if (/joined_after_voting_started/i.test(raw)) er.code = 'joined_after';
             else if (/not_member/i.test(raw)) er.code = 'not_member';
             return { data: null, error: er };
         }
