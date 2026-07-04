@@ -437,6 +437,7 @@ const supabaseService = {
     },
     async createNotification() { return { error: null }; }, // server-side via routes
     async markNotificationRead(id) { try { await this.pb.collection('notifications').update(id, { is_read: true }); return { error: null }; } catch (e) { return { error: this._err(e) }; } },
+    async updateNotificationMetadata(id, metadata) { try { await this.pb.collection('notifications').update(id, { metadata }); return { error: null }; } catch (e) { return { error: this._err(e) }; } },
     // Update in parallel chunks — the old one-by-one loop took seconds for a
     // user with hundreds of notifications and hammered the backend.
     async _updateNotifBatch(rows, payload) {

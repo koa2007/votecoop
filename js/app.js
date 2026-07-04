@@ -1449,12 +1449,18 @@ const app = {
                 }
                 return;
             }
+            // Request already handled (approved/rejected elsewhere) — the buttons
+            // are stale: hide them everywhere, don't just show the error.
+            if ((msg + JSON.stringify(error.data || '')).includes('request_not_found')) {
+                await this._clearRequestButtons(requestId);
+                await this.markRead(notifId);
+            }
             this.toastError(this.humanError(error));
             return;
         }
         this.toastSuccess(t.request_approved || 'Запит схвалено');
-        // Mark notification read + remove the action buttons by re-render
-        this._removeNotifMetadata(notifId);
+        // Mark notification read + remove the action buttons (also in DB)
+        await this._clearRequestButtons(requestId);
         await this.markRead(notifId);
         // Refresh group if open
         if (groupId && this.state.currentScreen === 'group-detail-screen') {
@@ -1477,9 +1483,16 @@ const app = {
         });
         if (!ok) return;
         const { error } = await supabaseService.rejectJoinRequest(requestId);
-        if (error) { this.toastError(this.humanError(error)); return; }
+        if (error) {
+            if (((error.message || '') + JSON.stringify(error.data || '')).includes('request_not_found')) {
+                await this._clearRequestButtons(requestId);
+                await this.markRead(notifId);
+            }
+            this.toastError(this.humanError(error));
+            return;
+        }
         this.toastSuccess(t.request_rejected || 'Запит відхилено');
-        this._removeNotifMetadata(notifId);
+        await this._clearRequestButtons(requestId);
         await this.markRead(notifId);
         if (groupId && this.state.currentScreen === 'group-detail-screen') {
             this.showGroupDetail(groupId);
@@ -1487,11 +1500,19 @@ const app = {
         this.loadMyNotifications();
     },
 
-    // Remove the action-buttons trigger so the notification doesn't keep
-    // them visible after the request was already handled.
-    _removeNotifMetadata(notifId) {
-        const n = this.state.notifications.find(x => String(x.id) === String(notifId));
-        if (n && n.metadata) { delete n.metadata.request_id; }
+    // Hide the approve/reject buttons of every notification tied to this
+    // request — locally AND in the DB. Without the DB write the buttons came
+    // back after any reload, and stayed forever when the request was handled
+    // from the group screen instead of the notification.
+    async _clearRequestButtons(requestId) {
+        if (!requestId) return;
+        const affected = this.state.notifications.filter(
+            n => n.metadata && String(n.metadata.request_id) === String(requestId));
+        if (!affected.length) return;
+        affected.forEach(n => { delete n.metadata.request_id; });
+        this.renderNotifications();
+        try { localStorage.setItem('vc_notifications', JSON.stringify(this.state.notifications)); } catch (e) { /* ignore */ }
+        await Promise.all(affected.map(n => supabaseService.updateNotificationMetadata(n.id, n.metadata)));
     },
 
     async markRead(id) {
@@ -3844,6 +3865,9 @@ const app = {
                 }
                 throw new Error(msg);
             }
+            // The join-request notification carries approve/reject buttons —
+            // hide them (locally + DB) now that the request is handled here.
+            await this._clearRequestButtons(requestId);
             // Refresh BOTH the group detail (members list, requests, frozen
             // count, voting stats) AND the global groups list (so the
             // member count on the Groups screen reflects reality immediately
@@ -3864,6 +3888,7 @@ const app = {
         try {
             const { error } = await supabaseService.rejectJoinRequest(requestId);
             if (error) throw new Error(error.message);
+            await this._clearRequestButtons(requestId);
             await Promise.all([
                 this.showGroupDetail(groupId),
                 this.loadMyNotifications()
