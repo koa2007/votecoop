@@ -550,7 +550,7 @@ const app = {
         const { error } = await supabaseService.resetPassword(email);
         this.setBtnLoading('forgot-submit-btn', false);
         if (error) {
-            this._showInlineError('forgot', error.message);
+            this._showInlineError('forgot', this.humanError(error));
             return;
         }
         this._showInlineSuccess('forgot', t.auth_reset_sent);
@@ -568,7 +568,7 @@ const app = {
         const t = this.translations[this.currentLanguage] || {};
         const p1 = document.getElementById('reset-password-1')?.value || '';
         const p2 = document.getElementById('reset-password-2')?.value || '';
-        if (!p1 || p1.length < 6) {
+        if (!p1 || p1.length < 8) {
             this._showInlineError('reset', t.auth_error_password_short);
             return;
         }
@@ -589,7 +589,8 @@ const app = {
             : await supabaseService.updatePassword(p1);
         this.setBtnLoading('reset-submit-btn', false);
         if (error) {
-            this._showInlineError('reset', error.message);
+            const fields = (error.data && error.data.data) || {};
+            this._showInlineError('reset', fields.password ? t.auth_error_password_short : this.humanError(error));
             return;
         }
         this.toastSuccess(t.reset_done || 'Пароль оновлено');
@@ -735,7 +736,9 @@ const app = {
             return;
         }
 
-        if (password.length < 6) {
+        // PocketBase requires min 8 chars — check locally so the user gets the
+        // message instantly instead of a server round-trip.
+        if (password.length < 8) {
             showErr(t.auth_error_password_short);
             return;
         }
@@ -753,10 +756,18 @@ const app = {
         this.setBtnLoading(btnId, false);
 
         if (error) {
-            if (error.message.includes('already registered')) {
+            // PocketBase puts per-field validation errors in the response body
+            // (error.data.data.email / .password) — map them to translated text
+            // instead of showing the raw English "Failed to create record."
+            const fields = (error.data && error.data.data) || {};
+            if (fields.email?.code === 'validation_not_unique' || error.message.includes('already registered')) {
                 showErr(t.auth_error_exists);
+            } else if (fields.email) {
+                showErr(t.auth_error_invalid_email);
+            } else if (fields.password) {
+                showErr(t.auth_error_password_short);
             } else {
-                showErr(error.message);
+                showErr(this.humanError(error));
             }
             return;
         }
@@ -1857,7 +1868,7 @@ const app = {
 
     async showAdminPanel() {
         if (!this.isAdmin()) {
-            this.toastError('Доступ лише для адміністратора');
+            this.toastError((this.translations[this.currentLanguage] || {}).err_not_admin || 'Доступ лише для адміністратора');
             return;
         }
         this.showScreen('admin-panel-screen');
@@ -1970,7 +1981,7 @@ const app = {
     async sendFeedbackReply(id) {
         const ta = document.getElementById('reply-text-' + id);
         const reply = (ta?.value || '').trim();
-        if (reply.length < 2) { this.toastError('Напишіть відповідь'); return; }
+        if (reply.length < 2) { this.toastError((this.translations[this.currentLanguage] || {}).reply_too_short || 'Напишіть відповідь'); return; }
         const { error } = await supabaseService.replyToFeedback(id, reply);
         if (error) { this.toastError(this.humanError(error)); return; }
         this.toastSuccess('Відповідь надіслано жителю');
@@ -2263,7 +2274,7 @@ const app = {
             document.getElementById('group-description').value = '';
             this.hideModal('create-group-modal');
         } catch (err) {
-            this.toastError(t.auth_error_network || 'Error creating group');
+            this.toastError(this.humanError(err));
         } finally {
             if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
         }
@@ -2460,7 +2471,7 @@ const app = {
             const freezeGroup = document.getElementById('freeze-members-group');
             if (freezeGroup) freezeGroup.classList.add('hidden');
         } catch (err) {
-            this.toastError(t.auth_error_network || 'Error creating voting');
+            this.toastError(this.humanError(err));
         } finally {
             if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
         }
@@ -3188,7 +3199,7 @@ const app = {
         }
 
         if (reason.length > 200) {
-            this.toastError('Причина занадто довга (макс. 200 символів)');
+            this.toastError(t.delete_reason_long || 'Причина занадто довга (макс. 200 символів)');
             return;
         }
 
@@ -3208,7 +3219,7 @@ const app = {
 
             this.toastSuccess(t.voting_deleted);
         } catch (err) {
-            this.toastError(t.auth_error_network || 'Помилка');
+            this.toastError(this.humanError(err));
         }
     },
 
@@ -3248,7 +3259,7 @@ const app = {
             }
             this.toastSuccess(t.refresh_done || 'Дані оновлено');
         } catch (e) {
-            this.toastError(e.message || 'Не вдалося оновити');
+            this.toastError(this.humanError(e));
         } finally {
             this.hideGlobalLoader();
         }
@@ -3407,7 +3418,7 @@ const app = {
     async restoreMe(groupId) {
         const t = this.translations[this.currentLanguage];
         const { error } = await supabaseService.restoreMe(groupId);
-        if (error) { this.toastError(t.auth_error_network || 'Помилка'); return; }
+        if (error) { this.toastError(this.humanError(error)); return; }
         this.toastSuccess(t.im_here_done);
         await this.showGroupDetail(groupId);
     },
@@ -3416,7 +3427,7 @@ const app = {
     async adminRestoreMember(groupId, userId) {
         const t = this.translations[this.currentLanguage];
         const { error } = await supabaseService.setMemberFrozen(groupId, userId, false);
-        if (error) { this.toastError(t.auth_error_network || 'Помилка'); return; }
+        if (error) { this.toastError(this.humanError(error)); return; }
         this.toastSuccess(t.member_restored_done);
         await this.showGroupDetail(groupId);
     },
@@ -3608,7 +3619,7 @@ const app = {
         const groupVotings = this.state.votings.filter(v => v.groupId === group.id);
         
         if (groupVotings.length === 0) {
-            this.toastError('Немає голосувань для експорту');
+            this.toastError((this.translations[this.currentLanguage] || {}).export_nothing || 'Немає голосувань для експорту');
             return;
         }
 
@@ -3765,7 +3776,7 @@ const app = {
             ]);
             this.toastSuccess(t.request_approved || 'Запит схвалено');
         } catch (err) {
-            this.toastError(err.message || t.auth_error_network || 'Помилка');
+            this.toastError(this.humanError(err));
         }
     },
 
@@ -3780,7 +3791,7 @@ const app = {
             ]);
             this.toastSuccess(t.request_rejected || 'Запит відхилено');
         } catch (err) {
-            this.toastError(err.message || t.auth_error_network || 'Помилка');
+            this.toastError(this.humanError(err));
         }
     },
 
@@ -3811,7 +3822,7 @@ const app = {
             await this.showGroupDetail(groupId);
             this.toastSuccess(t.role_changed || 'Роль змінено');
         } catch (err) {
-            this.toastError(err.message || t.auth_error_network || 'Помилка');
+            this.toastError(this.humanError(err));
         }
     },
 
@@ -3839,7 +3850,7 @@ const app = {
             }
             this.toastSuccess(t.role_change_requested || 'Запит на зміну ролі надіслано');
         } catch (err) {
-            this.toastError(err.message || t.auth_error_network || 'Помилка');
+            this.toastError(this.humanError(err));
         }
     },
 
@@ -3908,7 +3919,7 @@ const app = {
             document.getElementById('group-detail-description').textContent = description;
             this.renderGroups();
         } catch (err) {
-            this.toastError(t.auth_error_network || err.message);
+            this.toastError(this.humanError(err));
         } finally {
             if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
         }
@@ -3947,7 +3958,7 @@ const app = {
             this.showScreen('groups-screen');
             this.renderGroups();
         } catch (err) {
-            this.toastError(t.auth_error_network || err.message);
+            this.toastError(this.humanError(err));
         } finally {
             if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
         }
@@ -3989,7 +4000,7 @@ const app = {
             });
             this.renderNotifications();
         } catch (err) {
-            this.toastError(t.auth_error_network || err.message);
+            this.toastError(this.humanError(err));
         } finally {
             if (btn) { btn.classList.remove('btn-loading'); btn.disabled = false; }
         }
@@ -4079,7 +4090,7 @@ const app = {
             auth_register_link: 'Реєстрація',
             register_title: 'Реєстрація',
             register_subtitle: 'Створіть акаунт для голосувань',
-            register_password_placeholder: 'Пароль (мін. 6 символів)',
+            register_password_placeholder: 'Пароль (мін. 8 символів)',
             register_submit_btn: 'Створити акаунт',
             register_google_btn: 'Реєстрація через Google',
             register_have_account: 'Вже маєте акаунт?',
@@ -4089,7 +4100,7 @@ const app = {
             forgot_remembered: 'Згадали пароль?',
             reset_title: 'Новий пароль',
             reset_subtitle: 'Введіть новий пароль для акаунта',
-            reset_pass1_placeholder: 'Новий пароль (мін. 6 символів)',
+            reset_pass1_placeholder: 'Новий пароль (мін. 8 символів)',
             reset_pass2_placeholder: 'Повторіть новий пароль',
             reset_submit_btn: 'Зберегти новий пароль',
             reset_mismatch: 'Паролі не співпадають',
@@ -4416,6 +4427,9 @@ const app = {
             reason_label: 'Причина',
             cannot_delete_completed: 'Не можна видалити завершене голосування',
             delete_reason_short: 'Причина має бути не менше 5 символів',
+            delete_reason_long: 'Причина занадто довга (макс. 200 символів)',
+            export_nothing: 'Немає голосувань для експорту',
+            reply_too_short: 'Напишіть відповідь',
             daily_limit_reached: 'Ви досягли ліміту: 1 голосування на 24 години для звичайних користувачів',
             abstain: 'Утриматися',
             comment: 'Коментар',
@@ -4474,9 +4488,10 @@ const app = {
             auth_hint: 'Автоматична реєстрація при першому вході',
             auth_error_invalid: 'Невірний email або пароль',
             auth_error_exists: 'Цей email вже зареєстрований',
+            auth_error_invalid_email: 'Введіть коректну email-адресу',
             auth_error_network: 'Помилка мережі. Спробуйте пізніше.',
             auth_error_fill_fields: 'Заповніть email та пароль',
-            auth_error_password_short: 'Пароль має бути не менше 6 символів',
+            auth_error_password_short: 'Пароль має бути не менше 8 символів',
             auth_error_not_confirmed: 'Підтвердіть email перш ніж увійти',
             auth_error_enter_email: 'Введіть email для відновлення пароля',
             auth_check_email: 'Перевірте пошту для підтвердження реєстрації',
@@ -4556,7 +4571,7 @@ const app = {
             auth_register_link: 'Sign up',
             register_title: 'Sign up',
             register_subtitle: 'Create an account to vote',
-            register_password_placeholder: 'Password (min. 6 chars)',
+            register_password_placeholder: 'Password (min. 8 chars)',
             register_submit_btn: 'Create account',
             register_google_btn: 'Sign up with Google',
             register_have_account: 'Already have an account?',
@@ -4566,7 +4581,7 @@ const app = {
             forgot_remembered: 'Remembered your password?',
             reset_title: 'New password',
             reset_subtitle: 'Enter a new password for your account',
-            reset_pass1_placeholder: 'New password (min. 6 chars)',
+            reset_pass1_placeholder: 'New password (min. 8 chars)',
             reset_pass2_placeholder: 'Repeat the new password',
             reset_submit_btn: 'Save new password',
             reset_mismatch: 'Passwords do not match',
@@ -4893,6 +4908,9 @@ const app = {
             reason_label: 'Reason',
             cannot_delete_completed: 'Cannot delete completed voting',
             delete_reason_short: 'Reason must be at least 5 characters',
+            delete_reason_long: 'Reason is too long (max 200 characters)',
+            export_nothing: 'No votings to export',
+            reply_too_short: 'Please write a reply',
             daily_limit_reached: 'You have reached the limit: 1 voting per 24 hours for regular users',
             abstain: 'Abstain',
             comment: 'Comment',
@@ -4951,9 +4969,10 @@ const app = {
             auth_hint: 'Automatic registration on first login',
             auth_error_invalid: 'Invalid email or password',
             auth_error_exists: 'This email is already registered',
+            auth_error_invalid_email: 'Please enter a valid email address',
             auth_error_network: 'Network error. Please try again later.',
             auth_error_fill_fields: 'Please fill in email and password',
-            auth_error_password_short: 'Password must be at least 6 characters',
+            auth_error_password_short: 'Password must be at least 8 characters',
             auth_error_not_confirmed: 'Please confirm your email before signing in',
             auth_error_enter_email: 'Enter your email to reset password',
             auth_check_email: 'Check your email to confirm registration',
@@ -5033,7 +5052,7 @@ const app = {
             auth_register_link: 'Регистрация',
             register_title: 'Регистрация',
             register_subtitle: 'Создайте аккаунт для голосований',
-            register_password_placeholder: 'Пароль (мин. 6 символов)',
+            register_password_placeholder: 'Пароль (мин. 8 символов)',
             register_submit_btn: 'Создать аккаунт',
             register_google_btn: 'Регистрация через Google',
             register_have_account: 'Уже есть аккаунт?',
@@ -5043,7 +5062,7 @@ const app = {
             forgot_remembered: 'Вспомнили пароль?',
             reset_title: 'Новый пароль',
             reset_subtitle: 'Введите новый пароль для аккаунта',
-            reset_pass1_placeholder: 'Новый пароль (мин. 6 символов)',
+            reset_pass1_placeholder: 'Новый пароль (мин. 8 символов)',
             reset_pass2_placeholder: 'Повторите новый пароль',
             reset_submit_btn: 'Сохранить новый пароль',
             reset_mismatch: 'Пароли не совпадают',
@@ -5370,6 +5389,9 @@ const app = {
             reason_label: 'Причина',
             cannot_delete_completed: 'Нельзя удалить завершённое голосование',
             delete_reason_short: 'Причина должна быть не менее 5 символов',
+            delete_reason_long: 'Причина слишком длинная (макс. 200 символов)',
+            export_nothing: 'Нет голосований для экспорта',
+            reply_too_short: 'Напишите ответ',
             daily_limit_reached: 'Вы достигли лимита: 1 голосование на 24 часа для обычных пользователей',
             abstain: 'Воздержаться',
             comment: 'Комментарий',
@@ -5428,9 +5450,10 @@ const app = {
             auth_hint: 'Автоматическая регистрация при первом входе',
             auth_error_invalid: 'Неверный email или пароль',
             auth_error_exists: 'Этот email уже зарегистрирован',
+            auth_error_invalid_email: 'Введите корректный email-адрес',
             auth_error_network: 'Ошибка сети. Попробуйте позже.',
             auth_error_fill_fields: 'Заполните email и пароль',
-            auth_error_password_short: 'Пароль должен быть не менее 6 символов',
+            auth_error_password_short: 'Пароль должен быть не менее 8 символов',
             auth_error_not_confirmed: 'Подтвердите email перед входом',
             auth_error_enter_email: 'Введите email для восстановления пароля',
             auth_check_email: 'Проверьте почту для подтверждения регистрации',
@@ -5613,7 +5636,7 @@ const app = {
 
             this.showVotingDetail(votingId);
         } catch (err) {
-            this.toastError(t.auth_error_network || 'Помилка');
+            this.toastError(this.humanError(err));
         }
     },
 

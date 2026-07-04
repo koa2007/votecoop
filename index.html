@@ -195,7 +195,7 @@
                     </div>
                     <div class="form-group password-group">
                         <label for="register-password" class="sr-only" data-lang="register_password_label">Пароль</label>
-                        <input type="password" id="register-password" data-lang-placeholder="register_password_placeholder" placeholder="Пароль (мін. 6 символів)" required minlength="6" autocomplete="new-password">
+                        <input type="password" id="register-password" data-lang-placeholder="register_password_placeholder" placeholder="Пароль (мін. 8 символів)" required minlength="8" autocomplete="new-password">
                         <button type="button" class="password-toggle" onclick="app.toggleRegisterPasswordVisibility()" aria-label="Show password">
                             <i class="ph ph-eye" id="register-password-toggle-icon" aria-hidden="true"></i>
                         </button>
@@ -273,14 +273,14 @@
                 <form class="auth-form" id="reset-form" onsubmit="return false;">
                     <div class="form-group password-group">
                         <label for="reset-password-1" class="sr-only" data-lang="reset_pass1_label">Новий пароль</label>
-                        <input type="password" id="reset-password-1" data-lang-placeholder="reset_pass1_placeholder" placeholder="Новий пароль (мін. 6 символів)" required minlength="6" autocomplete="new-password">
+                        <input type="password" id="reset-password-1" data-lang-placeholder="reset_pass1_placeholder" placeholder="Новий пароль (мін. 8 символів)" required minlength="8" autocomplete="new-password">
                         <button type="button" class="password-toggle" onclick="app.toggleResetPasswordVisibility()" aria-label="Show password">
                             <i class="ph ph-eye" id="reset-password-toggle-icon" aria-hidden="true"></i>
                         </button>
                     </div>
                     <div class="form-group">
                         <label for="reset-password-2" class="sr-only" data-lang="reset_pass2_label">Повторіть новий пароль</label>
-                        <input type="password" id="reset-password-2" data-lang-placeholder="reset_pass2_placeholder" placeholder="Повторіть новий пароль" required minlength="6" autocomplete="new-password">
+                        <input type="password" id="reset-password-2" data-lang-placeholder="reset_pass2_placeholder" placeholder="Повторіть новий пароль" required minlength="8" autocomplete="new-password">
                     </div>
                     <button class="btn btn-primary" id="reset-submit-btn" type="submit" onclick="app.submitNewPassword()">
                         <span data-lang="reset_submit_btn">Зберегти новий пароль</span>
