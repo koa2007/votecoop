@@ -29,7 +29,14 @@ const supabaseService = {
     // PocketBase returns dates as "YYYY-MM-DD HH:MM:SS.sssZ" (space); app.js
     // expects ISO. Normalize so new Date(...) parses everywhere.
     _d(s) { return s ? String(s).replace(' ', 'T') : (s || null); },
-    _err(e) { return { message: (e && (e.message || e.data?.message)) || String(e), code: e?.status, data: e?.response || e?.data }; },
+    // Route errors come as {error: "<code>"} in the body while e.message is the
+    // SDK's generic text — surface the code as the message so every
+    // `error.message.includes('<code>')` branch in app.js actually fires.
+    _err(e) {
+        const body = e?.response || e?.data || {};
+        const code = typeof body.error === 'string' ? body.error : '';
+        return { message: code || (e && (e.message || body.message)) || String(e), code: e?.status, data: body };
+    },
 
     // ---- profile helpers ----
     async _profileByUser(uid) {
@@ -92,10 +99,20 @@ const supabaseService = {
         catch (e) { return { error: this._err(e) }; }
     },
 
-    async updatePassword(newPassword) {
+    // PocketBase requires the CURRENT password (oldPassword) when the owner
+    // changes their own password, and it invalidates the auth token afterwards —
+    // so re-authenticate with the new password to keep the session alive.
+    async updatePassword(newPassword, oldPassword) {
         const uid = this._uid();
         if (!uid) return { error: { message: 'not_authenticated' } };
-        try { await this.pb.collection('users').update(uid, { password: newPassword, passwordConfirm: newPassword }); return { error: null }; }
+        const email = this.pb.authStore.record?.email || '';
+        try {
+            await this.pb.collection('users').update(uid, {
+                password: newPassword, passwordConfirm: newPassword, oldPassword: oldPassword || ''
+            });
+            try { await this.pb.collection('users').authWithPassword(email, newPassword); } catch (e2) { /* re-login screen will handle */ }
+            return { error: null };
+        }
         catch (e) { return { error: this._err(e) }; }
     },
 
@@ -215,7 +232,9 @@ const supabaseService = {
     },
 
     async deleteGroup(groupId) {
-        try { await this.pb.collection('groups').delete(groupId); return { error: null }; }
+        // Direct delete goes through a guarded route (admin + sole member only) —
+        // the raw collection delete has no deleteRule and silently 404'd.
+        try { await this.pb.send('/api/spilka/delete-group-direct', { method: 'POST', body: { group_id: groupId } }); return { error: null }; }
         catch (e) { return { error: this._err(e) }; }
     },
 

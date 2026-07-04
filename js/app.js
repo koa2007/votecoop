@@ -469,18 +469,23 @@ const app = {
         const main = document.getElementById('main-screens');
         if (main) main.classList.add('hidden');
         // Clear inputs in case of re-entry
-        ['reset-password-1', 'reset-password-2'].forEach(id => {
+        ['reset-password-old', 'reset-password-1', 'reset-password-2'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
         });
+        // Recovery flow (email token) — the current-password field stays hidden;
+        // showChangePasswordScreen() reveals it for the manual flow.
+        document.getElementById('reset-old-group')?.classList.add('hidden');
         this.showScreen('reset-password-screen');
     },
 
     // Same screen, different label — used from profile when user is logged in
-    // and wants to change their password manually.
+    // and wants to change their password manually. The server verifies the
+    // CURRENT password here, so the extra field is shown.
     showChangePasswordScreen() {
         this.state._returnAfterPasswordChange = 'main-screens';
         this.showResetPasswordScreen();
+        document.getElementById('reset-old-group')?.classList.remove('hidden');
     },
 
     _clearAuthMessages() {
@@ -590,6 +595,15 @@ const app = {
             this._showInlineError('reset', t.reset_mismatch || 'Паролі не співпадають');
             return;
         }
+        // Manual change (no email token): the server checks the current password.
+        let oldPw = '';
+        if (!this._pwResetToken) {
+            oldPw = document.getElementById('reset-password-old')?.value || '';
+            if (!oldPw) {
+                this._showInlineError('reset', t.reset_old_required || 'Введіть поточний пароль');
+                return;
+            }
+        }
         if (!supabaseService.isReady()) {
             this._showInlineError('reset', t.auth_error_network);
             return;
@@ -600,11 +614,13 @@ const app = {
         // the manual "change password" flow uses the logged-in session.
         const { error } = this._pwResetToken
             ? await supabaseService.confirmPasswordReset(this._pwResetToken, p1)
-            : await supabaseService.updatePassword(p1);
+            : await supabaseService.updatePassword(p1, oldPw);
         this.setBtnLoading('reset-submit-btn', false);
         if (error) {
             const fields = (error.data && error.data.data) || {};
-            this._showInlineError('reset', fields.password ? t.auth_error_password_short : this.humanError(error));
+            this._showInlineError('reset', fields.oldPassword
+                ? (t.reset_old_wrong || 'Поточний пароль невірний')
+                : (fields.password ? t.auth_error_password_short : this.humanError(error)));
             return;
         }
         this.toastSuccess(t.reset_done || 'Пароль оновлено');
@@ -1816,7 +1832,8 @@ const app = {
             request_not_found: t.err_request_not_found,
             not_member: t.not_member,
             admin_must_transfer_first: t.admin_cannot_leave,
-            exclusion_only_via_voting: t.err_exclusion_only_via_voting
+            exclusion_only_via_voting: t.err_exclusion_only_via_voting,
+            delete_group_need_voting: t.delete_group_need_voting
         };
         for (const k in map) { if (raw.includes(k) && map[k]) return map[k]; }
         return t.error_generic || t.auth_error_network || 'Сталася помилка. Спробуйте ще раз.';
@@ -4239,6 +4256,10 @@ const app = {
             reset_pass2_placeholder: 'Повторіть новий пароль',
             reset_submit_btn: 'Зберегти новий пароль',
             reset_mismatch: 'Паролі не співпадають',
+            reset_old_label: 'Поточний пароль',
+            reset_old_placeholder: 'Поточний пароль',
+            reset_old_required: 'Введіть поточний пароль',
+            reset_old_wrong: 'Поточний пароль невірний',
             reset_done: 'Пароль оновлено',
             change_password: 'Змінити пароль',
             feedback_btn: 'Пропозиція / зауваження',
@@ -4746,6 +4767,10 @@ const app = {
             reset_pass2_placeholder: 'Repeat the new password',
             reset_submit_btn: 'Save new password',
             reset_mismatch: 'Passwords do not match',
+            reset_old_label: 'Current password',
+            reset_old_placeholder: 'Current password',
+            reset_old_required: 'Enter your current password',
+            reset_old_wrong: 'Current password is incorrect',
             reset_done: 'Password updated',
             change_password: 'Change password',
             feedback_btn: 'Suggestion / report',
@@ -5253,6 +5278,10 @@ const app = {
             reset_pass2_placeholder: 'Повторите новый пароль',
             reset_submit_btn: 'Сохранить новый пароль',
             reset_mismatch: 'Пароли не совпадают',
+            reset_old_label: 'Текущий пароль',
+            reset_old_placeholder: 'Текущий пароль',
+            reset_old_required: 'Введите текущий пароль',
+            reset_old_wrong: 'Текущий пароль неверный',
             reset_done: 'Пароль обновлён',
             change_password: 'Сменить пароль',
             feedback_btn: 'Предложение / замечание',

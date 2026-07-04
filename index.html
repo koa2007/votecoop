@@ -271,6 +271,13 @@
                 <div class="auth-success hidden" id="reset-success"></div>
 
                 <form class="auth-form" id="reset-form" onsubmit="return false;">
+                    <!-- Current password — needed ONLY for the manual "change password"
+                         flow (server verifies it); hidden in the email-recovery flow
+                         where the token proves identity. -->
+                    <div class="form-group hidden" id="reset-old-group">
+                        <label for="reset-password-old" class="sr-only" data-lang="reset_old_label">Поточний пароль</label>
+                        <input type="password" id="reset-password-old" data-lang-placeholder="reset_old_placeholder" placeholder="Поточний пароль" autocomplete="current-password">
+                    </div>
                     <div class="form-group password-group">
                         <label for="reset-password-1" class="sr-only" data-lang="reset_pass1_label">Новий пароль</label>
                         <input type="password" id="reset-password-1" data-lang-placeholder="reset_pass1_placeholder" placeholder="Новий пароль (мін. 8 символів)" required minlength="8" autocomplete="new-password">

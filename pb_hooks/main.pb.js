@@ -189,7 +189,7 @@ routerAdd("POST", "/api/spilka/submit-join", (e) => {
   if (L.membership(e.app, gid, auth.id)) return e.json(400, { error: "already_member" });
   if (e.app.findRecordsByFilter("join_requests", "group = {:g} && user = {:u} && status = 'pending'", "", 0, 0, { g: gid, u: auth.id }).length) return e.json(400, { error: "already_pending" });
   // Do NOT leak the occupant's real name to a non-member submitting a join request.
-  if (!asObs) { const c = e.app.findRecordsByFilter("group_members", "group = {:g} && is_observer = false && apartment = {:a}", "", 0, 1, { g: gid, a: apt });
+  if (!asObs) { const c = e.app.findRecordsByFilter("group_members", "group = {:g} && is_observer = false && apartment = {:a}", "", 1, 0, { g: gid, a: apt });
     if (c.length) return e.json(400, { error: "apartment_taken" }); }
   let rid = null;
   e.app.runInTransaction((tx) => {
@@ -214,7 +214,7 @@ routerAdd("POST", "/api/spilka/request-role-change", (e) => {
   if (!apt) return e.json(400, { error: "apartment_missing_on_membership" });
   if (m.get("role") === "admin" && becomeObs) return e.json(400, { error: "admin_cannot_be_observer" });
   if (e.app.findRecordsByFilter("join_requests", "group = {:g} && user = {:u} && status = 'pending'", "", 0, 0, { g: gid, u: auth.id }).length) return e.json(400, { error: "already_pending" });
-  if (!becomeObs) { const c = e.app.findRecordsByFilter("group_members", "group = {:g} && is_observer = false && apartment = {:a} && user != {:u}", "", 0, 1, { g: gid, a: apt, u: auth.id });
+  if (!becomeObs) { const c = e.app.findRecordsByFilter("group_members", "group = {:g} && is_observer = false && apartment = {:a} && user != {:u}", "", 1, 0, { g: gid, a: apt, u: auth.id });
     if (c.length) return e.json(400, { error: "apartment_taken" }); }
   let rid = null;
   e.app.runInTransaction((tx) => {
@@ -235,7 +235,7 @@ routerAdd("POST", "/api/spilka/approve-join", (e) => {
   if (req.get("status") !== "pending") return e.json(400, { error: "request_not_found" });
   if (!L.isAdmin(e.app, req.get("group"), auth.id)) return e.json(403, { error: "not_admin" });
   const finalObs = !!req.get("requested_as_observer") || force; const apt = req.get("apartment") || "";
-  if (!finalObs && apt) { const taken = e.app.findRecordsByFilter("group_members", "group = {:g} && is_observer = false && apartment = {:a} && user != {:u}", "", 0, 1, { g: req.get("group"), a: apt, u: req.get("user") });
+  if (!finalObs && apt) { const taken = e.app.findRecordsByFilter("group_members", "group = {:g} && is_observer = false && apartment = {:a} && user != {:u}", "", 1, 0, { g: req.get("group"), a: apt, u: req.get("user") });
     if (taken.length) return e.json(400, { error: "apartment_taken_now" }); }
   e.app.runInTransaction((tx) => {
     req.set("status", "approved"); req.set("resolved_at", new Date().toISOString()); req.set("resolved_by", auth.id); tx.save(req);
@@ -270,7 +270,7 @@ routerAdd("POST", "/api/spilka/admin-change-role", (e) => {
   if (!L.isAdmin(e.app, gid, auth.id)) return e.json(403, { error: "not_admin" });
   const m = L.membership(e.app, gid, targetUid); if (!m) return e.json(400, { error: "not_member" });
   if (!makeObs) { const apt = m.get("apartment") || "";
-    if (apt) { const taken = e.app.findRecordsByFilter("group_members", "group = {:g} && is_observer = false && apartment = {:a} && user != {:u}", "", 0, 1, { g: gid, a: apt, u: targetUid });
+    if (apt) { const taken = e.app.findRecordsByFilter("group_members", "group = {:g} && is_observer = false && apartment = {:a} && user != {:u}", "", 1, 0, { g: gid, a: apt, u: targetUid });
       if (taken.length) return e.json(400, { error: "apartment_taken:" + L.fullName(e.app, taken[0].get("user")) }); } }
   m.set("is_observer", makeObs); e.app.save(m);
   return e.json(200, { data: true });
@@ -283,6 +283,21 @@ routerAdd("POST", "/api/spilka/leave-group", (e) => {
   if (!m) return e.json(400, { error: "not_member" });
   if (m.get("role") === "admin") return e.json(400, { error: "admin_must_transfer_first" });
   e.app.delete(m); return e.json(200, { data: true });
+});
+
+// Direct deletion of a group WITHOUT a voting — allowed only for the admin and
+// only while they are the sole member (groups.deleteRule is null, so the old
+// client-side collection delete silently failed since the PB migration).
+routerAdd("POST", "/api/spilka/delete-group-direct", (e) => {
+  const L = require(`${__hooks}/lib.js`); const auth = e.auth;
+  if (!auth) return e.json(401, { error: "not_authenticated" });
+  const gid = e.requestInfo().body.group_id;
+  const m = L.membership(e.app, gid, auth.id);
+  if (!m || m.get("role") !== "admin") return e.json(403, { error: "not_admin" });
+  const members = e.app.findRecordsByFilter("group_members", "group = {:g}", "", 0, 0, { g: gid });
+  if (members.length > 1) return e.json(400, { error: "delete_group_need_voting" });
+  e.app.runInTransaction((tx) => { L.deleteGroupCascade(tx, gid, null); });
+  return e.json(200, { data: true });
 });
 
 routerAdd("POST", "/api/spilka/broadcast", (e) => {

@@ -65,22 +65,27 @@ module.exports = {
       h.set("group", gid); h.set("action", "member_removed"); h.set("voting", v.id); h.set("details", { removed_user: target, reason: v.get("removal_reason") });
       tx.save(h);
     } else if (type === "delete-group") {
-      const members = tx.findRecordsByFilter("group_members", "group = {:g}", "", 0, 0, { g: gid });
-      let gname = ""; try { gname = tx.findRecordById("groups", gid).get("name"); } catch (er) {}
-      for (const m of members) this.notify(tx, m.get("user"), "system", 'Групу "' + gname + '" видалено за результатами голосування', {});
-      // Cascade-delete everything that belongs to the group so nothing is orphaned.
-      const gvs = tx.findRecordsByFilter("votings", "group = {:g}", "", 0, 0, { g: gid });
-      for (const vv of gvs) {
-        try { for (const x of tx.findRecordsByFilter("votes", "voting = {:v}", "", 0, 0, { v: vv.id })) tx.delete(x); } catch (er) {}
-        try { for (const x of tx.findRecordsByFilter("freeze_objections", "voting = {:v}", "", 0, 0, { v: vv.id })) tx.delete(x); } catch (er) {}
-        try { for (const x of tx.findRecordsByFilter("freeze_targets", "voting = {:v}", "", 0, 0, { v: vv.id })) tx.delete(x); } catch (er) {}
-        try { tx.delete(vv); } catch (er) {}
-      }
-      try { for (const x of tx.findRecordsByFilter("join_requests", "group = {:g}", "", 0, 0, { g: gid })) tx.delete(x); } catch (er) {}
-      try { for (const x of tx.findRecordsByFilter("group_history", "group = {:g}", "", 0, 0, { g: gid })) tx.delete(x); } catch (er) {}
-      for (const m of members) { try { tx.delete(m); } catch (er) {} }
-      try { tx.delete(tx.findRecordById("groups", gid)); } catch (er) {}
+      this.deleteGroupCascade(tx, gid, 'видалено за результатами голосування');
     }
+  },
+  // Cascade-delete a group with everything that belongs to it (votings, votes,
+  // objections, requests, history, memberships) so nothing is orphaned.
+  // Used by the delete-group VOTING effect and the direct single-member delete.
+  deleteGroupCascade: function (tx, gid, reasonText) {
+    const members = tx.findRecordsByFilter("group_members", "group = {:g}", "", 0, 0, { g: gid });
+    let gname = ""; try { gname = tx.findRecordById("groups", gid).get("name"); } catch (er) {}
+    if (reasonText) { for (const m of members) this.notify(tx, m.get("user"), "system", 'Групу "' + gname + '" ' + reasonText, {}); }
+    const gvs = tx.findRecordsByFilter("votings", "group = {:g}", "", 0, 0, { g: gid });
+    for (const vv of gvs) {
+      try { for (const x of tx.findRecordsByFilter("votes", "voting = {:v}", "", 0, 0, { v: vv.id })) tx.delete(x); } catch (er) {}
+      try { for (const x of tx.findRecordsByFilter("freeze_objections", "voting = {:v}", "", 0, 0, { v: vv.id })) tx.delete(x); } catch (er) {}
+      try { for (const x of tx.findRecordsByFilter("freeze_targets", "voting = {:v}", "", 0, 0, { v: vv.id })) tx.delete(x); } catch (er) {}
+      try { tx.delete(vv); } catch (er) {}
+    }
+    try { for (const x of tx.findRecordsByFilter("join_requests", "group = {:g}", "", 0, 0, { g: gid })) tx.delete(x); } catch (er) {}
+    try { for (const x of tx.findRecordsByFilter("group_history", "group = {:g}", "", 0, 0, { g: gid })) tx.delete(x); } catch (er) {}
+    for (const m of members) { try { tx.delete(m); } catch (er) {} }
+    try { tx.delete(tx.findRecordById("groups", gid)); } catch (er) {}
   },
   isAppAdmin: function (auth) {
     if (!auth) return false;
