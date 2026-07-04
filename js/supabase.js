@@ -147,13 +147,14 @@ const supabaseService = {
             id: userId, _pbId: p.id,
             first_name: p.first_name || '', last_name: p.last_name || '',
             phone: p.phone || '', address: p.address || '', apartment: p.apartment || '',
-            default_role: p.default_role || 'voter', profile_completed: !!p.profile_completed
+            default_role: p.default_role || 'voter', profile_completed: !!p.profile_completed,
+            terms_version: p.terms_version || 0, terms_accepted: p.terms_accepted || null
         };
     },
     async updateProfile(userId, profileData) {
         try {
             const payload = {};
-            ['first_name', 'last_name', 'phone', 'address', 'apartment', 'default_role', 'profile_completed'].forEach(k => {
+            ['first_name', 'last_name', 'phone', 'address', 'apartment', 'default_role', 'profile_completed', 'terms_version', 'terms_accepted'].forEach(k => {
                 if (k in profileData) payload[k] = profileData[k];
             });
             // Only treat a real 404 as "no profile yet". A transient error must NOT

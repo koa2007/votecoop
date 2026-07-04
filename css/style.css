@@ -1929,6 +1929,24 @@ html, body {
     overflow-y: auto;
 }
 
+/* Mandatory consent sheet (terms) — full screen, no way to dismiss */
+.modal-mandatory {
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+    border-radius: 0;
+}
+.modal-mandatory .modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+.terms-content h4 {
+    margin: 16px 0 6px;
+    font-size: 15px;
+}
+
 @keyframes slideUp {
     from {
         transform: translateY(100%);

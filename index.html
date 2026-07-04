@@ -373,11 +373,7 @@
                                 <label class="field-label" for="join-group-id" data-lang="join_id_label">ID групи</label>
                                 <input type="text" id="join-group-id" data-lang-placeholder="join_id_ph" placeholder="6 цифр, напр. 123456" maxlength="6" inputmode="numeric" pattern="[0-9]{6}">
                             </div>
-                            <div class="field-group">
-                                <label class="field-label" for="join-apartment" data-lang="join_apartment_label_full">Номер вашої квартири / офісу / будинку</label>
-                                <input type="text" id="join-apartment" data-lang-placeholder="join_apartment_ph" placeholder="напр. 12 або 12А" maxlength="10" inputmode="text">
-                                <p class="field-hint" data-lang="join_apartment_hint">Одна квартира — один голос.</p>
-                            </div>
+                            <p class="field-hint" data-lang="join_apartment_auto">Номер квартири/ділянки візьмемо з вашого профілю. Одна квартира — один голос.</p>
                             <div class="field-group">
                                 <label class="field-label" data-lang="join_role_label">Ваша роль</label>
                                 <div class="role-radio-group" id="join-role-group" role="radiogroup" aria-label="Role in the group">
@@ -926,45 +922,70 @@
             </div>
         </div>
 
-        <!-- Terms Modal (shown on first profile save) -->
+        <!-- Terms Modal — MANDATORY consent gate. No close button on purpose:
+             shown on first entry and on every app start until the user accepts
+             the current TERMS_VERSION (acceptance is stored server-side). -->
         <div class="modal hidden" id="terms-modal">
             <div class="modal-overlay"></div>
-            <div class="modal-content">
+            <div class="modal-content modal-mandatory">
                 <div class="modal-header">
                     <h3 data-lang="terms_title">Умови використання</h3>
                 </div>
                 <div class="modal-body">
                     <div class="terms-content">
                         <p data-lang="terms_intro">
-                            Для забезпечення повної прозорості та демократії в групі, всі учасники мають право:
+                            Коротко про головне — будь ласка, прочитайте перед початком:
                         </p>
                         <ul>
-                            <li data-lang="terms_item1">
-                                Брати участь у голосуваннях після вказання номера квартири/ділянки
+                            <li data-lang="terms_s_data">
+                                Ми зберігаємо ваші дані: email, ім'я та прізвище, телефон, адресу, номер квартири/ділянки, ваші голоси й коментарі. Використовуємо їх лише для роботи голосувань — нікому не передаємо і не продаємо.
                             </li>
-                            <li data-lang="terms_item2">
-                                Експортувати повну історію голосувань групи в форматі CSV
+                            <li data-lang="terms_s_visibility">
+                                Учасники вашої групи бачать ваше ім'я, номер квартири/ділянки та ваші голоси (крім таємних голосувань). Будь-який учасник може завантажити історію голосувань групи.
                             </li>
-                            <li data-lang="terms_item3">
-                                Перевіряти результати голосувань на достовірність
+                            <li data-lang="terms_s_asis">
+                                Сервіс безкоштовний і надається «як є», без гарантій безперебійної роботи. Можливі збої або втрата даних — важливі результати зберігайте собі («Протокол» або «Експорт CSV»).
                             </li>
-                            <li data-lang="terms_item4">
-                                Коментувати свої голоси (якщо це не таємне голосування)
+                            <li data-lang="terms_s_security">
+                                Ми захищаємо дані (шифрування паролів, обмежений доступ, резервні копії), але жодна система в інтернеті не захищена на 100%. Не використовуйте тут пароль від пошти чи банку.
+                            </li>
+                            <li data-lang="terms_s_legal">
+                                Голосування у Спілці — допоміжний інструмент. Вони не замінюють офіційні збори (ОСББ, кооперативу тощо) і не мають самостійної юридичної сили.
+                            </li>
+                            <li data-lang="terms_s_rights">
+                                Ви можете будь-коли вийти з групи або попросити видалити ваш акаунт і всі дані через форму зворотного зв'язку у профілі. Сервіс — для осіб від 18 років.
+                            </li>
+                            <li data-lang="terms_s_changes">
+                                Умови можуть оновлюватися — при суттєвих змінах ми покажемо їх знову і попросимо погодитися ще раз.
                             </li>
                         </ul>
-                        <p data-lang="terms_export_notice" class="terms-notice">
-                            <strong>Важливо:</strong> Ви розумієте, що будь-який учасник групи може завантажити історію голосувань, де буде видно номер вашої квартири/ділянки та ваші голоси.
+                        <p class="terms-notice">
+                            <a href="#" class="auth-link" onclick="app.showFullTerms(); return false;" data-lang="terms_full_link">Читати повний текст умов</a>
                         </p>
                         <div class="form-group">
                             <label class="terms-checkbox-label">
                                 <input type="checkbox" id="terms-agree">
-                                <span data-lang="terms_agree_text">Я ознайомлений(а) з умовами та погоджуюсь з ними</span>
+                                <span data-lang="terms_agree_text">Я приймаю умови використання і даю згоду на обробку моїх персональних даних</span>
                             </label>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button class="btn btn-primary" onclick="app.acceptTerms()" data-lang="accept">Погодитись та продовжити</button>
+                    <button class="btn btn-primary" id="terms-accept-btn" onclick="app.acceptTerms()" data-lang="accept">Погодитись та продовжити</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Full terms text (informational, closable — consent modal stays underneath) -->
+        <div class="modal hidden" id="terms-full-modal">
+            <div class="modal-overlay" onclick="app.hideModal('terms-full-modal')"></div>
+            <div class="modal-content modal-instructions">
+                <div class="modal-header">
+                    <h3 data-lang="terms_full_title">Умови використання — повний текст</h3>
+                    <button class="btn-icon" onclick="app.hideModal('terms-full-modal')" aria-label="Close">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="terms-content" id="terms-full-body"><!-- filled by app.showFullTerms() --></div>
                 </div>
             </div>
         </div>

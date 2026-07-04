@@ -1,5 +1,10 @@
 // Spilka App
 const app = {
+    // Bump when the Terms of Use text changes materially — every user whose
+    // stored profiles.terms_version is lower gets the blocking consent modal
+    // again on next start. Acceptance (who/when/version) is stored in the DB.
+    TERMS_VERSION: 1,
+
     state: {
         user: null,
         groups: [],
@@ -202,7 +207,8 @@ const app = {
                 email: userEmail,
                 phone: profile.phone || '',
                 address: profile.address || '',
-                apartment: profile.apartment || ''
+                apartment: profile.apartment || '',
+                termsVersion: profile.terms_version || 0
             };
             // Cache for offline PWA starts (cleared on logout).
             try { localStorage.setItem('vc_user', JSON.stringify(this.state.user)); } catch (e) { /* ignore */ }
@@ -240,6 +246,13 @@ const app = {
 
             // Subscribe to live updates (votes, votings, notifications)
             this.subscribeToRealtime();
+
+            // Consent gate: if the user never accepted the current Terms (or
+            // bypassed the modal by closing the app), it comes back full-screen
+            // and nothing is usable until they agree.
+            if ((this.state.user.termsVersion || 0) < this.TERMS_VERSION) {
+                this.showTermsModal();
+            }
         } else {
             // Profile not completed — show setup screen
             this.state.user = {
@@ -249,7 +262,8 @@ const app = {
                 lastName: profile?.last_name || '',
                 phone: profile?.phone || '',
                 address: profile?.address || '',
-                apartment: profile?.apartment || ''
+                apartment: profile?.apartment || '',
+                termsVersion: profile?.terms_version || 0
             };
 
             // Pre-fill email in profile-setup
@@ -801,8 +815,8 @@ const app = {
             return;
         }
 
-        // Check if this is first profile save
-        const isFirstSave = !this.state.user || !this.state.user.apartment;
+        // Terms must be accepted (current version) before entering the app
+        const needsTerms = (this.state.user?.termsVersion || 0) < this.TERMS_VERSION;
 
         // Update local state
         this.state.user = {
@@ -835,8 +849,8 @@ const app = {
             }
         }
 
-        // Show Terms on first save
-        if (isFirstSave) {
+        // Show Terms until the current version is accepted
+        if (needsTerms) {
             this.showTermsModal();
             return;
         }
@@ -853,6 +867,21 @@ const app = {
         this.showModal('terms-modal');
     },
 
+    // Build the full terms text from translation keys and show it (informational,
+    // closable — the consent modal stays underneath).
+    showFullTerms() {
+        const t = this.translations[this.currentLanguage] || {};
+        const el = document.getElementById('terms-full-body');
+        if (el) {
+            let html = '';
+            for (let i = 1; i <= 8; i++) {
+                html += `<h4>${t['terms_full_' + i + '_title'] || ''}</h4><p>${t['terms_full_' + i + '_body'] || ''}</p>`;
+            }
+            el.innerHTML = html;
+        }
+        this.showModal('terms-full-modal');
+    },
+
     async acceptTerms() {
         const t = this.translations[this.currentLanguage];
         const agreed = document.getElementById('terms-agree').checked;
@@ -862,7 +891,30 @@ const app = {
             return;
         }
 
+        // Persist the consent (who / when / which version) — this record is the
+        // proof the user agreed. Without a successful save the modal stays.
+        this.setBtnLoading('terms-accept-btn', true);
+        const { error } = await supabaseService.updateProfile(this.state.user.id, {
+            terms_version: this.TERMS_VERSION,
+            terms_accepted: new Date().toISOString()
+        });
+        this.setBtnLoading('terms-accept-btn', false);
+        if (error) {
+            this.toastError(t.terms_accept_error || 'Не вдалося зберегти згоду. Перевірте інтернет і спробуйте ще раз.');
+            return;
+        }
+
+        this.state.user.termsVersion = this.TERMS_VERSION;
+        try { localStorage.setItem('vc_user', JSON.stringify(this.state.user)); } catch (e) { /* ignore */ }
+
+        this.hideModal('terms-full-modal');
         this.hideModal('terms-modal');
+
+        // Session-gate case: the main app is already rendered under the modal —
+        // consent saved, nothing else to redo.
+        const main = document.getElementById('main-screens');
+        if (main && !main.classList.contains('hidden')) return;
+
         document.getElementById('profile-setup-screen').classList.add('hidden');
 
         this.setupEventListeners();
@@ -2494,9 +2546,12 @@ const app = {
             return;
         }
 
-        const apartment = (document.getElementById('join-apartment')?.value || '').trim();
+        // The apartment comes from the profile — no duplicate typing. Without it
+        // joining is impossible (one apartment = one vote), so send the user to
+        // fill the profile first.
+        const apartment = (this.state.user?.apartment || '').trim();
         if (!apartment) {
-            this.toastError(t.join_apartment_required || 'Введіть номер квартири');
+            this.toastError(t.join_apartment_profile || 'Спочатку вкажіть номер квартири у вашому профілі (вкладка «Профіль» → «Редагувати»), тоді приєднуйтесь');
             return;
         }
 
@@ -2543,7 +2598,6 @@ const app = {
             }
 
             document.getElementById('join-group-id').value = '';
-            document.getElementById('join-apartment').value = '';
             document.querySelectorAll('input[name="join-role"]').forEach(r => r.checked = false);
 
             // Notify group admin about the join request
@@ -4442,13 +4496,34 @@ const app = {
             your_comment: 'Ваш коментар',
             no_comments: 'Коментарів ще немає',
             terms_title: 'Умови використання',
-            terms_intro: 'Для забезпечення повної прозорості та демократії в групі, всі учасники мають право:',
-            terms_item1: 'Брати участь у голосуваннях після вказання номера квартири/ділянки',
-            terms_item2: 'Експортувати повну історію голосувань групи в форматі CSV',
-            terms_item3: 'Перевіряти результати голосувань на достовірність',
-            terms_item4: 'Коментувати свої голоси (якщо це не таємне голосування)',
-            terms_export_notice: 'Важливо: Ви розумієте, що будь-який учасник групи може завантажити історію голосувань, де буде видно номер вашої квартири/ділянки та ваші голоси.',
-            terms_agree_text: 'Я ознайомлений(а) з умовами та погоджуюсь з ними',
+            terms_intro: 'Коротко про головне — будь ласка, прочитайте перед початком:',
+            terms_s_data: "Ми зберігаємо ваші дані: email, ім'я та прізвище, телефон, адресу, номер квартири/ділянки, ваші голоси й коментарі. Використовуємо їх лише для роботи голосувань — нікому не передаємо і не продаємо.",
+            terms_s_visibility: "Учасники вашої групи бачать ваше ім'я, номер квартири/ділянки та ваші голоси (крім таємних голосувань). Будь-який учасник може завантажити історію голосувань групи.",
+            terms_s_asis: 'Сервіс безкоштовний і надається «як є», без гарантій безперебійної роботи. Можливі збої або втрата даних — важливі результати зберігайте собі («Протокол» або «Експорт CSV»).',
+            terms_s_security: 'Ми захищаємо дані (шифрування паролів, обмежений доступ, резервні копії), але жодна система в інтернеті не захищена на 100%. Не використовуйте тут пароль від пошти чи банку.',
+            terms_s_legal: 'Голосування у Спілці — допоміжний інструмент. Вони не замінюють офіційні збори (ОСББ, кооперативу тощо) і не мають самостійної юридичної сили.',
+            terms_s_rights: "Ви можете будь-коли вийти з групи або попросити видалити ваш акаунт і всі дані через форму зворотного зв'язку у профілі. Сервіс — для осіб від 18 років.",
+            terms_s_changes: 'Умови можуть оновлюватися — при суттєвих змінах ми покажемо їх знову і попросимо погодитися ще раз.',
+            terms_full_link: 'Читати повний текст умов',
+            terms_full_title: 'Умови використання — повний текст',
+            terms_agree_text: 'Я приймаю умови використання і даю згоду на обробку моїх персональних даних',
+            terms_accept_error: 'Не вдалося зберегти згоду. Перевірте інтернет і спробуйте ще раз.',
+            terms_full_1_title: 'Що таке Спілка',
+            terms_full_1_body: 'Спілка (spilka.top) — онлайн-застосунок для голосувань у житлових спільнотах: ОСББ, кооперативах, садових товариствах, будинкових комітетах. Реєструючись, ви погоджуєтесь користуватися сервісом на умовах, описаних нижче.',
+            terms_full_2_title: 'Які дані ми збираємо і навіщо',
+            terms_full_2_body: "Для роботи сервісу ми зберігаємо: email і пароль (пароль — у зашифрованому вигляді), ім'я та прізвище, телефон (якщо вказали), адресу, номер квартири/ділянки, ваші голоси, коментарі та повідомлення у формі зворотного зв'язку. Ці дані потрібні виключно для проведення голосувань та ідентифікації учасників у вашій групі. Ми не передаємо і не продаємо їх третім особам і не використовуємо для реклами. Приймаючи умови, ви даєте згоду на обробку та зберігання цих персональних даних відповідно до Закону України «Про захист персональних даних».",
+            terms_full_3_title: 'Хто бачить ваші дані',
+            terms_full_3_body: "Учасники вашої групи бачать ваше ім'я, прізвище, номер квартири/ділянки та ваші голоси у відкритих голосуваннях. У таємних голосуваннях ваш вибір не бачить ніхто, включно з адміністратором групи. Будь-який учасник групи може завантажити історію голосувань групи (CSV або протокол), де видно квартири та голоси відкритих голосувань. Технічний доступ до даних має адміністратор сервісу — виключно для підтримки роботи застосунку.",
+            terms_full_4_title: 'Сервіс надається «як є»',
+            terms_full_4_body: "Сервіс безкоштовний. Ми не гарантуємо безперебійну роботу: можливі технічні збої, перерви, а у крайніх випадках — втрата даних. Користуючись сервісом, ви погоджуєтесь, що власник сервісу не відшкодовує збитки, пов'язані з недоступністю сервісу чи втратою даних. Важливі результати голосувань рекомендуємо одразу зберігати собі: кнопка «Протокол» (друк/PDF) або «Експорт CSV».",
+            terms_full_5_title: 'Безпека і ризики',
+            terms_full_5_body: 'Ми вживаємо розумних заходів захисту: паролі зберігаються в зашифрованому вигляді, доступ до сервера обмежений, регулярно робляться резервні копії. Водночас жодна система в інтернеті не захищена на 100% — існує ризик злому чи витоку даних. Приймаючи умови, ви усвідомлюєте цей ризик. Не використовуйте у Спілці пароль від пошти, банку чи інших важливих сервісів.',
+            terms_full_6_title: 'Юридичний статус голосувань',
+            terms_full_6_body: "Спілка — допоміжний інструмент для з'ясування думки спільноти. Голосування в застосунку не замінюють офіційні збори співвласників (ОСББ, ЖБК тощо), передбачені законодавством, і самі по собі не мають юридичної сили. Якщо рішення потребує офіційного оформлення — за проведення зборів та оформлення протоколу відповідають самі учасники спільноти.",
+            terms_full_7_title: 'Ваші права',
+            terms_full_7_body: "Ви можете будь-коли: вийти з групи; змінити свої дані у профілі; попросити повністю видалити ваш акаунт і всі дані — напишіть через форму зворотного зв'язку у профілі, і ми їх видалимо. Сервіс призначений для осіб, яким виповнилося 18 років.",
+            terms_full_8_title: 'Зміни умов',
+            terms_full_8_body: "Ми можемо оновлювати ці умови. При суттєвих змінах застосунок покаже нову версію і попросить погодитися ще раз — без згоди користування сервісом неможливе. Питання щодо умов — через форму зворотного зв'язку у профілі.",
             accept: 'Погодитись та продовжити',
             apartment_required: 'Вкажіть номер квартири або ділянки для участі в голосуваннях',
             apartment_required_title: 'Необхідно заповнити адресу',
@@ -4547,6 +4622,8 @@ const app = {
             join_id_ph: '6 цифр, напр. 123456',
             join_apartment_label_full: 'Номер вашої квартири / офісу / будинку',
             join_apartment_ph: 'напр. 12 або 12А',
+            join_apartment_auto: 'Номер квартири/ділянки візьмемо з вашого профілю. Одна квартира — один голос.',
+            join_apartment_profile: 'Спочатку вкажіть номер квартири у вашому профілі (вкладка «Профіль» → «Редагувати»), тоді приєднуйтесь',
             join_apartment_hint: 'Одна квартира — один голос.',
             join_role_label: 'Ваша роль'
         },
@@ -4923,13 +5000,34 @@ const app = {
             your_comment: 'Your comment',
             no_comments: 'No comments yet',
             terms_title: 'Terms of Service',
-            terms_intro: 'To ensure full transparency and democracy in the group, all members have the right to:',
-            terms_item1: 'Participate in voting after providing apartment/plot number',
-            terms_item2: 'Export complete voting history of the group in CSV format',
-            terms_item3: 'Verify voting results for authenticity',
-            terms_item4: 'Comment on their votes (if not secret voting)',
-            terms_export_notice: 'Important: You understand that any group member can download voting history showing your apartment/plot number and your votes.',
-            terms_agree_text: 'I have read and agree to the terms',
+            terms_intro: 'The essentials in short — please read before you start:',
+            terms_s_data: 'We store your data: email, first and last name, phone, address, apartment/plot number, your votes and comments. We use it only to run the votings — we never share or sell it.',
+            terms_s_visibility: 'Members of your group see your name, apartment/plot number and your votes (except secret ballots). Any member can download the group voting history.',
+            terms_s_asis: 'The service is free and provided "as is", with no uptime guarantees. Failures or data loss are possible — keep important results yourself ("Protocol" or "CSV export").',
+            terms_s_security: 'We protect the data (password encryption, restricted access, backups), but no online system is 100% secure. Do not reuse your email or bank password here.',
+            terms_s_legal: 'Votings in Spilka are a supporting tool. They do not replace official meetings (HOA, co-op etc.) and have no legal force on their own.',
+            terms_s_rights: 'You can leave a group at any time or ask us to delete your account and all data via the feedback form in your profile. The service is for persons 18+.',
+            terms_s_changes: 'The terms may be updated — on material changes we will show them again and ask you to agree once more.',
+            terms_full_link: 'Read the full terms',
+            terms_full_title: 'Terms of Service — full text',
+            terms_agree_text: 'I accept the Terms of Service and consent to the processing of my personal data',
+            terms_accept_error: 'Could not save your consent. Check your connection and try again.',
+            terms_full_1_title: 'What Spilka is',
+            terms_full_1_body: 'Spilka (spilka.top) is an online voting app for residential communities: HOAs, co-ops, garden societies, house committees. By registering you agree to use the service under the terms below.',
+            terms_full_2_title: 'What data we collect and why',
+            terms_full_2_body: 'To run the service we store: email and password (the password is encrypted), first and last name, phone (if provided), address, apartment/plot number, your votes, comments and feedback messages. This data is used solely to run votings and identify members within your group. We do not share or sell it to third parties and do not use it for advertising. By accepting these terms you consent to the processing and storage of this personal data in accordance with the Law of Ukraine "On Personal Data Protection".',
+            terms_full_3_title: 'Who sees your data',
+            terms_full_3_body: 'Members of your group see your name, surname, apartment/plot number and your votes in open votings. In secret ballots nobody sees your choice, including the group administrator. Any group member can download the group voting history (CSV or protocol) showing apartments and votes of open votings. The service administrator has technical access to the data — solely to keep the app running.',
+            terms_full_4_title: 'The service is provided "as is"',
+            terms_full_4_body: 'The service is free. We do not guarantee uninterrupted operation: technical failures, downtime and, in extreme cases, data loss are possible. By using the service you agree that the service owner does not compensate damages related to unavailability or data loss. We recommend saving important voting results right away: the "Protocol" button (print/PDF) or "CSV export".',
+            terms_full_5_title: 'Security and risks',
+            terms_full_5_body: 'We take reasonable protection measures: passwords are stored encrypted, server access is restricted, backups are made regularly. Still, no online system is 100% secure — a risk of breach or leak exists. By accepting the terms you acknowledge this risk. Do not reuse your email or bank password in Spilka.',
+            terms_full_6_title: 'Legal status of votings',
+            terms_full_6_body: 'Spilka is a supporting tool for gauging community opinion. Votings in the app do not replace official owners\' meetings required by law and have no legal force on their own. If a decision needs official formalization — holding the meeting and drawing up the minutes remains the responsibility of the community members themselves.',
+            terms_full_7_title: 'Your rights',
+            terms_full_7_body: 'At any time you can: leave a group; edit your profile data; ask us to fully delete your account and all data — write via the feedback form in your profile and we will delete them. The service is intended for persons aged 18 or older.',
+            terms_full_8_title: 'Changes to the terms',
+            terms_full_8_body: 'We may update these terms. On material changes the app will show the new version and ask you to agree again — without consent the service cannot be used. Questions about the terms — via the feedback form in your profile.',
             accept: 'Accept and continue',
             apartment_required: 'Please provide apartment or plot number to participate in voting',
             apartment_required_title: 'Address required',
@@ -5028,6 +5126,8 @@ const app = {
             join_id_ph: '6 digits, e.g. 123456',
             join_apartment_label_full: 'Your apartment / office / house number',
             join_apartment_ph: 'e.g. 12 or 12A',
+            join_apartment_auto: 'Your apartment/plot number is taken from your profile. One apartment — one vote.',
+            join_apartment_profile: 'First fill in your apartment number in your profile (Profile tab → Edit), then join',
             join_apartment_hint: 'One apartment — one vote.',
             join_role_label: 'Your role'
         },
@@ -5404,13 +5504,34 @@ const app = {
             your_comment: 'Ваш комментарий',
             no_comments: 'Комментариев пока нет',
             terms_title: 'Условия использования',
-            terms_intro: 'Для обеспечения полной прозрачности и демократии в группе, все участники имеют право:',
-            terms_item1: 'Принимать участие в голосованиях после указания номера квартиры/участка',
-            terms_item2: 'Экспортировать полную историю голосований группы в формате CSV',
-            terms_item3: 'Проверять результаты голосований на достоверность',
-            terms_item4: 'Комментировать свои голоса (если это не тайное голосование)',
-            terms_export_notice: 'Важно: Вы понимаете, что любой участник группы может скачать историю голосований, где будет видно номер вашей квартиры/участка и ваши голоса.',
-            terms_agree_text: 'Я ознакомлен(а) с условиями и согласен(на) с ними',
+            terms_intro: 'Коротко о главном — пожалуйста, прочитайте перед началом:',
+            terms_s_data: 'Мы храним ваши данные: email, имя и фамилию, телефон, адрес, номер квартиры/участка, ваши голоса и комментарии. Используем их только для работы голосований — никому не передаём и не продаём.',
+            terms_s_visibility: 'Участники вашей группы видят ваше имя, номер квартиры/участка и ваши голоса (кроме тайных голосований). Любой участник может скачать историю голосований группы.',
+            terms_s_asis: 'Сервис бесплатный и предоставляется «как есть», без гарантий бесперебойной работы. Возможны сбои или потеря данных — важные результаты сохраняйте себе («Протокол» или «Экспорт CSV»).',
+            terms_s_security: 'Мы защищаем данные (шифрование паролей, ограниченный доступ, резервные копии), но ни одна система в интернете не защищена на 100%. Не используйте здесь пароль от почты или банка.',
+            terms_s_legal: 'Голосования в Спилке — вспомогательный инструмент. Они не заменяют официальные собрания (ОСМД, кооператива и т.п.) и не имеют самостоятельной юридической силы.',
+            terms_s_rights: 'Вы можете в любой момент выйти из группы или попросить удалить ваш аккаунт и все данные через форму обратной связи в профиле. Сервис — для лиц от 18 лет.',
+            terms_s_changes: 'Условия могут обновляться — при существенных изменениях мы покажем их снова и попросим согласиться ещё раз.',
+            terms_full_link: 'Читать полный текст условий',
+            terms_full_title: 'Условия использования — полный текст',
+            terms_agree_text: 'Я принимаю условия использования и даю согласие на обработку моих персональных данных',
+            terms_accept_error: 'Не удалось сохранить согласие. Проверьте интернет и попробуйте ещё раз.',
+            terms_full_1_title: 'Что такое Спилка',
+            terms_full_1_body: 'Спилка (spilka.top) — онлайн-приложение для голосований в жилых сообществах: ОСМД, кооперативах, садовых товариществах, домовых комитетах. Регистрируясь, вы соглашаетесь пользоваться сервисом на условиях, описанных ниже.',
+            terms_full_2_title: 'Какие данные мы собираем и зачем',
+            terms_full_2_body: 'Для работы сервиса мы храним: email и пароль (пароль — в зашифрованном виде), имя и фамилию, телефон (если указали), адрес, номер квартиры/участка, ваши голоса, комментарии и сообщения в форме обратной связи. Эти данные нужны исключительно для проведения голосований и идентификации участников в вашей группе. Мы не передаём и не продаём их третьим лицам и не используем для рекламы. Принимая условия, вы даёте согласие на обработку и хранение этих персональных данных в соответствии с Законом Украины «О защите персональных данных».',
+            terms_full_3_title: 'Кто видит ваши данные',
+            terms_full_3_body: 'Участники вашей группы видят ваше имя, фамилию, номер квартиры/участка и ваши голоса в открытых голосованиях. В тайных голосованиях ваш выбор не видит никто, включая администратора группы. Любой участник группы может скачать историю голосований группы (CSV или протокол), где видны квартиры и голоса открытых голосований. Технический доступ к данным имеет администратор сервиса — исключительно для поддержки работы приложения.',
+            terms_full_4_title: 'Сервис предоставляется «как есть»',
+            terms_full_4_body: 'Сервис бесплатный. Мы не гарантируем бесперебойную работу: возможны технические сбои, перерывы, а в крайних случаях — потеря данных. Пользуясь сервисом, вы соглашаетесь, что владелец сервиса не возмещает убытки, связанные с недоступностью сервиса или потерей данных. Важные результаты голосований рекомендуем сразу сохранять себе: кнопка «Протокол» (печать/PDF) или «Экспорт CSV».',
+            terms_full_5_title: 'Безопасность и риски',
+            terms_full_5_body: 'Мы принимаем разумные меры защиты: пароли хранятся в зашифрованном виде, доступ к серверу ограничен, регулярно делаются резервные копии. При этом ни одна система в интернете не защищена на 100% — существует риск взлома или утечки данных. Принимая условия, вы осознаёте этот риск. Не используйте в Спилке пароль от почты, банка или других важных сервисов.',
+            terms_full_6_title: 'Юридический статус голосований',
+            terms_full_6_body: 'Спилка — вспомогательный инструмент для выяснения мнения сообщества. Голосования в приложении не заменяют официальные собрания совладельцев (ОСМД, ЖСК и т.п.), предусмотренные законодательством, и сами по себе не имеют юридической силы. Если решение требует официального оформления — за проведение собрания и оформление протокола отвечают сами участники сообщества.',
+            terms_full_7_title: 'Ваши права',
+            terms_full_7_body: 'Вы можете в любой момент: выйти из группы; изменить свои данные в профиле; попросить полностью удалить ваш аккаунт и все данные — напишите через форму обратной связи в профиле, и мы их удалим. Сервис предназначен для лиц, достигших 18 лет.',
+            terms_full_8_title: 'Изменение условий',
+            terms_full_8_body: 'Мы можем обновлять эти условия. При существенных изменениях приложение покажет новую версию и попросит согласиться ещё раз — без согласия пользоваться сервисом нельзя. Вопросы по условиям — через форму обратной связи в профиле.',
             accept: 'Согласиться и продолжить',
             apartment_required: 'Укажите номер квартиры или участка для участия в голосованиях',
             apartment_required_title: 'Необходимо заполнить адрес',
@@ -5509,6 +5630,8 @@ const app = {
             join_id_ph: '6 цифр, напр. 123456',
             join_apartment_label_full: 'Номер вашей квартиры / офиса / дома',
             join_apartment_ph: 'напр. 12 или 12А',
+            join_apartment_auto: 'Номер квартиры/участка возьмём из вашего профиля. Одна квартира — один голос.',
+            join_apartment_profile: 'Сначала укажите номер квартиры в вашем профиле (вкладка «Профиль» → «Редактировать»), затем присоединяйтесь',
             join_apartment_hint: 'Одна квартира — один голос.',
             join_role_label: 'Ваша роль'
         }
