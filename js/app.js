@@ -1171,7 +1171,10 @@ const app = {
             this.state.notifications.unshift({
                 id: n.id, type: n.type, text: n.text,
                 time: new Date(String(n.created).replace(' ', 'T')).toLocaleString(),
-                read: n.is_read
+                read: n.is_read,
+                // Without metadata the live-delivered join-request notification
+                // rendered WITHOUT the approve/reject buttons until a full reload.
+                metadata: n.metadata || null
             });
             this.renderNotifications();
             if (n.type !== 'system' || (n.text && !n.is_read)) this.toastInfo(n.text);
@@ -1414,6 +1417,19 @@ const app = {
 
     async approveFromNotification(notifId, groupId, requestId, forceObserver = false) {
         const t = this.translations[this.currentLanguage] || {};
+        // Confirm before letting someone in — protects against a stray tap in
+        // the list. Skipped on the forceObserver re-entry (it has its own confirm).
+        if (!forceObserver) {
+            const n = this.state.notifications.find(x => String(x.id) === String(notifId));
+            const ok = await this.confirm({
+                title: t.approve || 'Прийняти',
+                message: n?.text || t.approve_confirm || 'Прийняти цей запит на вступ?',
+                okText: t.approve || 'Прийняти',
+                cancelText: t.cancel || 'Скасувати',
+                danger: false
+            });
+            if (!ok) return;
+        }
         // Use V2 RPC — honours requested role (voter/observer), copies the
         // apartment, re-checks the apartment slot, and handles role-change
         // requests. The legacy V1 ignored all of this (observer→voter,
@@ -1451,6 +1467,15 @@ const app = {
 
     async rejectFromNotification(notifId, groupId, requestId) {
         const t = this.translations[this.currentLanguage] || {};
+        const n = this.state.notifications.find(x => String(x.id) === String(notifId));
+        const ok = await this.confirm({
+            title: t.reject || 'Відхилити',
+            message: n?.text || t.reject_confirm || 'Відхилити цей запит на вступ?',
+            okText: t.reject || 'Відхилити',
+            cancelText: t.cancel || 'Скасувати',
+            danger: true
+        });
+        if (!ok) return;
         const { error } = await supabaseService.rejectJoinRequest(requestId);
         if (error) { this.toastError(this.humanError(error)); return; }
         this.toastSuccess(t.request_rejected || 'Запит відхилено');
@@ -4176,6 +4201,8 @@ const app = {
             request_rejected: 'Запит відхилено',
             approve: 'Прийняти',
             reject: 'Відхилити',
+            approve_confirm: 'Прийняти цей запит на вступ?',
+            reject_confirm: 'Відхилити цей запит на вступ?',
             loader_signing_in: 'Входимо в акаунт…',
             refresh_group: 'Оновити дані',
             refresh_in_progress: 'Оновлюємо…',
@@ -4680,6 +4707,8 @@ const app = {
             request_rejected: 'Request rejected',
             approve: 'Approve',
             reject: 'Reject',
+            approve_confirm: 'Approve this join request?',
+            reject_confirm: 'Reject this join request?',
             loader_signing_in: 'Signing you in…',
             refresh_group: 'Refresh data',
             refresh_in_progress: 'Refreshing…',
@@ -5184,6 +5213,8 @@ const app = {
             request_rejected: 'Запрос отклонён',
             approve: 'Принять',
             reject: 'Отклонить',
+            approve_confirm: 'Принять этот запрос на вступление?',
+            reject_confirm: 'Отклонить этот запрос на вступление?',
             loader_signing_in: 'Входим в аккаунт…',
             refresh_group: 'Обновить данные',
             refresh_in_progress: 'Обновляем…',
