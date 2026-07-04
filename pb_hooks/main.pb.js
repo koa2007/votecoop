@@ -314,8 +314,9 @@ routerAdd("POST", "/api/spilka/admin-stats", (e) => {
   const L = require(`${__hooks}/lib.js`);
   if (!L.isAppAdmin(e.auth)) return e.json(403, { error: "not_admin" });
   const now = Date.now();
-  const d7 = new Date(now - 7 * 86400000).toISOString();
-  const d1 = new Date(now - 86400000).toISOString();
+  // Space-separated format to match PB date storage (string comparison in filters).
+  const d7 = new Date(now - 7 * 86400000).toISOString().replace("T", " ");
+  const d1 = new Date(now - 86400000).toISOString().replace("T", " ");
   const c = (col, f, prm) => L.cnt(e.app, col, f, prm);
   return e.json(200, { data: {
     users_total: c("users"), users_completed: c("profiles", "profile_completed = true"),

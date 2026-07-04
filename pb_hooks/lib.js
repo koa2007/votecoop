@@ -126,7 +126,11 @@ module.exports = {
   },
   completeExpired: function (app) {
     const self = this;
-    const due = app.findRecordsByFilter("votings", "status = 'active' && ends_at <= {:now}", "", 0, 0, { now: new Date().toISOString() });
+    // PocketBase stores dates as "YYYY-MM-DD HH:MM:SS.sssZ" (SPACE separator)
+    // and compares filter params as strings. Passing ISO "…T…" here made every
+    // same-day ends_at look expired (' ' < 'T'), so votings were completed on
+    // the first minute-tick after creation. Bind the param in the stored format.
+    const due = app.findRecordsByFilter("votings", "status = 'active' && ends_at <= {:now}", "", 0, 0, { now: new Date().toISOString().replace("T", " ") });
     for (const v of due) {
       try {
         app.runInTransaction((tx) => {
