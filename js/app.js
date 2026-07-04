@@ -1769,6 +1769,37 @@ const app = {
         setTimeout(remove, durationMs);
     },
 
+    // "New version available" toast — shown when a fresh service worker is
+    // downloaded and WAITING. Tapping it activates the new version (the page
+    // then reloads via controllerchange). No forced mid-session reload: users
+    // reported the app "closing" under their fingers on deploy days.
+    showUpdateToast(reg) {
+        if (this._updateToastShown) return;
+        this._updateToastShown = true;
+        const t = this.translations[this.currentLanguage] || {};
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const el = document.createElement('div');
+        el.className = 'toast toast-info toast-update';
+        el.setAttribute('role', 'status');
+        el.innerHTML = `
+            <span class="toast-icon"><i class="ph-fill ph-arrow-clockwise" aria-hidden="true"></i></span>
+            <span class="toast-text">${this.escapeHTML(t.update_available || 'Доступна нова версія — торкніться, щоб оновити')}</span>
+            <button class="toast-close" aria-label="Close">&times;</button>`;
+        const remove = () => { el.classList.add('toast-leaving'); setTimeout(() => el.remove(), 200); };
+        el.querySelector('.toast-close').addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Dismissed — the new version simply applies on the next app start.
+            this._updateToastShown = false;
+            remove();
+        });
+        el.addEventListener('click', () => {
+            try { if (reg && reg.waiting) reg.waiting.postMessage('SKIP_WAITING'); } catch (er) { /* ignore */ }
+            remove();
+        });
+        container.appendChild(el);
+    },
+
     toastError(msg)   { return this.toast(msg, 'error'); },
 
     // Turn a raw backend error into a translated, human message. Never show
@@ -4558,6 +4589,7 @@ const app = {
             terms_s_changes: 'Умови можуть оновлюватися — при суттєвих змінах ми покажемо їх знову і попросимо погодитися ще раз.',
             terms_full_link: 'Читати повний текст умов',
             terms_full_title: 'Умови використання — повний текст',
+            update_available: 'Доступна нова версія — торкніться, щоб оновити',
             terms_agree_text: 'Я приймаю умови використання і даю згоду на обробку моїх персональних даних',
             terms_accept_error: 'Не вдалося зберегти згоду. Перевірте інтернет і спробуйте ще раз.',
             terms_full_1_title: 'Що таке Спілка',
@@ -5064,6 +5096,7 @@ const app = {
             terms_s_changes: 'The terms may be updated — on material changes we will show them again and ask you to agree once more.',
             terms_full_link: 'Read the full terms',
             terms_full_title: 'Terms of Service — full text',
+            update_available: 'New version available — tap to update',
             terms_agree_text: 'I accept the Terms of Service and consent to the processing of my personal data',
             terms_accept_error: 'Could not save your consent. Check your connection and try again.',
             terms_full_1_title: 'What Spilka is',
@@ -5570,6 +5603,7 @@ const app = {
             terms_s_changes: 'Условия могут обновляться — при существенных изменениях мы покажем их снова и попросим согласиться ещё раз.',
             terms_full_link: 'Читать полный текст условий',
             terms_full_title: 'Условия использования — полный текст',
+            update_available: 'Доступна новая версия — нажмите, чтобы обновить',
             terms_agree_text: 'Я принимаю условия использования и даю согласие на обработку моих персональных данных',
             terms_accept_error: 'Не удалось сохранить согласие. Проверьте интернет и попробуйте ещё раз.',
             terms_full_1_title: 'Что такое Спилка',

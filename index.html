@@ -1222,22 +1222,32 @@
     <script src="js/app.js"></script>
     <script>
         // Service worker — registered with relative path so it works under any base URL.
-        // Auto-update flow:
-        //   1. SW skipWaiting on install → new SW activates immediately.
-        //   2. We listen for `controllerchange` → reload the page so the new
-        //      JS/CSS is actually used (otherwise the open tab keeps stale code).
-        //   3. Periodically call reg.update() — picks up new versions in long-running PWA installs.
+        // Update flow (zero-disruption: NO forced mid-session reload):
+        //   1. A new SW downloads and WAITS (no skipWaiting on install).
+        //   2. We show a tappable toast "Нова версія — торкніться, щоб оновити".
+        //   3. Tap → SKIP_WAITING → controllerchange → one reload with fresh assets.
+        //      Toast dismissed/ignored → the new version applies on the next app start.
+        //   4. Periodically call reg.update() — picks up new versions in long-running PWA installs.
         if ('serviceWorker' in navigator && location.protocol !== 'file:') {
             window.addEventListener('load', function () {
                 navigator.serviceWorker.register('service-worker.js').then(function (reg) {
                     if (!reg) return;
-                    // If a new worker becomes installed while page is open, tell it to skip waiting
+                    var offerUpdate = function () {
+                        if (window.app && typeof app.showUpdateToast === 'function') {
+                            app.showUpdateToast(reg);
+                        }
+                    };
+                    // A new version was already downloaded earlier and is waiting
+                    if (reg.waiting && navigator.serviceWorker.controller) offerUpdate();
+                    // A new version arrives while the page is open
                     reg.addEventListener('updatefound', function () {
                         var nw = reg.installing;
                         if (!nw) return;
                         nw.addEventListener('statechange', function () {
+                            // installed + existing controller = an UPDATE
+                            // (the very first install has no controller — no toast needed)
                             if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-                                nw.postMessage('SKIP_WAITING');
+                                offerUpdate();
                             }
                         });
                     });
@@ -1245,8 +1255,8 @@
                     setInterval(function () { reg.update().catch(function () {}); }, 30 * 60 * 1000);
                 }).catch(function () { /* SW unavailable */ });
 
-                // When the active SW changes (new version took control), reload once
-                // so the page picks up the latest assets.
+                // Fires only after the user approved the update (toast tap posts
+                // SKIP_WAITING) or the manual "Оновити дані" action — reload once.
                 var reloaded = false;
                 navigator.serviceWorker.addEventListener('controllerchange', function () {
                     if (reloaded) return;

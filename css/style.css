@@ -1947,6 +1947,11 @@ html, body {
     font-size: 15px;
 }
 
+/* Tappable "new version" toast — persistent until tapped or dismissed */
+.toast-update {
+    cursor: pointer;
+}
+
 @keyframes slideUp {
     from {
         transform: translateY(100%);
