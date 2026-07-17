@@ -103,6 +103,12 @@ module.exports = {
   activeVoters: function (app, gid) {
     try { return app.findRecordsByFilter("group_members", "group = {:g} && is_observer = false && is_frozen = false", "", 0, 0, { g: gid }).length; } catch (e) { return 0; }
   },
+  // The IDs (not just the count) of the active electorate — snapshotted onto a
+  // voting at creation so eligibility to vote and the quorum denominator stay
+  // in lockstep even if roles/freeze change mid-vote.
+  activeVoterIds: function (app, gid) {
+    try { return app.findRecordsByFilter("group_members", "group = {:g} && is_observer = false && is_frozen = false", "", 0, 0, { g: gid }).map(function (m) { return m.get("user"); }); } catch (e) { return []; }
+  },
   distinctObjections: function (app, vid) {
     // unique index (voting,user) guarantees one row per user, so a plain count is distinct
     try { return app.findRecordsByFilter("freeze_objections", "voting = {:v}", "", 0, 0, { v: vid }).length; } catch (e) { return 0; }
@@ -144,8 +150,12 @@ module.exports = {
           const gid = fresh.get("group");
           if (fresh.get("type") === "freeze") { self.completeFreeze(tx, fresh, gid); return; }
           const yes = tx.findRecordsByFilter("votes", "voting = {:v} && choice = 'yes'", "", 0, 0, { v: v.id }).length;
+          // Denominator = the electorate fixed at creation. Prefer the immutable
+          // voter_ids snapshot (its length == who was allowed to vote); fall back to
+          // the numeric snapshot, then a live count for pre-snapshot votings.
+          const vids = fresh.get("voter_ids");
           const snap = fresh.get("voter_snapshot");
-          const voters = (snap && snap > 0) ? snap : self.activeVoters(tx, gid);
+          const voters = (vids && vids.length) ? vids.length : ((snap && snap > 0) ? snap : self.activeVoters(tx, gid));
           const accepted = voters > 0 && yes > voters / 2;
           fresh.set("status", "completed"); fresh.set("result", accepted ? "accepted" : "rejected"); fresh.set("completed_at", new Date().toISOString());
           tx.save(fresh);

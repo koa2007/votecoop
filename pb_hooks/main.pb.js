@@ -11,6 +11,10 @@ onRecordCreateRequest((e) => {
   if (m.get("is_frozen")) throw new BadRequestError("excluded_cannot_create");
   // Freeze the quorum denominator at creation so later exclusions can't change THIS voting.
   e.record.set("voter_snapshot", L.activeVoters(e.app, gid));
+  // Also snapshot WHO the electorate is (IDs), not just how many, so a later
+  // role/freeze change (or a self-restore) can't let an excluded member vote
+  // outside the counted denominator. Enforced in the votes create hook.
+  e.record.set("voter_ids", L.activeVoterIds(e.app, gid));
   if (e.record.get("type") === "freeze") {
     if (m.get("role") !== "admin") throw new BadRequestError("only_admin_can_freeze");
     e.record.set("ends_at", new Date(Date.now() + 5 * 86400000).toISOString()); // fixed 5-day objection window
@@ -50,16 +54,24 @@ onRecordCreateRequest((e) => {
   if (!m) throw new BadRequestError("not_member");
   if (m.get("is_observer")) throw new BadRequestError("observer_cannot_vote");
   if (m.get("is_frozen")) throw new BadRequestError("frozen_cannot_vote");
-  // Electorate integrity: only members who existed when the voting was created may vote,
-  // so the set of eligible voters matches the quorum snapshot taken at creation. Without
-  // this, an admin could approve new members mid-vote to push a result past a frozen (lower)
-  // denominator.
-  if (m.getString("created") > v.getString("created")) throw new BadRequestError("joined_after_voting_started");
+  // Electorate integrity: eligibility is FIXED at creation. If the voting captured an
+  // explicit voter_ids snapshot, only those IDs may vote — this matches the quorum
+  // denominator exactly, so a mid-vote role/freeze change (or a self-restore) can no
+  // longer let an excluded member add a vote outside the counted denominator. Older
+  // votings without the snapshot fall back to the membership-created check.
+  const roll = v.get("voter_ids");
+  if (roll && roll.length) {
+    let inRoll = false;
+    for (let i = 0; i < roll.length; i++) { if (roll[i] === e.auth.id) { inRoll = true; break; } }
+    if (!inRoll) throw new BadRequestError("not_in_electorate");
+  } else if (m.getString("created") > v.getString("created")) {
+    throw new BadRequestError("joined_after_voting_started");
+  }
   // Friendly duplicate check; the idx_vote_unique index remains the hard guarantee.
   if (e.app.findRecordsByFilter("votes", "voting = {:v} && user = {:u}", "", 1, 0, { v: v.id, u: e.auth.id }).length) throw new BadRequestError("already_voted");
   e.next();
 }, "votes");
-onRecordCreateRequest((e) => { if (e.auth) e.record.set("user", e.auth.id); e.next(); }, "feedback");
+onRecordCreateRequest((e) => { if (!e.auth) throw new BadRequestError("not_authenticated"); e.record.set("user", e.auth.id); e.next(); }, "feedback");
 
 onRecordUpdateRequest((e) => {
   if (e.auth && e.auth.collection().name === "_superusers") { e.next(); return; }
@@ -130,7 +142,7 @@ routerAdd("POST", "/api/spilka/voter-count", (e) => {
 routerAdd("POST", "/api/spilka/voting-results", (e) => {
   const L = require(`${__hooks}/lib.js`);
   if (!e.auth) return e.json(401, { error: "not_authenticated" });
-  const ids = e.requestInfo().body.voting_ids || []; const data = [];
+  const ids = (e.requestInfo().body.voting_ids || []).slice(0, 200); const data = [];
   for (const vid of ids) {
     let vt; try { vt = e.app.findRecordById("votings", vid); } catch (er) { continue; }
     if (!L.membership(e.app, vt.get("group"), e.auth.id)) continue;
@@ -269,6 +281,9 @@ routerAdd("POST", "/api/spilka/admin-change-role", (e) => {
   const b = e.requestInfo().body; const gid = b.group_id, targetUid = b.user_id, makeObs = !!b.make_observer;
   if (!L.isAdmin(e.app, gid, auth.id)) return e.json(403, { error: "not_admin" });
   const m = L.membership(e.app, gid, targetUid); if (!m) return e.json(400, { error: "not_member" });
+  // An admin must stay a voting member (admin_cannot_be_observer invariant, enforced
+  // at voting creation and in applyEffect). Never turn an admin into an observer.
+  if (makeObs && m.get("role") === "admin") return e.json(400, { error: "admin_cannot_be_observer" });
   if (!makeObs) { const apt = m.get("apartment") || "";
     if (apt) { const taken = e.app.findRecordsByFilter("group_members", "group = {:g} && is_observer = false && apartment = {:a} && user != {:u}", "", 1, 0, { g: gid, a: apt, u: targetUid });
       if (taken.length) return e.json(400, { error: "apartment_taken:" + L.fullName(e.app, taken[0].get("user")) }); } }

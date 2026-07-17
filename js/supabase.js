@@ -384,7 +384,7 @@ const supabaseService = {
             else if (/observer_cannot_vote/i.test(raw)) er.code = 'observer';
             else if (/voting_not_active/i.test(raw)) er.code = 'voting_inactive';
             else if (/frozen_cannot_vote/i.test(raw)) er.code = 'frozen';
-            else if (/joined_after_voting_started/i.test(raw)) er.code = 'joined_after';
+            else if (/joined_after_voting_started|not_in_electorate/i.test(raw)) er.code = 'joined_after';
             else if (/not_member/i.test(raw)) er.code = 'not_member';
             return { data: null, error: er };
         }
