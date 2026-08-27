@@ -80,16 +80,51 @@ module.exports = {
       return "User";
     }
   },
+  // A decision the house took but the system could not carry out must never pass in
+  // silence. The voting is still stamped "accepted" and every member can print a
+  // protocol from it, so "nothing actually happened" has to reach the history and
+  // the residents. Before this, a candidate who merely LEFT the group mid-vote — an
+  // ordinary button, no malice needed — produced "ПРИЙНЯТО: змінити адміністратора"
+  // with no new admin, no history row and no word to anyone.
+  effectNotApplied: function (tx, v, gid, reason) {
+    try {
+      const h = new Record(tx.findCollectionByNameOrId("group_history"));
+      h.set("group", gid);
+      h.set("action", "effect_not_applied");
+      h.set("voting", v.id);
+      h.set("details", { reason: reason, voting_type: v.get("type") });
+      tx.save(h);
+    } catch (er) {}
+    try {
+      this.notifyGroup(
+        tx,
+        gid,
+        null,
+        "effect_not_applied",
+        'Рішення "' +
+          (v.get("title") || "") +
+          '" ухвалено, але не виконано: учасник, якого воно стосується, вже не бере участі в голосуваннях спільноти.',
+        {
+          group_id: gid,
+          voting_id: v.id,
+          i18n: "notif_effect_not_applied",
+          p: { title: v.get("title") || "" },
+        },
+      );
+    } catch (er) {}
+  },
   applyEffect: function (tx, v) {
     const gid = v.get("group"),
       type = v.get("type"),
       target = v.get("target_member");
     if (type === "admin-change") {
-      if (!target) return;
+      if (!target) return this.effectNotApplied(tx, v, gid, "no_target");
       const tm = this.membership(tx, gid, target);
       // Target gone or became an observer mid-vote — an admin must be a voting
       // member (creation hook rejects observers; this covers role changes since).
-      if (!tm || tm.get("is_observer")) return;
+      if (!tm) return this.effectNotApplied(tx, v, gid, "target_left_group");
+      if (tm.get("is_observer"))
+        return this.effectNotApplied(tx, v, gid, "target_became_observer");
       const admins = tx.findRecordsByFilter(
         "group_members",
         "group = {:g} && role = 'admin'",
@@ -111,9 +146,16 @@ module.exports = {
       h.set("details", { new_admin: target });
       tx.save(h);
     } else if (type === "remove-member") {
-      if (!target) return;
+      if (!target) return this.effectNotApplied(tx, v, gid, "no_target");
       const tm = this.membership(tx, gid, target);
-      if (!tm || tm.get("role") === "admin") return;
+      if (!tm) return this.effectNotApplied(tx, v, gid, "target_left_group");
+      if (tm.get("role") === "admin")
+        return this.effectNotApplied(tx, v, gid, "target_is_admin");
+      // The name has to be captured BEFORE the membership row goes away: the history
+      // line is the only lasting record that a neighbour was expelled by vote, and
+      // the client can only resolve names of people still in the group — so without
+      // this the most consequential row in the journal lost its name.
+      const removedName = this.fullName(tx, target);
       tx.delete(tm);
       const h = new Record(tx.findCollectionByNameOrId("group_history"));
       h.set("group", gid);
@@ -121,6 +163,7 @@ module.exports = {
       h.set("voting", v.id);
       h.set("details", {
         removed_user: target,
+        removed_name: removedName,
         reason: v.get("removal_reason"),
       });
       tx.save(h);
@@ -368,6 +411,15 @@ module.exports = {
     const uids = targets.map(function (t) {
       return t.get("user");
     });
+    // No targets at all means the proposal never got its list attached: the client
+    // creates the voting first and adds the targets in a second request, and a
+    // failure there used to be discarded without a word. Excluding nobody must not
+    // be announced to the house as "residents were excluded from the count" — that
+    // notice is exactly what everyone reads five days later.
+    if (!uids.length) {
+      finish("rejected", "Виключення скасовано: не вказано жодного учасника");
+      return;
+    }
     let willExclude = 0;
     for (const u of uids) {
       const m = self.membership(tx, gid, u);
@@ -401,7 +453,7 @@ module.exports = {
       null,
       "member_excluded",
       "Учасника(ів) виключено з підрахунку за результатами голосування",
-      { group_id: gid, voting_id: vid },
+      { group_id: gid, voting_id: vid, i18n: "notif_member_excluded", p: {} },
     );
   },
   // groupIds (optional): limit the sweep to those groups. The cron passes nothing
@@ -477,6 +529,10 @@ module.exports = {
               group_id: gid,
               voting_id: v.id,
               result: accepted ? "accepted" : "rejected",
+              i18n: accepted
+                ? "notif_voting_accepted"
+                : "notif_voting_rejected",
+              p: { title: fresh.get("title") || "" },
             },
           );
         });

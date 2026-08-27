@@ -39,7 +39,18 @@ PB_HOOKS_DIR=/tmp/oldhooks node --test tests/*.test.mjs
 ```
 
 Against `d7cc3d5` (the state before the 2026-08-26 audit) 10 of 11 integrity tests
-and 7 of 9 governance tests fail — which is what makes them worth keeping.
+and 7 of 9 governance tests fail; against `6e29c47` (before round two) all 10 tests
+in `decision-execution.test.mjs` fail — which is what makes them worth keeping.
+
+## Looking at a change in a browser
+
+Point `PB_PUBLIC_DIR` at the repo root and the same throwaway instance also serves
+the real app, so a change can be looked at against the real hooks instead of only
+asserted over HTTP:
+
+```bash
+PB_BIN=tests/.bin/pocketbase.exe PB_PUBLIC_DIR="$PWD" node --test tests/decision-execution.test.mjs
+```
 
 ## Files
 
@@ -51,3 +62,8 @@ and 7 of 9 governance tests fail — which is what makes them worth keeping.
   what a cancelled voting may turn into, record ownership, the "dead souls" flow.
 - `governance.test.mjs` — a ballot stays in its group, the admin can be replaced,
   losing the right to vote leaves a trace, deadlines, the expiry sweep, group edit.
+- `decision-execution.test.mjs` — the second audit round: a decision the system
+  cannot carry out is journalled instead of passing as "прийнято"; the frozen roll
+  is the sole answer to who may vote; ballots after the deadline are refused; a
+  removal needs a real neighbour on the other side and keeps their name; a proposal
+  to exclude nobody excludes nobody; a secret ballot stays secret after it closes.

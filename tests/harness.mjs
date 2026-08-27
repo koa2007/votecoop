@@ -81,6 +81,12 @@ export async function startPocketBase({ port = 0 } = {}) {
       `--http=127.0.0.1:${httpPort}`,
       `--dir=${dataDir}`,
       `--hooksDir=${hooksDir}`,
+      // Point PB_PUBLIC_DIR at the repo root and this instance also serves the real
+      // app, so a change can be looked at in a browser against the real hooks
+      // instead of only asserted over HTTP. Unused by the test suite itself.
+      ...(process.env.PB_PUBLIC_DIR
+        ? [`--publicDir=${process.env.PB_PUBLIC_DIR}`]
+        : []),
     ],
     { stdio: "pipe" },
   );

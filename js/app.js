@@ -1133,11 +1133,16 @@ const app = {
     }
 
     // Fetch fresh data from server
-    const { data, error } = await supabaseService.getMyGroupsWithStats();
+    const { data, pending, error } = await supabaseService.getMyGroupsWithStats();
+    if (Array.isArray(pending)) this.state.pendingJoins = pending;
     if (error || !data) {
       this.state.fetched.groups = true;
       // Surface a real load failure (instead of a silently empty screen)
       // when there's nothing cached to fall back to.
+      // A refresh that fails while something is already on screen used to end with
+      // the spinner gone and yesterday's numbers presented as today's. Near a
+      // deadline those numbers are a live tally, so say the refresh did not happen.
+      if (error && this.state.groups.length) this.toastError(this.humanError(error));
       if (error && !this.state.groups.length) {
         this.toastError(
           (this.translations[this.currentLanguage] || {}).load_failed ||
@@ -1200,6 +1205,10 @@ const app = {
     const { data: votings, error } = await supabaseService.getMyVotings();
     if (error || !votings) {
       this.state.fetched.votings = true;
+      // A refresh that fails while something is already on screen used to end with
+      // the spinner gone and yesterday's numbers presented as today's. Near a
+      // deadline those numbers are a live tally, so say the refresh did not happen.
+      if (error && this.state.votings.length) this.toastError(this.humanError(error));
       if (error && !this.state.votings.length) {
         this.toastError(
           (this.translations[this.currentLanguage] || {}).load_failed ||
@@ -1255,6 +1264,7 @@ const app = {
         // the server counts against. 0 means an old voting from before
         // snapshots existed; only then do we fall back to a live count.
         electorateSize: v.electorate_size || 0,
+        inElectorate: v.in_electorate !== false,
         link: v.link,
         hasVoted: votedSet.has(v.id),
         targetMemberId: v.target_member_id,
@@ -1366,7 +1376,8 @@ const app = {
         metadata: n.metadata || null,
       });
       this.renderNotifications();
-      if (n.type !== "system" || (n.text && !n.is_read)) this.toastInfo(n.text);
+      if (n.type !== "system" || (n.text && !n.is_read))
+        this.toastInfo(this.notificationText(n));
 
       // Refresh the relevant data based on what happened.
       if (n.type === "new_voting" || n.type === "voting_completed") {
@@ -1450,6 +1461,13 @@ const app = {
         // hidden instead.
         const secretRunning =
           voting.type === "secret" && voting.status === "active";
+        // A proposal to exclude someone from the count has no yes/no ballot at all —
+        // only a five-day window in which neighbours may object. Drawing it in the
+        // list as "Відкрите · За: 0 · Проти: 0 · 0% участі" told every resident that
+        // nothing was happening, so nobody opened it and the window ran out in
+        // silence. That window is the only defence a person has against losing
+        // their vote, so the card has to say what this actually is.
+        const isFreezeCard = voting.type === "freeze";
         const timeLeft = this.getTimeLeft(voting.endsAt);
 
         // Format creation date
@@ -1491,7 +1509,7 @@ const app = {
                         <span><i class="ph ph-users-three" aria-hidden="true"></i> ${this.escapeHTML(voting.groupName)}</span>
                         ${
                           voting.status === "active"
-                            ? `<span><i class="ph ph-scales" aria-hidden="true"></i> ${voting.type === "secret" ? t.secret_voting : t.open_voting}</span><span><i class="ph ph-clock" aria-hidden="true"></i> ${timeLeft}</span>`
+                            ? `<span><i class="ph ph-scales" aria-hidden="true"></i> ${isFreezeCard ? t.freeze_voting : voting.type === "secret" ? t.secret_voting : t.open_voting}</span><span><i class="ph ph-clock" aria-hidden="true"></i> ${timeLeft}</span>`
                             : `<span>${voting.result === "accepted" ? '<i class="ph-fill ph-check-circle text-success" aria-hidden="true"></i> ' + t.result_accepted : '<i class="ph-fill ph-x-circle text-danger" aria-hidden="true"></i> ' + t.result_rejected}</span>`
                         }
                     </div>
@@ -1499,13 +1517,19 @@ const app = {
                         <i class="ph ph-calendar-blank" aria-hidden="true"></i> ${this.escapeHTML(dateRangeStr)}
                     </div>
                     ${
-                      secretRunning
+                      isFreezeCard
                         ? `<div class="voting-progress">
+                        <div class="progress-text">
+                            <span><i class="ph ph-hand-palm text-warning" aria-hidden="true"></i> ${voting.status === "active" ? t.freeze_card_hint : t.freeze_card_done}</span>
+                        </div>
+                    </div>`
+                        : secretRunning
+                          ? `<div class="voting-progress">
                         <div class="progress-text">
                             <span><i class="ph ph-eye-slash" aria-hidden="true"></i> ${t.results_hidden}</span>
                         </div>
                     </div>`
-                        : `<div class="voting-progress">
+                          : `<div class="voting-progress">
                         <div class="progress-bar" role="progressbar" aria-valuenow="${yesPercent}" aria-valuemin="0" aria-valuemax="100">
                             <div class="progress-fill ${statusClass}" style="width: ${yesPercent}%"></div>
                         </div>
@@ -1524,13 +1548,19 @@ const app = {
   getTimeLeft(endDate) {
     const t = this.translations[this.currentLanguage];
     const diff = endDate - new Date();
-    if (isNaN(diff) || diff <= 0) return t.completed;
+    if (isNaN(diff)) return "";
+    // Past the deadline the voting is not "Завершено" yet — the sweep closes it
+    // within the minute, and until then it is still open on screen. Saying it is
+    // finished when it is not is how a resident decides there is nothing to do.
+    if (diff <= 0) return t.ending_now;
 
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(hours / 24);
 
-    if (days > 0) return `${days} ${t.days}`;
-    return `${hours} ${t.hours}`;
+    if (days > 0) return `${days} ${t.days_short}`;
+    // A one-hour voting used to read "0 год." for fifty-nine of its sixty minutes.
+    if (hours < 1) return t.less_than_hour;
+    return `${hours} ${t.hours_short}`;
   },
 
   // Render groups
@@ -1538,20 +1568,47 @@ const app = {
     const list = document.getElementById("groups-list");
     const t = this.translations[this.currentLanguage];
 
+    // Applications still waiting for an admin. Without this the very first step a
+    // newcomer takes — enter the house code, press "Приєднатися" — left the app
+    // looking exactly as it did before, with the empty state still saying they had
+    // joined nothing. People either entered the code again or concluded it had not
+    // worked and walked away, while the admin simply had not looked yet.
+    const pending = this.state.pendingJoins || [];
+    const pendingHTML = pending
+      .map(
+        (p) => `
+            <div class="group-card group-card-pending">
+                <div class="group-card-header">
+                    <div class="group-card-title">${this.escapeHTML(p.name || t.pending_join_unknown_group)}</div>
+                </div>
+                <div class="group-card-meta">
+                    <span><i class="ph ph-hourglass-medium text-warning" aria-hidden="true"></i> ${this.escapeHTML(t.pending_join_waiting)}</span>
+                </div>
+                <div class="group-card-meta">
+                    <span>${this.escapeHTML(t.pending_join_hint)}</span>
+                </div>
+            </div>`,
+      )
+      .join("");
+
     if (this.state.groups.length === 0) {
       if (!this.state.fetched.groups) {
         list.innerHTML = this.renderSkeleton(2);
       } else {
-        list.innerHTML = this.renderEmpty(
-          "ph ph-users-three",
-          t.empty_groups,
-          t.empty_groups_hint,
-        );
+        list.innerHTML =
+          pendingHTML +
+          this.renderEmpty(
+            "ph ph-users-three",
+            t.empty_groups,
+            t.empty_groups_hint,
+          );
       }
       return;
     }
 
-    list.innerHTML = this.state.groups
+    list.innerHTML =
+      pendingHTML +
+      this.state.groups
       .map(
         (group) => `
             <div class="group-card" role="button" tabindex="0" onclick="app.showGroupDetail('${group.id}')" onkeydown="if(event.key==='Enter')app.showGroupDetail('${group.id}')">
@@ -1641,7 +1698,7 @@ const app = {
                     onclick="${onClick}" onkeydown="if(event.key==='Enter')${onClick}">
                     <div class="notification-icon">${icons[notif.type] || '<i class="ph ph-bell"></i>'}</div>
                     <div class="notification-content">
-                        <div class="notification-text">${this.escapeHTML(notif.text)}</div>
+                        <div class="notification-text">${this.escapeHTML(this.notificationText(notif))}</div>
                         <div class="notification-time">${this.escapeHTML(notif.time)}</div>
                     </div>
                     ${actions}
@@ -1975,7 +2032,7 @@ const app = {
             <div class="notification-item read archived">
                 <div class="notification-icon">${icons[n.type] || '<i class="ph ph-bell"></i>'}</div>
                 <div class="notification-content">
-                    <div class="notification-text">${this.escapeHTML(n.text)}</div>
+                    <div class="notification-text">${this.escapeHTML(this.notificationText(n))}</div>
                     <div class="notification-time">${this.escapeHTML(n.time)}</div>
                 </div>
                 <button class="btn-notif-unarchive" title="${t.unarchive || "Розархівувати"}" aria-label="${t.unarchive || "Розархівувати"}"
@@ -2738,7 +2795,13 @@ const app = {
     if (!group) return null;
     if (group.members && group.members.length) return group;
     const { data, error } = await supabaseService.getGroupDetail(groupId);
-    if (error || !data) return group;
+    if (error || !data) {
+      // Swallowing this left the target dropdown empty with no message — the exact
+      // symptom of "three kinds of voting cannot be created", now reachable any time
+      // the roster request fails.
+      this.toastError(this.humanError(error));
+      return group;
+    }
     group.members = this._mapMembers(data.members);
     return group;
   },
@@ -2747,6 +2810,17 @@ const app = {
     const t = this.translations[this.currentLanguage];
     const type = document.getElementById("voting-type").value;
     const groupId = document.getElementById("voting-group").value;
+    // This became async and got a second trigger (the group dropdown) without the
+    // re-entrancy guard its sibling showVotingDetail has. Group A's roster is slow,
+    // the user switches to group B whose roster is cached and renders at once, then
+    // A's reply lands and quietly replaces the list — so the form offers neighbours
+    // from a different house, and the voting created from it names someone the
+    // house has never heard of.
+    const formToken = (this._votingFormReq = (this._votingFormReq || 0) + 1);
+    const stale = () =>
+      formToken !== this._votingFormReq ||
+      document.getElementById("voting-group")?.value !== groupId ||
+      document.getElementById("voting-type")?.value !== type;
     const targetGroup = document.getElementById("target-member-group");
     const reasonGroup = document.getElementById("removal-reason-group");
     const durationGroup = document.getElementById("duration-group");
@@ -2777,6 +2851,7 @@ const app = {
       // Populate members
       if (groupId) {
         const group = await this.ensureGroupMembers(groupId);
+        if (stale()) return;
         if (group) {
           // Filter members (for admin-change: exclude current admin, for remove: exclude admin too)
           const eligibleMembers = group.members.filter((m) =>
@@ -3042,9 +3117,25 @@ const app = {
       if (error) throw new Error(error.message);
 
       // Insert freeze targets if freeze type
-      if (type === "freeze" && this.state.freezeSelectedMembers.length > 0) {
+      if (type === "freeze") {
+        // The proposal and the list of people it concerns are two separate requests,
+        // and the second one's result was thrown away. A network blip left a live
+        // proposal with nobody on it, the admin was told "готово", and five days
+        // later the whole house was notified that residents had been excluded from
+        // the count — when none had. Withdraw the half-made proposal instead.
         const targetIds = this.state.freezeSelectedMembers.map((m) => m.id);
-        await supabaseService.addFreezeTargets(newVotingRow.id, targetIds);
+        const attached = targetIds.length
+          ? await supabaseService.addFreezeTargets(newVotingRow.id, targetIds)
+          : { data: null, error: { message: "freeze_no_targets" } };
+        if (attached.error || !attached.data) {
+          try {
+            await supabaseService.deleteVoting(
+              newVotingRow.id,
+              "не вдалося додати учасників",
+            );
+          } catch (er) {}
+          throw new Error(t.freeze_targets_failed);
+        }
       }
 
       const targetMember = targetMemberId
@@ -3070,6 +3161,7 @@ const app = {
         // The server just fixed the electorate for this voting; show that, not
         // the group's headcount (which includes observers and excluded members).
         electorateSize: newVotingRow.electorate_size || 0,
+        inElectorate: true,
         totalMembers: newVotingRow.electorate_size || group.membersCount,
         link,
         hasVoted: false,
@@ -3343,6 +3435,15 @@ const app = {
     );
     const isObserver =
       dvGroup?.myIsObserver === true || dvCurrentMember?.isObserver === true;
+    // Being excluded from the count, or having moved in after this voting started,
+    // also means the ballot will be refused — but neither took part in the branch
+    // below, so those residents were shown three vote buttons and a 500-character
+    // comment box, and learnt the truth only after writing and pressing "За". The
+    // way back ("Я тут") lives on the group screen, which is not where they are.
+    const isExcluded =
+      dvCurrentMember?.frozen === true || this.state.user.frozen === true;
+    const notInElectorate = voting.inElectorate === false;
+    const cannotVote = isObserver || isExcluded || notInElectorate;
 
     // Quorum denominator = the electorate at the moment the voting started.
     // Anyone who joined afterwards is not part of THIS vote (the server refuses
@@ -3622,10 +3723,19 @@ const app = {
             }
 
             ${
-              !isFreeze && isObserver
+              !isFreeze && cannotVote && !voting.hasVoted
                 ? `
                 <div class="observer-notice">
-                    👁️ ${t.observer_notice || "Ви — спостерігач. Голосування для вас недоступне."}
+                    ${
+                      isExcluded
+                        ? `<i class="ph ph-eye-slash" aria-hidden="true"></i> ${this.escapeHTML(t.excluded_notice)}
+                           <div class="form-group-compact" style="margin-top:10px;">
+                             <button class="btn btn-secondary" onclick="app.restoreMe('${voting.groupId}')"><i class="ph ph-hand-waving" aria-hidden="true"></i> ${this.escapeHTML(t.im_here_btn)}</button>
+                           </div>`
+                        : notInElectorate
+                          ? `<i class="ph ph-clock-counter-clockwise" aria-hidden="true"></i> ${this.escapeHTML(t.joined_after_notice)}`
+                          : `<i class="ph ph-eye" aria-hidden="true"></i> ${this.escapeHTML(t.observer_notice)}`
+                    }
                 </div>
             `
                 : !isFreeze && isActive && !voting.hasVoted
@@ -3705,14 +3815,18 @@ const app = {
     };
     // The protocol is the document people take to a meeting, so its arithmetic
     // must be the server's arithmetic: the electorate fixed at the start.
-    let voterTotal = voting.electorateSize || voting.totalMembers || 0;
+    // Votings created before the electorate was snapshotted carry no roll. Falling
+    // back to TODAY'S headcount produced documents that contradicted themselves —
+    // "потрібно ≥2 / 2, за — 1" stamped ПРИЙНЯТО, and in a house that has since lost
+    // members, turnouts above 100%. Worse, the number drifted: excluding two ghosts
+    // today silently changed every protocol printed last year. When the electorate
+    // of that day is unknown, the honest answer is that it is unknown.
+    let voterTotal = voting.electorateSize || 0;
+    let electorateKnown = voterTotal > 0;
     try {
-      const [votesRes, resultsRes, vcRes] = await Promise.all([
+      const [votesRes, resultsRes] = await Promise.all([
         supabaseService.getVotingVotes(votingId),
         supabaseService.getVotingResults([votingId]),
-        voting.electorateSize
-          ? Promise.resolve({ data: voting.electorateSize })
-          : supabaseService.getVoterCount(voting.groupId),
       ]);
       if (votesRes.data) votes = votesRes.data;
       if (resultsRes.data && resultsRes.data[0]) {
@@ -3723,10 +3837,10 @@ const app = {
           abstain: r.abstain_votes || 0,
         };
       }
-      if (vcRes.data != null) voterTotal = vcRes.data;
     } catch (e) {
       /* fall back to cached numbers */
     }
+    if (!electorateKnown) voterTotal = 0;
 
     const esc = (s) => this.escapeHTML(String(s == null ? "" : s));
     const locale =
@@ -3753,6 +3867,9 @@ const app = {
     const total = voterTotal > 0 ? voterTotal : 1;
     const cast = counts.yes + counts.no + counts.abstain;
     const turnout = Math.round((cast / total) * 100);
+    // For a voting whose electorate was never recorded, say so plainly instead of
+    // printing a number that is not the one the decision was made against.
+    const unknown = esc(t.protocol_unknown);
     const share = (n) => (cast > 0 ? Math.round((n / cast) * 100) : 0);
     const needed = Math.floor(total / 2) + 1;
     const accepted = voting.result === "accepted";
@@ -3774,6 +3891,11 @@ const app = {
           : t.target_member_remove,
         esc(voting.targetMemberName),
       );
+      // We require the initiator to state a reason before such a voting can be
+      // created, and then dropped it from the one document where it matters: the
+      // record of a co-owner being expelled from the community.
+      if (voting.type === "remove-member" && voting.removalReason)
+        targetRow += metaRow(t.removal_reason_label, esc(voting.removalReason));
     }
 
     const bar = (label, n, color) => `
@@ -3834,9 +3956,9 @@ const app = {
             ${descBlock}
             <div style="font-size:14px;font-weight:500;margin:14px 0 10px;">${esc(t.protocol_quorum)}</div>
             <div style="display:flex;gap:10px;margin-bottom:18px;">
-                <div style="flex:1;background:#f6f6f4;border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#666;">${esc(t.protocol_voters)}</div><div style="font-size:22px;font-weight:500;">${voterTotal}</div></div>
+                <div style="flex:1;background:#f6f6f4;border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#666;">${esc(t.protocol_voters)}</div><div style="font-size:22px;font-weight:500;">${electorateKnown ? voterTotal : unknown}</div></div>
                 <div style="flex:1;background:#f6f6f4;border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#666;">${esc(t.protocol_voted)}</div><div style="font-size:22px;font-weight:500;">${cast}</div></div>
-                <div style="flex:1;background:#f6f6f4;border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#666;">${esc(t.protocol_turnout)}</div><div style="font-size:22px;font-weight:500;">${turnout}%</div></div>
+                <div style="flex:1;background:#f6f6f4;border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#666;">${esc(t.protocol_turnout)}</div><div style="font-size:22px;font-weight:500;">${electorateKnown ? turnout + "%" : unknown}</div></div>
             </div>
             <div style="font-size:14px;font-weight:500;margin:0 0 10px;">${esc(t.protocol_results)}</div>
             ${bar(t.export_yes, counts.yes, "#1d7a4d")}
@@ -3844,7 +3966,7 @@ const app = {
             ${bar(t.vote_abstain, counts.abstain, "#b4b2a9")}
             <div style="margin:16px 0 20px;padding:12px 14px;background:${accepted ? "#e7f4ec" : "#fbeaea"};border-radius:8px;">
                 <div style="font-size:15px;font-weight:500;color:${accepted ? "#1d7a4d" : "#b3261e"};">${esc(accepted ? t.protocol_decision_accepted : t.protocol_decision_rejected)}</div>
-                <div style="font-size:12px;color:#555;margin-top:2px;">${esc(t.protocol_rule)} (≥${needed} / ${total}). «${esc(t.export_yes)}» — ${counts.yes}.</div>
+                <div style="font-size:12px;color:#555;margin-top:2px;">${electorateKnown ? `${esc(t.protocol_rule)} (≥${needed} / ${total}). «${esc(t.export_yes)}» — ${counts.yes}.` : `${esc(t.protocol_electorate_unknown)} «${esc(t.export_yes)}» — ${counts.yes}.`}</div>
             </div>
             <div style="font-size:14px;font-weight:500;margin:0 0 8px;">${esc(t.protocol_namewise)}</div>
             ${listSection}
@@ -3902,7 +4024,7 @@ const app = {
     if (this._votingInFlight) return;
     this._votingInFlight = votingId;
     const voteButtons = Array.from(
-      document.querySelectorAll(".voting-actions button"),
+      document.querySelectorAll(".vote-buttons button"),
     );
     voteButtons.forEach((b) => {
       b.disabled = true;
@@ -4178,7 +4300,11 @@ const app = {
       }));
 
       group.history = (data.history || []).map((h) => ({
-        date: new Date(h.created_at).toLocaleString(),
+        // Keep the RAW timestamp. It used to be turned into a localised string here
+        // and parsed back into a Date at render time — and "27.08.2026, 15:30:00"
+        // is not something Date can read, so every single line in the group history
+        // was dated "Invalid Date" on every locale except the American one.
+        date: h.created_at,
         action: h.action,
         details: h.details || {},
         // The server writes {new_admin} / {removed_user, reason} / {user} /
@@ -4186,6 +4312,11 @@ const app = {
         // matched, so every history line rendered as an empty row with a date.
         newAdminId: h.details?.new_admin || "",
         removedUserId: h.details?.removed_user || "",
+        // The expelled neighbour is gone from group.members by definition, so the
+        // client cannot resolve their name; the server now captures it at the moment
+        // of removal and sends it along.
+        removedName: h.details?.removed_name || "",
+        notAppliedReason: h.details?.reason || "",
         userId: h.details?.user || "",
         byId: h.details?.by || "",
         asObserver: h.details?.as_observer,
@@ -4211,6 +4342,14 @@ const app = {
       group.memberVotes = {};
       (votesData || []).forEach((row) => {
         group.memberVotes[row.user_id] = Number(row.voted_count) || 0;
+        // The denominator is per-person and comes from the server: it skips secret
+        // ballots (whose turnout must stay private), skips exclusion proposals
+        // (which have no yes/no ballot), and skips votings this resident was never
+        // part of. Dividing by "every voting in the group" showed neighbours as
+        // having missed votes they had cast, and permanently scored a newcomer
+        // against votings the server itself had barred them from.
+        group.memberEligible = group.memberEligible || {};
+        group.memberEligible[row.user_id] = Number(row.eligible_count) || 0;
       });
     } catch (e) {
       group.memberVotes = group.memberVotes || {};
@@ -4335,18 +4474,45 @@ const app = {
   },
 
   // Calculate member participation in group votings
-  getMemberParticipation(memberId, groupId) {
-    // Use only non-deleted votings for the denominator (matches the RPC)
-    const groupVotings = this.state.votings.filter(
-      (v) => v.groupId === groupId && v.status !== "deleted",
-    );
-    const totalVotings = groupVotings.length;
-    if (totalVotings === 0) return { participated: 0, total: 0, percentage: 0 };
+  // Notification text is written on the server, in Ukrainian, at the moment the event
+  // happens — so the whole "Сповіщення" tab ignored the language the resident chose,
+  // and it is the only channel telling them a voting started, closed, or that their
+  // role changed. The server now also stores a dictionary key and its parameters;
+  // use them when both are present, and otherwise keep the stored text. A missing
+  // key or parameter therefore degrades to the old behaviour, never to an empty line.
+  notificationText(notif) {
+    const t = this.translations[this.currentLanguage] || {};
+    const meta = notif?.metadata || {};
+    const tpl = meta.i18n ? t[meta.i18n] : null;
+    if (!tpl) return notif?.text || "";
+    const params = meta.p || {};
+    let out = tpl;
+    let missing = false;
+    out = out.replace(/\{(\w+)\}/g, (_, k) => {
+      if (params[k] == null || params[k] === "") {
+        missing = true;
+        return "";
+      }
+      return params[k];
+    });
+    return missing ? notif.text || out : out;
+  },
 
-    // Prefer authoritative DB-side counts (loaded by showGroupDetail via
-    // get_group_member_votes RPC). Fallback to 0 if not yet loaded.
+  getMemberParticipation(memberId, groupId) {
     const group = this.state.groups.find((g) => g.id === groupId);
     const fromMap = group?.memberVotes?.[memberId];
+    const fromEligible = group?.memberEligible?.[memberId];
+    // Both halves of this fraction now come from the same server answer, so they
+    // cannot disagree. Older cached data has no denominator — fall back to counting
+    // the group's non-deleted votings, which is what the client always did.
+    const totalVotings =
+      typeof fromEligible === "number"
+        ? fromEligible
+        : this.state.votings.filter(
+            (v) => v.groupId === groupId && v.status !== "deleted",
+          ).length;
+    if (totalVotings === 0) return { participated: 0, total: 0, percentage: 0 };
+
     const participated =
       typeof fromMap === "number" ? Math.min(fromMap, totalVotings) : 0;
 
@@ -4516,7 +4682,12 @@ const app = {
           const nameOf = (uid) => {
             if (!uid) return "";
             const m = (group.members || []).find((x) => x.id === uid);
-            return m ? m.name : "";
+            if (m) return m.name;
+            // Someone expelled by vote is no longer among the members; the server
+            // stores the name it captured at that moment.
+            return item.removedUserId === uid && item.removedName
+              ? item.removedName
+              : "";
           };
           const withName = (label, uid, extra) => {
             const n = nameOf(uid);
@@ -4545,11 +4716,23 @@ const app = {
                 : t.history_role_to_voter,
               item.userId,
             )}`;
+          } else if (item.action === "effect_not_applied") {
+            actionText = `<i class="ph ph-warning-circle text-warning" aria-hidden="true"></i> ${this.escapeHTML(t.history_effect_not_applied)}`;
           } else {
             actionText = `<i class="ph ph-clock-counter-clockwise" aria-hidden="true"></i> ${this.escapeHTML(item.action || "")}`;
           }
 
-          const date = new Date(item.date).toLocaleDateString();
+          const parsed = item.date ? new Date(item.date) : null;
+          const date =
+            parsed && !isNaN(parsed.getTime())
+              ? parsed.toLocaleString(undefined, {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "";
           const initiator = nameOf(item.byId);
 
           return `
@@ -4570,7 +4753,7 @@ const app = {
     this.showScreen("group-detail-screen");
   },
 
-  exportGroupHistory() {
+  async exportGroupHistory() {
     const t = this.translations[this.currentLanguage];
     const groupCode = document.getElementById("group-detail-id").textContent;
     const group = this.state.groups.find((g) => g.groupId === groupCode);
@@ -4611,6 +4794,23 @@ const app = {
       t.export_comments,
     ].join(";");
 
+    // The ballots live on the server, and voting.comments is filled only as a
+    // side effect of opening a voting on screen. So the same button on the same
+    // screen produced different files depending on where the admin had clicked
+    // earlier: every voting they had not opened was exported with "3 голоси" and
+    // an empty list of who voted. Nothing warned them. This is the group's archive
+    // — fetch the ballots.
+    const ballots = {};
+    await Promise.all(
+      groupVotings.map(async (v) => {
+        if (v.type === "secret") return; // named ballots stay unpublished
+        try {
+          const { data } = await supabaseService.getVotingVotes(v.id);
+          if (data) ballots[v.id] = data;
+        } catch (er) {}
+      }),
+    );
+
     const rows = groupVotings.map((voting) => {
       const createdDate = new Date(voting.createdAt).toLocaleString();
       const author = voting.initiatorName || t.unknown_author;
@@ -4621,7 +4821,11 @@ const app = {
             ? t.type_admin
             : voting.type === "remove-member"
               ? t.type_remove
-              : t.type_simple;
+              : voting.type === "freeze"
+                ? t.freeze_voting
+                : voting.type === "delete-group"
+                  ? t.type_delete_group || t.type_simple
+                  : t.type_simple;
       const result =
         voting.status === "completed"
           ? voting.result === "accepted"
@@ -4636,8 +4840,15 @@ const app = {
 
       // Build votes detail with apartment numbers instead of names
       let votesDetail = "";
-      if (voting.comments && voting.comments.length > 0) {
-        votesDetail = voting.comments
+      const cast = (ballots[voting.id] || []).map((b) => ({
+        userId: b.user_id,
+        vote: b.choice,
+        comment: b.comment,
+        apartment: b.voter?.apartment || "",
+      }));
+      const lines = cast.length ? cast : voting.comments || [];
+      if (lines.length > 0) {
+        votesDetail = lines
           .map((c) => {
             const voteType =
               c.vote === "yes"
@@ -5140,7 +5351,6 @@ const app = {
       profile: "Профіль",
       edit_profile: "Редагувати профіль",
       instructions: "Інструкції",
-      instructions_title: "Інструкції з використання",
       logout: "Вийти",
       not_your_account: "Це не ваш акаунт? Вийти",
       load_failed: "Не вдалося завантажити. Потягніть вниз, щоб оновити.",
@@ -5286,7 +5496,7 @@ const app = {
       objection_added: "Вашу незгоду записано",
       objections_title: "Незгода",
       no_objections: "Поки що ніхто не висловив незгоду",
-      objections_needed: "Потрібно ще {count} учасників для скасування",
+      objections_needed: "Щоб скасувати, бракує заперечень: {count}",
       auto_rejected: "автоматично скасовано",
       freeze_rejected: "Виключення скасовано",
       freeze_auto_rejected: "Виключення скасовано: учасники заперечили",
@@ -5364,12 +5574,11 @@ const app = {
       empty_notifications: "Сповіщень немає",
       empty_notifications_hint:
         "Коли в ваших групах з'являться нові події — побачите їх тут.",
-      select_group: "Виберіть групу",
       secret_voting: "Тайне",
       open_voting: "Відкрите",
       completed: "Завершено",
-      days: "дн.",
-      hours: "год.",
+      days_short: "дн.",
+      hours_short: "год.",
       yes: "За",
       no: "Проти",
       participation: "участі",
@@ -5407,29 +5616,29 @@ const app = {
         "Натисніть на групу, щоб побачити: код групи (можна скопіювати), статистику, список учасників, запити на вступ та історію змін.",
       instr_members_title: "Учасники групи",
       instr_members_desc:
-        "У списку учасників можна: шукати за ім'ям або телефоном, сортувати за алфавітом або за участю в голосуваннях. Заморожені учасники позначені ❄️.",
+        "У списку учасників можна: шукати за ім'ям або телефоном, сортувати за алфавітом або за участю в голосуваннях. Виключені з підрахунку учасники позначені ❄️.",
       instr_requests_title: "Запити на вступ",
       instr_requests_desc:
         "Адміністратор бачить вхідні запити та може схвалити або відхилити кожного кандидата. Учаснику надійде сповіщення про рішення.",
       instr_voting_types: "Типи голосування",
       instr_simple_title: "Звичайне (відкрите)",
       instr_simple_desc:
-        "Хто створює: будь-який учасник групи (звичайні учасники — не більше 1 голосування на добу). Як працює: кожен обирає «За», «Проти» або «Утримуюсь», ім'я та коментар (до 500 символів) видно всім. Тривалість: від 1 години до 5 днів — задає автор. Прийнято, якщо «За» проголосувало більше половини всіх учасників групи (для 10 — потрібно 6 «За»). Якщо час вийшов і «За» менше — відхилено. Підходить для: ремонт, витрати, правила.",
+        "Хто створює: будь-який учасник групи (звичайні учасники — не більше 1 голосування на добу). Як працює: кожен обирає «За», «Проти» або «Утримуюсь», ім'я та коментар (до 500 символів) видно всім. Тривалість: від 1 години до 5 днів — задає автор. Прийнято, якщо «За» проголосувало більше половини тих, хто мав право голосу на момент створення голосування (якщо голосуючих 7 — потрібно 4 «За»; спостерігачі та виключені з підрахунку не враховуються). Якщо час вийшов і «За» менше — відхилено. Підходить для: ремонт, витрати, правила.",
       instr_secret_title: "Тайне",
       instr_secret_desc:
-        "Так само як звичайне, але всі імена приховані: видно лише підсумкові цифри «За / Проти / Утримуюсь». Коментарі недоступні. Умови прийняття ті самі — більше половини всіх учасників групи мають проголосувати «За». Підходить для чутливих питань (особисті конфлікти, фінансова прозорість).",
+        "Так само як звичайне, але всі імена приховані: видно лише підсумкові цифри «За / Проти / Утримуюсь». Коментарі недоступні. Умови прийняття ті самі — більше половини тих, хто мав право голосу на момент створення голосування мають проголосувати «За». Підходить для чутливих питань (особисті конфлікти, фінансова прозорість).",
       instr_admin_title: "Зміна адміністратора",
       instr_admin_desc:
-        "Хто створює: будь-який учасник. Кого можна обрати: будь-якого не-адмін учасника зі списку. Вимоги: у групі має бути мінімум 3 учасники. Тривалість фіксована: 72 години (3 доби). Прийнято, якщо «За» проголосувало більше половини всіх учасників групи. При успіху ролі змінюються автоматично: попередній адмін стає звичайним учасником, обраний — адміністратором. У групі може бути лише одне таке голосування одночасно.",
+        "Хто створює: будь-який учасник. Кого можна обрати: будь-якого не-адмін учасника зі списку. Вимоги: у групі має бути мінімум 3 учасники. Тривалість фіксована: 72 години (3 доби). Прийнято, якщо «За» проголосувало більше половини тих, хто мав право голосу на момент створення голосування. При успіху ролі змінюються автоматично: попередній адмін стає звичайним учасником, обраний — адміністратором. У групі може бути лише одне таке голосування одночасно.",
       instr_remove_title: "Видалення учасника",
       instr_remove_desc:
-        "Хто створює: будь-який учасник. Обов'язково: вказати причину (4 готові варіанти або довільний текст). Вимоги: мінімум 3 учасники в групі. Тривалість фіксована: 72 години. Прийнято, якщо «За» проголосувало більше половини всіх учасників групи. При успіху учасник автоматично видаляється з групи і отримує сповіщення з причиною.",
+        "Хто створює: будь-який учасник. Обов'язково: вказати причину (4 готові варіанти або довільний текст). Вимоги: мінімум 3 учасники в групі. Тривалість фіксована: 72 години. Прийнято, якщо «За» проголосувало більше половини тих, хто мав право голосу на момент створення голосування. При успіху учасник автоматично видаляється з групи і отримує сповіщення з причиною.",
       instr_freeze_title: "Виключення з підрахунку",
       instr_freeze_desc:
         "Навіщо: щоб «мертві душі» (квартиру продано, людина виїхала чи зовсім не бере участі) не псували підрахунок — їх можна тимчасово прибрати зі знаменника, щоб відсоток участі та кворум відповідали реальності. Хто пропонує: лише адміністратор. Заперечення: 5 днів — будь-які 2 учасники, що натиснуть «Не згоден», скасовують виключення (звичайних голосів «За/Проти» тут немає). Якщо сам учасник заперечить — виключення скасовується одразу (це доказ, що він на місці). Повернення: виключений учасник будь-коли повертає себе кнопкою «Я тут»; адміністратор теж може повернути його вручну. Коли в ту саму квартиру вступає новий власник — виключеного «привида» система прибирає автоматично. Запобіжник: не можна виключити стількох, щоб активних залишилось менше двох.",
       instr_delete_group_title: "Видалення групи",
       instr_delete_group_desc:
-        "Хто створює: будь-який учасник (адміністратор зобов'язаний використати саме це голосування, якщо в групі більше 1 учасника). Тривалість: мінімум 24 години — задає автор. Прийнято, якщо «За» проголосувало більше половини всіх учасників. При успіху група, всі її голосування та історія видаляються безповоротно, всі учасники отримують сповіщення. У групі може бути лише одне таке голосування одночасно.",
+        "Хто створює: будь-який учасник (адміністратор зобов'язаний використати саме це голосування, якщо в групі більше 1 учасника). Тривалість: мінімум 24 години — задає автор. Прийнято, якщо «За» проголосувало більше половини тих, хто мав право голосу на момент створення голосування. При успіху група, всі її голосування та історія видаляються безповоротно, всі учасники отримують сповіщення. У групі може бути лише одне таке голосування одночасно.",
       instr_leave_group_title: "Вихід із групи",
       instr_leave_group_desc:
         "Будь-який учасник (крім адміністратора) може покинути групу через меню (⋮). Адміністратор повинен спочатку передати свою роль через голосування «Зміна адміністратора».",
@@ -5454,7 +5663,7 @@ const app = {
         "До відкритих голосувань можна додати коментар при голосуванні (до 500 символів). У тайних голосуваннях коментарі приховані.",
       instr_notifications: "Сповіщення",
       instr_notif_desc:
-        "Ви отримуєте сповіщення про: нові голосування, запити на вступ, результати голосувань, зміни адміністратора, видалення та заморозку учасників. Непрочитані позначені синім. Можна позначити все як прочитане.",
+        "Ви отримуєте сповіщення про: нові голосування, запити на вступ, результати голосувань, зміни адміністратора, видалення та виключення учасників з підрахунку. Непрочитані позначені синім. Можна позначити все як прочитане.",
       instr_badges: "Позначення та статуси",
       instr_badge_yellow: "Активне голосування (ще триває)",
       instr_badge_green: "Прийнято (50%+1 проголосували «За»)",
@@ -5511,7 +5720,6 @@ const app = {
         "Кнопка «Пропозиція / зауваження» у профілі дозволяє надіслати нам ідею або повідомити про проблему. Ми читаємо всі повідомлення.",
       fill_name_error: "Будь ласка, заповніть ім'я та прізвище",
       profile_saved: "Профіль оновлено!",
-      notif_new_voting: "Нове голосування у групі",
       notif_join_request: "хоче приєднатися до групи",
       notif_voting_completed: "Голосування завершено",
       notif_accepted: "ПРИЙНЯТО",
@@ -5741,6 +5949,40 @@ const app = {
       members_header: "Учасники",
       observer_cannot_vote: "Спостерігачі не можуть голосувати",
       observer_notice: "Ви — спостерігач. Голосування для вас недоступне.",
+      notif_new_voting: "Нове голосування: {title}",
+      notif_freeze_proposal:
+        "Пропозиція виключити з підрахунку: «{title}». У вас 5 днів, щоб натиснути «Не згоден».",
+      notif_voting_accepted: "Голосування завершено: «{title}» — прийнято",
+      notif_voting_rejected: "Голосування завершено: «{title}» — відхилено",
+      notif_join_rejected: "Заявку на приєднання відхилено",
+      notif_join_rejected_named: "Заявку на приєднання до «{group}» відхилено",
+      notif_member_excluded:
+        "Учасника(ів) виключено з підрахунку за результатами голосування",
+      notif_effect_not_applied:
+        "Рішення «{title}» ухвалено, але не виконано: учасник, якого воно стосується, вже не бере участі в голосуваннях спільноти.",
+      duration_1h: "1 година",
+      duration_24h: "24 години",
+      duration_3d: "3 дні",
+      duration_5d: "5 днів",
+      pending_join_waiting: "Заявку надіслано — чекає на підтвердження",
+      pending_join_hint:
+        "Адміністратор дому побачить її у своїх сповіщеннях. Щойно він підтвердить, дім з'явиться у цьому списку.",
+      pending_join_unknown_group: "Дім за вашим кодом",
+      excluded_notice:
+        "Вас виключено з підрахунку, тому голосувати не можна. Натисніть «Я тут», щоб повернутися.",
+      joined_after_notice:
+        "Це голосування почалося до того, як ви приєдналися, тому ви в ньому не берете участі. Ви голосуватимете в наступних.",
+      freeze_card_hint:
+        "Пропозиція виключити з підрахунку — відкрийте, якщо не згодні",
+      freeze_card_done: "Пропозиція виключення з підрахунку",
+      freeze_targets_failed:
+        "Не вдалося додати учасників до пропозиції. Пропозицію скасовано, спробуйте ще раз.",
+      ending_now: "Завершується",
+      less_than_hour: "менше години",
+      history_effect_not_applied: "Рішення ухвалено, але не виконано",
+      protocol_unknown: "невідомо",
+      protocol_electorate_unknown:
+        "Склад тих, хто мав право голосу, для цього голосування не зберігся, тому поріг не наводимо.",
       apartment_taken_now_confirm:
         "Квартира вже зайнята. Затвердити як спостерігача?",
       request_role_change_btn: "Запросити зміну ролі",
@@ -5768,7 +6010,6 @@ const app = {
       profile: "Profile",
       edit_profile: "Edit Profile",
       instructions: "Instructions",
-      instructions_title: "User Instructions",
       logout: "Logout",
       not_your_account: "Not your account? Log out",
       load_failed: "Could not load. Pull down to refresh.",
@@ -5913,7 +6154,7 @@ const app = {
       objection_added: "Your objection has been recorded",
       objections_title: "Objections",
       no_objections: "No objections yet",
-      objections_needed: "Need {count} more members to cancel",
+      objections_needed: "Objections still needed to cancel: {count}",
       auto_rejected: "automatically cancelled",
       freeze_rejected: "Exclusion cancelled",
       freeze_auto_rejected: "Exclusion cancelled: members objected",
@@ -5991,12 +6232,11 @@ const app = {
       empty_notifications: "No notifications",
       empty_notifications_hint:
         "When something happens in your groups — you'll see it here.",
-      select_group: "Select group",
       secret_voting: "Secret",
       open_voting: "Open",
       completed: "Completed",
-      days: "days",
-      hours: "hours",
+      days_short: "d",
+      hours_short: "h",
       yes: "Yes",
       no: "No",
       participation: "participation",
@@ -6034,29 +6274,29 @@ const app = {
         "Tap a group to see: group code (can copy), statistics, member list, join requests, and change history.",
       instr_members_title: "Group Members",
       instr_members_desc:
-        "In the member list you can: search by name or phone, sort alphabetically or by voting participation. Frozen members are marked with ❄️.",
+        "In the member list you can: search by name or phone, sort alphabetically or by voting participation. Members excluded from the count are marked with ❄️.",
       instr_requests_title: "Join Requests",
       instr_requests_desc:
         "The administrator sees incoming requests and can approve or reject each candidate. The applicant will be notified of the decision.",
       instr_voting_types: "Voting Types",
       instr_simple_title: "Standard (Open)",
       instr_simple_desc:
-        'Who can create: any group member (regular members — max 1 voting per day). How it works: each person picks "Yes", "No", or "Abstain"; the name and an optional comment (up to 500 chars) are visible to everyone. Duration: 1 hour to 5 days, set by the author. Accepted if more than half of ALL group members voted "Yes" (with 10 members you need 6 yeses). When time runs out, if "Yes" hasn\'t reached this — rejected. Use for: repairs, expenses, rules.',
+        'Who can create: any group member (regular members — max 1 voting per day). How it works: each person picks "Yes", "No", or "Abstain"; the name and an optional comment (up to 500 chars) are visible to everyone. Duration: 1 hour to 5 days, set by the author. Accepted if more than half of those entitled to vote when the voting was created said "Yes" (with 7 voters you need 4; observers and residents excluded from the count do not appear in that number). When time runs out, if "Yes" hasn\'t reached this — rejected. Use for: repairs, expenses, rules.',
       instr_secret_title: "Secret",
       instr_secret_desc:
         'Same as Standard, but all voter names are hidden — only the totals "Yes / No / Abstain" are shown, and only once the voting has closed. No comments. The acceptance rule is identical: more than half of those entitled to vote when the voting started must vote "Yes". Use for sensitive topics (personal disputes, financial accountability).',
       instr_admin_title: "Change Administrator",
       instr_admin_desc:
-        'Who can create: any member. Who can be elected: any non-admin member from the list. Requirements: at least 3 members in the group. Duration is fixed at 72 hours (3 days). Accepted if more than half of ALL members vote "Yes". On success roles are swapped automatically: the previous admin becomes a regular member and the elected member becomes admin. Only one such voting can run at a time per group.',
+        'Who can create: any member. Who can be elected: any non-admin member from the list. Requirements: at least 3 members in the group. Duration is fixed at 72 hours (3 days). Accepted if more than half of those entitled to vote when the voting was created say "Yes". On success roles are swapped automatically: the previous admin becomes a regular member and the elected member becomes admin. Only one such voting can run at a time per group.',
       instr_remove_title: "Remove Member",
       instr_remove_desc:
-        'Who can create: any member. Required: a reason (4 preset options or free text). Requirements: at least 3 members. Duration fixed at 72 hours. Accepted if more than half of ALL members vote "Yes". On success the member is removed from the group automatically and notified with the reason.',
+        'Who can create: any member. Required: a reason (4 preset options or free text). Requirements: at least 3 members. Duration fixed at 72 hours. Accepted if more than half of those entitled to vote when the voting was created say "Yes". On success the member is removed from the group automatically and notified with the reason.',
       instr_freeze_title: "Exclude from the count",
       instr_freeze_desc:
         'Why: so "ghost" members (flat sold, person moved out or never takes part) don\'t distort the math — they can be removed from the denominator so participation and quorum reflect reality. Who proposes: only the administrator. Objection: 5 days — any 2 members who click "I disagree" cancel the exclusion (there are no normal Yes/No votes here). If the targeted member objects themselves, it is cancelled at once (proof they are present). Return: an excluded member returns themselves any time with "I\'m here"; the admin can also restore them manually. When a new owner joins the same flat, the excluded "ghost" is removed automatically. Safeguard: you cannot exclude so many that fewer than two active members remain.',
       instr_delete_group_title: "Delete Group",
       instr_delete_group_desc:
-        'Who can create: any member (the administrator must use this if the group has more than 1 member). Duration: at least 24 hours, set by the author. Accepted if more than half of ALL members vote "Yes". On success the group, its votings, and history are deleted permanently and every member is notified. Only one such voting can run at a time per group.',
+        'Who can create: any member (the administrator must use this if the group has more than 1 member). Duration: at least 24 hours, set by the author. Accepted if more than half of those entitled to vote when the voting was created say "Yes". On success the group, its votings, and history are deleted permanently and every member is notified. Only one such voting can run at a time per group.',
       instr_leave_group_title: "Leave Group",
       instr_leave_group_desc:
         'Any member (except the administrator) can leave the group via the menu (⋮). The administrator must first transfer their role through a "Change Administrator" voting.',
@@ -6136,7 +6376,6 @@ const app = {
         'The "Suggestion / feedback" button in the profile lets you send us an idea or report a problem. We read every message.',
       fill_name_error: "Please enter your first and last name",
       profile_saved: "Profile updated!",
-      notif_new_voting: "New voting in group",
       notif_join_request: "wants to join group",
       notif_voting_completed: "Voting completed",
       notif_accepted: "ACCEPTED",
@@ -6363,6 +6602,40 @@ const app = {
       members_header: "Members",
       observer_cannot_vote: "Observers cannot vote",
       observer_notice: "You are an observer. Voting is not available.",
+      notif_new_voting: "New voting: {title}",
+      notif_freeze_proposal:
+        "Proposal to exclude from the count: \"{title}\". You have 5 days to object.",
+      notif_voting_accepted: "Voting finished: \"{title}\" — accepted",
+      notif_voting_rejected: "Voting finished: \"{title}\" — rejected",
+      notif_join_rejected: "Your application to join was declined",
+      notif_join_rejected_named:
+        "Your application to join \"{group}\" was declined",
+      notif_member_excluded:
+        "Residents have been excluded from the count following a vote",
+      notif_effect_not_applied:
+        "The decision \"{title}\" was accepted but not carried out: the person it concerns no longer takes part in this community's votings.",
+      duration_1h: "1 hour",
+      duration_24h: "24 hours",
+      duration_3d: "3 days",
+      duration_5d: "5 days",
+      pending_join_waiting: "Application sent — waiting for approval",
+      pending_join_hint:
+        "The building's admin will see it in their notifications. As soon as they approve it, the house appears in this list.",
+      pending_join_unknown_group: "The house for your code",
+      excluded_notice:
+        "You are excluded from the count, so you cannot vote. Tap \"I'm here\" to come back.",
+      joined_after_notice:
+        "This voting started before you joined, so you are not part of it. You will vote in the next ones.",
+      freeze_card_hint: "Proposal to exclude from the count — open it if you object",
+      freeze_card_done: "Proposal to exclude from the count",
+      freeze_targets_failed:
+        "The residents could not be attached to the proposal. It has been withdrawn — please try again.",
+      ending_now: "Closing",
+      less_than_hour: "less than an hour",
+      history_effect_not_applied: "Decision accepted but not carried out",
+      protocol_unknown: "unknown",
+      protocol_electorate_unknown:
+        "The electorate of this voting was not preserved, so no threshold is stated.",
       apartment_taken_now_confirm: "Apartment taken. Approve as observer?",
       request_role_change_btn: "Request role change",
       change_role_menu: "Change role",
@@ -6389,7 +6662,6 @@ const app = {
       profile: "Профиль",
       edit_profile: "Редактировать профиль",
       instructions: "Инструкции",
-      instructions_title: "Инструкции по использованию",
       logout: "Выйти",
       not_your_account: "Это не ваш аккаунт? Выйти",
       load_failed: "Не удалось загрузить. Потяните вниз, чтобы обновить.",
@@ -6534,7 +6806,7 @@ const app = {
       objection_added: "Ваше несогласие записано",
       objections_title: "Несогласие",
       no_objections: "Пока никто не выразил несогласие",
-      objections_needed: "Нужно ещё {count} участников для отмены",
+      objections_needed: "Чтобы отменить, не хватает возражений: {count}",
       auto_rejected: "автоматически отменено",
       freeze_rejected: "Исключение отменено",
       freeze_auto_rejected: "Исключение отменено: участники возразили",
@@ -6612,12 +6884,11 @@ const app = {
       empty_notifications: "Уведомлений нет",
       empty_notifications_hint:
         "Когда в ваших группах появятся события — увидите их здесь.",
-      select_group: "Выберите группу",
       secret_voting: "Тайное",
       open_voting: "Открытое",
       completed: "Завершено",
-      days: "дн.",
-      hours: "час.",
+      days_short: "дн.",
+      hours_short: "час.",
       yes: "За",
       no: "Против",
       participation: "участия",
@@ -6655,29 +6926,29 @@ const app = {
         "Нажмите на группу, чтобы увидеть: код группы (можно скопировать), статистику, список участников, запросы на вступление и историю изменений.",
       instr_members_title: "Участники группы",
       instr_members_desc:
-        "В списке участников можно: искать по имени или телефону, сортировать по алфавиту или по участию в голосованиях. Замороженные участники отмечены ❄️.",
+        "В списке участников можно: искать по имени или телефону, сортировать по алфавиту или по участию в голосованиях. Исключённые из подсчёта участники отмечены ❄️.",
       instr_requests_title: "Запросы на вступление",
       instr_requests_desc:
         "Администратор видит входящие запросы и может одобрить или отклонить каждого кандидата. Участнику придёт уведомление о решении.",
       instr_voting_types: "Типы голосования",
       instr_simple_title: "Обычное (открытое)",
       instr_simple_desc:
-        "Кто создаёт: любой участник группы (обычные участники — не более 1 голосования в сутки). Как работает: каждый выбирает «За», «Против» или «Воздержусь», имя и комментарий (до 500 символов) видны всем. Длительность: от 1 часа до 5 дней — задаёт автор. Принято, если «За» проголосовало более половины ВСЕХ участников группы (при 10 — нужно 6 «За»). Если время вышло, а «За» меньше — отклонено. Подходит для: ремонт, расходы, правила.",
+        "Кто создаёт: любой участник группы (обычные участники — не более 1 голосования в сутки). Как работает: каждый выбирает «За», «Против» или «Воздержусь», имя и комментарий (до 500 символов) видны всем. Длительность: от 1 часа до 5 дней — задаёт автор. Принято, если «За» проголосовало более половины тех, кто имел право голоса на момент создания голосования (если голосующих 7 — нужно 4 «За»; наблюдатели и исключённые из подсчёта не учитываются). Если время вышло, а «За» меньше — отклонено. Подходит для: ремонт, расходы, правила.",
       instr_secret_title: "Тайное",
       instr_secret_desc:
-        "То же самое, что обычное, но все имена скрыты — видны только итоговые цифры «За / Против / Воздержусь». Комментариев нет. Условия принятия те же: более половины ВСЕХ участников должны проголосовать «За». Подходит для чувствительных вопросов (личные конфликты, финансовая прозрачность).",
+        "То же самое, что обычное, но все имена скрыты — видны только итоговые цифры «За / Против / Воздержусь». Комментариев нет. Условия принятия те же: «За» должны проголосовать более половины тех, кто имел право голоса на момент создания голосования. Подходит для чувствительных вопросов (личные конфликты, финансовая прозрачность).",
       instr_admin_title: "Смена администратора",
       instr_admin_desc:
-        "Кто создаёт: любой участник. Кого можно выбрать: любого не-админа из списка участников. Требования: в группе минимум 3 участника. Длительность фиксированная: 72 часа (3 суток). Принято, если «За» проголосовало более половины ВСЕХ участников. При успехе роли меняются автоматически: прежний админ становится обычным участником, выбранный — администратором. В группе одновременно может идти только одно такое голосование.",
+        "Кто создаёт: любой участник. Кого можно выбрать: любого не-админа из списка участников. Требования: в группе минимум 3 участника. Длительность фиксированная: 72 часа (3 суток). Принято, если «За» проголосовало более половины тех, кто имел право голоса на момент создания голосования. При успехе роли меняются автоматически: прежний админ становится обычным участником, выбранный — администратором. В группе одновременно может идти только одно такое голосование.",
       instr_remove_title: "Удаление участника",
       instr_remove_desc:
-        "Кто создаёт: любой участник. Обязательно: указать причину (4 готовых варианта или свой текст). Требования: минимум 3 участника. Длительность фиксированная: 72 часа. Принято, если «За» проголосовало более половины ВСЕХ участников. При успехе участник автоматически удаляется из группы и получает уведомление с причиной.",
+        "Кто создаёт: любой участник. Обязательно: указать причину (4 готовых варианта или свой текст). Требования: минимум 3 участника. Длительность фиксированная: 72 часа. Принято, если «За» проголосовало более половины тех, кто имел право голоса на момент создания голосования. При успехе участник автоматически удаляется из группы и получает уведомление с причиной.",
       instr_freeze_title: "Исключение из подсчёта",
       instr_freeze_desc:
         "Зачем: чтобы «мёртвые души» (квартиру продали, человек уехал или вовсе не участвует) не искажали подсчёт — их можно убрать из знаменателя, чтобы процент участия и кворум отражали реальность. Кто предлагает: только администратор. Возражение: 5 дней — любые 2 участника, нажавшие «Не согласен», отменяют исключение (обычных голосов «За/Против» здесь нет). Если сам участник возразит — исключение отменяется сразу (это доказательство, что он на месте). Возврат: исключённый участник в любой момент возвращает себя кнопкой «Я тут»; администратор тоже может вернуть его вручную. Когда в ту же квартиру вступает новый владелец — исключённого «призрака» система убирает автоматически. Предохранитель: нельзя исключить столько, чтобы активных осталось меньше двух.",
       instr_delete_group_title: "Удаление группы",
       instr_delete_group_desc:
-        "Кто создаёт: любой участник (администратор обязан использовать именно это голосование, если в группе больше 1 участника). Длительность: минимум 24 часа — задаёт автор. Принято, если «За» проголосовало более половины ВСЕХ участников. При успехе группа, все её голосования и история удаляются безвозвратно, все участники получают уведомление. В группе одновременно может идти только одно такое голосование.",
+        "Кто создаёт: любой участник (администратор обязан использовать именно это голосование, если в группе больше 1 участника). Длительность: минимум 24 часа — задаёт автор. Принято, если «За» проголосовало более половины тех, кто имел право голоса на момент создания голосования. При успехе группа, все её голосования и история удаляются безвозвратно, все участники получают уведомление. В группе одновременно может идти только одно такое голосование.",
       instr_leave_group_title: "Выход из группы",
       instr_leave_group_desc:
         "Любой участник (кроме администратора) может покинуть группу через меню (⋮). Администратор должен сначала передать свою роль через голосование «Смена администратора».",
@@ -6759,7 +7030,6 @@ const app = {
         "Кнопка «Предложение / замечание» в профиле позволяет отправить нам идею или сообщить о проблеме. Мы читаем все сообщения.",
       fill_name_error: "Пожалуйста, введите имя и фамилию",
       profile_saved: "Профиль обновлён!",
-      notif_new_voting: "Новое голосование в группе",
       notif_join_request: "хочет присоединиться к группе",
       notif_voting_completed: "Голосование завершено",
       notif_accepted: "ПРИНЯТО",
@@ -6991,6 +7261,41 @@ const app = {
       members_header: "Участники",
       observer_cannot_vote: "Наблюдатели не могут голосовать",
       observer_notice: "Вы — наблюдатель. Голосование для вас недоступно.",
+      notif_new_voting: "Новое голосование: {title}",
+      notif_freeze_proposal:
+        "Предложение исключить из подсчёта: «{title}». У вас 5 дней, чтобы нажать «Не согласен».",
+      notif_voting_accepted: "Голосование завершено: «{title}» — принято",
+      notif_voting_rejected: "Голосование завершено: «{title}» — отклонено",
+      notif_join_rejected: "Заявка на присоединение отклонена",
+      notif_join_rejected_named:
+        "Заявка на присоединение к «{group}» отклонена",
+      notif_member_excluded:
+        "Участник(и) исключены из подсчёта по результатам голосования",
+      notif_effect_not_applied:
+        "Решение «{title}» принято, но не выполнено: участник, которого оно касается, уже не участвует в голосованиях сообщества.",
+      duration_1h: "1 час",
+      duration_24h: "24 часа",
+      duration_3d: "3 дня",
+      duration_5d: "5 дней",
+      pending_join_waiting: "Заявка отправлена — ждёт подтверждения",
+      pending_join_hint:
+        "Администратор дома увидит её в своих уведомлениях. Как только он подтвердит, дом появится в этом списке.",
+      pending_join_unknown_group: "Дом по вашему коду",
+      excluded_notice:
+        "Вы исключены из подсчёта, поэтому голосовать нельзя. Нажмите «Я тут», чтобы вернуться.",
+      joined_after_notice:
+        "Это голосование началось до того, как вы присоединились, поэтому вы в нём не участвуете. Вы будете голосовать в следующих.",
+      freeze_card_hint:
+        "Предложение исключить из подсчёта — откройте, если не согласны",
+      freeze_card_done: "Предложение об исключении из подсчёта",
+      freeze_targets_failed:
+        "Не удалось добавить участников к предложению. Предложение отменено, попробуйте ещё раз.",
+      ending_now: "Завершается",
+      less_than_hour: "меньше часа",
+      history_effect_not_applied: "Решение принято, но не выполнено",
+      protocol_unknown: "неизвестно",
+      protocol_electorate_unknown:
+        "Состав имевших право голоса для этого голосования не сохранился, поэтому порог не приводим.",
       apartment_taken_now_confirm: "Квартира занята. Одобрить как наблюдателя?",
       request_role_change_btn: "Запросить смену роли",
       change_role_menu: "Изменить роль",

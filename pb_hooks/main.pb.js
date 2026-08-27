@@ -48,6 +48,17 @@ onRecordCreateRequest((e) => {
     if (tm.get("is_observer"))
       throw new BadRequestError("observer_cannot_be_admin");
   }
+  if (e.record.get("type") === "remove-member") {
+    // The same guard the admin-change branch has had all along, and the only branch
+    // that lacked it. Without it the house could spend three days voting to expel a
+    // name nobody recognises — a stranger, or the admin — and the app would stamp
+    // ПРИЙНЯТО on an effect that cannot happen: a ghost decision with a printable
+    // protocol behind it.
+    const tm = L.membership(e.app, gid, e.record.get("target_member"));
+    if (!tm) throw new BadRequestError("target_not_member");
+    if (tm.get("role") === "admin")
+      throw new BadRequestError("cannot_remove_admin");
+  }
   e.next();
 }, "votings");
 onRecordAfterCreateSuccess((e) => {
@@ -63,7 +74,12 @@ onRecordAfterCreateSuccess((e) => {
         'Пропозиція виключити з підрахунку: "' +
           (e.record.get("title") || "") +
           '". У вас 5 днів, щоб натиснути «Не згоден».',
-        { group_id: gid, voting_id: e.record.id },
+        {
+          group_id: gid,
+          voting_id: e.record.id,
+          i18n: "notif_freeze_proposal",
+          p: { title: e.record.get("title") || "" },
+        },
       );
     } else {
       L.notifyGroup(
@@ -72,7 +88,12 @@ onRecordAfterCreateSuccess((e) => {
         e.record.get("created_by"),
         "new_voting",
         "Нове голосування: " + (e.record.get("title") || ""),
-        { group_id: gid, voting_id: e.record.id },
+        {
+          group_id: gid,
+          voting_id: e.record.id,
+          i18n: "notif_new_voting",
+          p: { title: e.record.get("title") || "" },
+        },
       );
     }
   } catch (er) {}
@@ -90,10 +111,17 @@ onRecordCreateRequest((e) => {
   }
   if (v.get("status") !== "active")
     throw new BadRequestError("voting_not_active");
+  // The deadline decides the vote, so it has to be enforced on the ballot path and
+  // not left to the minute cron. Until this check existed a ballot arriving in the
+  // gap between ends_at and the next sweep was counted, and a late "yes" was shown
+  // to flip a verdict from rejected to accepted — with a timestamp in the printed
+  // protocol later than the deadline the same protocol declares.
+  const endsRaw = v.getString("ends_at");
+  const endsMs = endsRaw ? Date.parse(endsRaw.replace(" ", "T")) : NaN;
+  if (endsMs && !isNaN(endsMs) && Date.now() > endsMs)
+    throw new BadRequestError("voting_expired");
   const m = L.membership(e.app, v.get("group"), e.auth.id);
   if (!m) throw new BadRequestError("not_member");
-  if (m.get("is_observer")) throw new BadRequestError("observer_cannot_vote");
-  if (m.get("is_frozen")) throw new BadRequestError("frozen_cannot_vote");
   // Electorate integrity: eligibility is FIXED at creation. If the voting captured an
   // explicit voter_ids snapshot, only those IDs may vote — this matches the quorum
   // denominator exactly, so a mid-vote role/freeze change (or a self-restore) can no
@@ -104,6 +132,13 @@ onRecordCreateRequest((e) => {
   // member was refused with not_in_electorate.
   const roll = L.readIdList(v, "voter_ids");
   if (roll.length) {
+    // The roll IS the electorate: it is the quorum denominator, so it must also be
+    // the sole answer to "may this person vote". Layering the LIVE is_observer /
+    // is_frozen flags on top of it let a sitting admin demote three neighbours in
+    // the middle of a voting about replacing him — they stayed in the frozen
+    // denominator but could no longer cast a ballot, which made that voting
+    // arithmetically unwinnable and the admin unremovable. Rights and denominator
+    // now move together, exactly as this snapshot was introduced to guarantee.
     let inRoll = false;
     for (let i = 0; i < roll.length; i++) {
       if (roll[i] === e.auth.id) {
@@ -112,8 +147,13 @@ onRecordCreateRequest((e) => {
       }
     }
     if (!inRoll) throw new BadRequestError("not_in_electorate");
-  } else if (m.getString("created") > v.getString("created")) {
-    throw new BadRequestError("joined_after_voting_started");
+  } else {
+    // Votings created before snapshots existed have no roll; fall back to the live
+    // flags, which is all those older records can be judged by.
+    if (m.get("is_observer")) throw new BadRequestError("observer_cannot_vote");
+    if (m.get("is_frozen")) throw new BadRequestError("frozen_cannot_vote");
+    if (m.getString("created") > v.getString("created"))
+      throw new BadRequestError("joined_after_voting_started");
   }
   // Friendly duplicate check; the idx_vote_unique index remains the hard guarantee.
   if (
@@ -328,7 +368,38 @@ routerAdd("POST", "/api/spilka/my-groups", (e) => {
       total_votings_count: total.length,
     });
   }
-  return e.json(200, { data: data });
+  // Requests still awaiting an admin. Until now, someone who entered a house code
+  // and pressed "Приєднатися" saw a toast and then an app that looked exactly as it
+  // did before: the Groups tab still said "Ви ще не приєдналися до жодної групи",
+  // and no notification was ever written. After one reload there was no evidence in
+  // the app that they had applied at all. The house name lives in a collection they
+  // are not a member of, so only the server can answer this.
+  const pending = [];
+  try {
+    const reqs = e.app.findRecordsByFilter(
+      "join_requests",
+      "user = {:u} && status = 'pending'",
+      "-created",
+      20,
+      0,
+      { u: auth.id },
+    );
+    for (const r of reqs) {
+      let nm = "";
+      try {
+        nm = e.app.findRecordById("groups", r.get("group")).get("name");
+      } catch (er) {}
+      pending.push({
+        request_id: r.id,
+        group_id: r.get("group"),
+        name: nm,
+        apartment: r.get("apartment") || "",
+        is_role_change: !!r.get("is_role_change"),
+        created_at: r.getString("created"),
+      });
+    }
+  } catch (er) {}
+  return e.json(200, { data: data, pending: pending });
 });
 
 routerAdd("POST", "/api/spilka/voter-count", (e) => {
@@ -454,10 +525,37 @@ routerAdd("POST", "/api/spilka/member-votes", (e) => {
     { g: gid },
   );
   const counts = {};
+  const eligible = {};
+  const members = e.app.findRecordsByFilter(
+    "group_members",
+    "group = {:g}",
+    "",
+    0,
+    0,
+    { g: gid },
+  );
   for (const v of votings) {
-    // While a secret ballot is ACTIVE, per-member turnout ("Ivanov already voted,
-    // Petrov didn't") is itself sensitive — count it only after completion.
-    if (v.get("type") === "secret" && v.get("status") === "active") continue;
+    // Per-member turnout in a SECRET ballot is sensitive, and it does not stop being
+    // sensitive when the urn closes: in a small house a unanimous tally plus the list
+    // of who voted reveals every single choice. This used to be skipped only while
+    // the ballot was running, so the participation column on the members screen
+    // published exactly that the moment the voting completed.
+    if (v.get("type") === "secret") continue;
+    // A freeze proposal has no yes/no ballot at all — counting it as a missed vote
+    // is what made the column read "0/2" for people who had voted in everything.
+    if (v.get("type") === "freeze") continue;
+    const roll = L.readIdList(v, "voter_ids");
+    if (roll.length) {
+      for (let i = 0; i < roll.length; i++)
+        eligible[roll[i]] = (eligible[roll[i]] || 0) + 1;
+    } else {
+      // Legacy votings carry no roll; the best available answer is everyone who is
+      // in the house today.
+      for (const mm of members) {
+        const u = mm.get("user");
+        eligible[u] = (eligible[u] || 0) + 1;
+      }
+    }
     const vts = e.app.findRecordsByFilter("votes", "voting = {:v}", "", 0, 0, {
       v: v.id,
     });
@@ -466,10 +564,19 @@ routerAdd("POST", "/api/spilka/member-votes", (e) => {
       counts[u] = (counts[u] || 0) + 1;
     }
   }
+  // The denominator has to come from here too. The client used to divide by every
+  // voting in the group, while the numerator skipped secret ones — so during any
+  // secret ballot every neighbour was shown as having missed a vote they had cast,
+  // and a resident who moved in last month was scored against votings the server
+  // itself had barred them from.
+  const ids = {};
+  for (const mm of members) ids[mm.get("user")] = true;
+  for (const u of Object.keys(counts)) ids[u] = true;
   return e.json(200, {
-    data: Object.keys(counts).map((u) => ({
+    data: Object.keys(ids).map((u) => ({
       user_id: u,
-      voted_count: counts[u],
+      voted_count: counts[u] || 0,
+      eligible_count: eligible[u] || 0,
     })),
   });
 });
@@ -715,12 +822,27 @@ routerAdd("POST", "/api/spilka/reject-join", (e) => {
   req.set("resolved_at", new Date().toISOString());
   req.set("resolved_by", auth.id);
   e.app.save(req);
+  // Name the house. A resident who applied to their own building and to their
+  // parents' got "Заявку на приєднання відхилено" with nothing to tell them which,
+  // and tapping it did nothing — they are not a member, so the client had no group
+  // to open. The name is only readable here, on the server.
+  let rejectedFrom = "";
+  try {
+    rejectedFrom = e.app.findRecordById("groups", req.get("group")).get("name");
+  } catch (er) {}
   L.notify(
     e.app,
     req.get("user"),
     "join_rejected",
-    "Заявку на приєднання відхилено",
-    { group_id: req.get("group") },
+    rejectedFrom
+      ? 'Заявку на приєднання до "' + rejectedFrom + '" відхилено'
+      : "Заявку на приєднання відхилено",
+    {
+      group_id: req.get("group"),
+      group_name: rejectedFrom,
+      i18n: rejectedFrom ? "notif_join_rejected_named" : "notif_join_rejected",
+      p: { group: rejectedFrom },
+    },
   );
   return e.json(200, { data: true });
 });
@@ -818,10 +940,25 @@ routerAdd("POST", "/api/spilka/leave-group", (e) => {
   const L = require(`${__hooks}/lib.js`);
   const auth = e.auth;
   if (!auth) return e.json(401, { error: "not_authenticated" });
-  const m = L.membership(e.app, e.requestInfo().body.group_id, auth.id);
+  const gid = e.requestInfo().body.group_id;
+  const m = L.membership(e.app, gid, auth.id);
   if (!m) return e.json(400, { error: "not_member" });
   if (m.get("role") === "admin")
     return e.json(400, { error: "admin_must_transfer_first" });
+  // Walking out while a voting ABOUT YOU is running used to turn that voting into a
+  // decision the system could not carry out: the effect hook found no membership,
+  // did nothing, and the app still stamped "прийнято" and let anyone print a
+  // protocol naming you as the new chair (or as expelled). No malice required — one
+  // ordinary button. Wait for it to close, or ask the author to withdraw it.
+  const aboutMe = e.app.findRecordsByFilter(
+    "votings",
+    "group = {:g} && status = 'active' && target_member = {:u}",
+    "",
+    1,
+    0,
+    { g: gid, u: auth.id },
+  );
+  if (aboutMe.length) return e.json(400, { error: "target_of_active_voting" });
   e.app.delete(m);
   return e.json(200, { data: true });
 });
@@ -1239,7 +1376,9 @@ routerAdd("POST", "/api/spilka/set-frozen", (e) => {
     const h = new Record(e.app.findCollectionByNameOrId("group_history"));
     h.set("group", gid);
     h.set("action", "member_restored");
-    h.set("details", { user: targetUid, by: "admin" });
+    // The id, not the literal string "admin" — the client resolves this field to a
+    // name, so the initiator simply vanished from that line of the journal.
+    h.set("details", { user: targetUid, by: e.auth.id });
     e.app.save(h);
   }
   return e.json(200, { data: true });

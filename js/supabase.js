@@ -335,9 +335,9 @@ const supabaseService = {
         method: "POST",
         body: {},
       });
-      return { data: r.data, error: null };
+      return { data: r.data, pending: r.pending || [], error: null };
     } catch (e) {
-      return { data: null, error: this._err(e) };
+      return { data: null, pending: [], error: this._err(e) };
     }
   },
 
@@ -675,6 +675,13 @@ const supabaseService = {
         electorate_size: Array.isArray(v.voter_ids) && v.voter_ids.length
           ? v.voter_ids.length
           : (v.voter_snapshot || 0),
+        // Whether the CURRENT user is inside that frozen electorate. Without it the
+        // voting screen had no way to know a resident's ballot would be refused, and
+        // showed a newcomer the full set of vote buttons and a comment box.
+        in_electorate:
+          Array.isArray(v.voter_ids) && v.voter_ids.length
+            ? v.voter_ids.indexOf(uid) !== -1
+            : true,
         ends_at: this._d(v.ends_at),
         completed_at: this._d(v.completed_at),
         created_at: this._d(v.created),
