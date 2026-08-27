@@ -2,7 +2,7 @@
 
 > Mobile-first web app for voting in housing co-ops / HOAs. Vanilla JS + PocketBase backend.
 
-## ⚡ CURRENT STATE (last updated: 2026-04-25)
+## ⚡ CURRENT STATE (last updated: 2026-08-27)
 
 **Live & working:**
 - Auth (email + password) via PocketBase. Google sign-in is deferred, not wired up.
@@ -17,6 +17,19 @@
 - PWA: manifest + service worker (basic)
 - **Dark theme** (system preference + manual toggle in profile)
 - Mobile: safe-area-inset, 44px tap targets, locked body-scroll on modals
+
+**Deploy:** manual. There is no CI — `.github/workflows/` does not exist. Static files
+go to `/opt/spilka-web`, hooks to `/opt/pocketbase/pb_hooks` + restart `pocketbase.service`.
+Bump `service-worker.js` every time, or browsers keep serving the old code.
+
+**Audited twice (26-27.08.2026), full-audit skill.** Round one: voting was impossible
+since 18.07 (a `json` field reaches a JS hook as bytes) plus 19 other findings. Round
+two asked whether a decision the house takes is actually executed, and often it was
+not: a voting could read "ПРИЙНЯТО" while nothing happened, the sitting admin could
+make a vote to replace him unwinnable by demoting neighbours mid-vote, an exclusion
+proposal could go live with nobody on it, every line of the group history was dated
+"Invalid Date", and protocols of older votings printed impossible arithmetic. Fixed on
+this branch; ledger in `D:\claudeprojects\_audit\spilka\`.
 
 **In progress:** —
 
@@ -42,13 +55,13 @@
   - `css/style.css` — all styles, CSS variables for theming
   - `pb_hooks/` — the server: 25 routes, the voting/vote/freeze hooks, the minute cron
   - `pb_migrations/` — schema migrations applied on the server
-  - `tests/` — 23 regression tests against a real PocketBase (see `tests/README.md`)
+  - `tests/` — 34 regression tests against a real PocketBase (see `tests/README.md`)
   - `supabase/*.sql` — history only; the Supabase backend is gone
 
 ## 🔑 Configuration
 
 - `js/config.js` is committed and holds no secret (just the same-origin URL)
-- `js/config.example.js` is the template if rotating projects
+- `js/config.example.js` is the template if the backend ever moves off the app's own host
 - **Never commit:** `.env`, files with passwords, OAuth client secrets
 
 ## 🚀 Run locally
