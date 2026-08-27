@@ -362,15 +362,19 @@ const supabaseService = {
     }
   },
 
+  // Via the route, not a direct collection update: `groups` has no update rule,
+  // so the PATCH this used to send was rejected for everyone including the admin.
   async updateGroup(groupId, updates) {
     try {
-      const r = await this.pb
-        .collection("groups")
-        .update(groupId, {
+      const r = await this.pb.send("/api/spilka/update-group", {
+        method: "POST",
+        body: {
+          group_id: groupId,
           name: updates.name,
           description: updates.description,
-        });
-      return { data: r, error: null };
+        },
+      });
+      return { data: r.data, error: null };
     } catch (e) {
       return { data: null, error: this._err(e) };
     }

@@ -297,6 +297,30 @@ module.exports = {
       return [];
     }
   },
+  // Read a json field back as the list of ids that was written into it.
+  //
+  // A json field handed to a JS hook is NOT a JS array: PocketBase stores it as
+  // raw bytes and goja wraps that []byte by reflection, so `.length` is the byte
+  // length of the JSON text and `arr[i]` is a byte value, not an id. Comparing
+  // `arr[i] === someId` then compares a number with a string and is always false.
+  // That is what made every member fail the electorate check with
+  // `not_in_electorate` and made the quorum denominator the text length.
+  // Go through the string form to get the real values back.
+  readIdList: function (rec, field) {
+    try {
+      const raw = rec.get(field);
+      if (raw === null || raw === undefined) return [];
+      const s = String(raw).trim();
+      if (!s || s === "null" || s === '""') return [];
+      const parsed = JSON.parse(s);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(function (x) {
+        return typeof x === "string" && x !== "";
+      });
+    } catch (e) {
+      return [];
+    }
+  },
   distinctObjections: function (app, vid) {
     // unique index (voting,user) guarantees one row per user, so a plain count is distinct
     try {
@@ -380,8 +404,19 @@ module.exports = {
       { group_id: gid, voting_id: vid },
     );
   },
-  completeExpired: function (app) {
+  // groupIds (optional): limit the sweep to those groups. The cron passes nothing
+  // and sweeps everything; the HTTP route passes the caller's own groups, so one
+  // logged-in user can no longer make the server walk and transact over every
+  // group in the system on demand.
+  completeExpired: function (app, groupIds) {
     const self = this;
+    const scope =
+      groupIds && groupIds.length
+        ? groupIds.reduce(function (acc, g) {
+            acc[g] = true;
+            return acc;
+          }, {})
+        : null;
     // PocketBase stores dates as "YYYY-MM-DD HH:MM:SS.sssZ" (SPACE separator)
     // and compares filter params as strings. Passing ISO "…T…" here made every
     // same-day ends_at look expired (' ' < 'T'), so votings were completed on
@@ -395,6 +430,7 @@ module.exports = {
       { now: new Date().toISOString().replace("T", " ") },
     );
     for (const v of due) {
+      if (scope && !scope[v.get("group")]) continue;
       try {
         app.runInTransaction((tx) => {
           const fresh = tx.findRecordById("votings", v.id);
@@ -415,14 +451,13 @@ module.exports = {
           // Denominator = the electorate fixed at creation. Prefer the immutable
           // voter_ids snapshot (its length == who was allowed to vote); fall back to
           // the numeric snapshot, then a live count for pre-snapshot votings.
-          const vids = fresh.get("voter_ids");
+          const vids = self.readIdList(fresh, "voter_ids");
           const snap = fresh.get("voter_snapshot");
-          const voters =
-            vids && vids.length
-              ? vids.length
-              : snap && snap > 0
-                ? snap
-                : self.activeVoters(tx, gid);
+          const voters = vids.length
+            ? vids.length
+            : snap && snap > 0
+              ? snap
+              : self.activeVoters(tx, gid);
           const accepted = voters > 0 && yes > voters / 2;
           fresh.set("status", "completed");
           fresh.set("result", accepted ? "accepted" : "rejected");

@@ -9,6 +9,14 @@ onRecordCreateRequest((e) => {
   const m = L.membership(e.app, gid, e.auth.id);
   if (!m) throw new BadRequestError("not_member");
   if (m.get("is_frozen")) throw new BadRequestError("excluded_cannot_create");
+  // A voting always starts open with no verdict. The collection's create rule only
+  // asks for a logged-in user, so without this a member could POST a record that is
+  // already {status: completed, result: accepted} and the app would show — and
+  // print a protocol for — a decision the house never took.
+  e.record.set("status", "active");
+  e.record.set("result", "");
+  e.record.set("completed_at", "");
+  e.record.set("deleted_at", "");
   // Freeze the quorum denominator at creation so later exclusions can't change THIS voting.
   e.record.set("voter_snapshot", L.activeVoters(e.app, gid));
   // Also snapshot WHO the electorate is (IDs), not just how many, so a later
@@ -19,6 +27,18 @@ onRecordCreateRequest((e) => {
     if (m.get("role") !== "admin")
       throw new BadRequestError("only_admin_can_freeze");
     e.record.set("ends_at", new Date(Date.now() + 5 * 86400000).toISOString()); // fixed 5-day objection window
+  } else {
+    // ends_at arrives from the browser. Unchecked, a date in the past let the
+    // minute cron close the voting before anyone could open it ("burning" a
+    // topic as rejected), and a date far ahead left it open forever.
+    const MIN_MS = 30 * 60000,
+      MAX_MS = 60 * 86400000;
+    const raw = e.record.getString("ends_at");
+    const ends = raw ? Date.parse(raw.replace(" ", "T")) : NaN;
+    if (!ends || isNaN(ends)) throw new BadRequestError("ends_at_required");
+    const delta = ends - Date.now();
+    if (delta < MIN_MS) throw new BadRequestError("ends_at_too_soon");
+    if (delta > MAX_MS) throw new BadRequestError("ends_at_too_far");
   }
   if (e.record.get("type") === "admin-change") {
     // An admin must be a voting member: promoting an observer would violate
@@ -79,8 +99,11 @@ onRecordCreateRequest((e) => {
   // denominator exactly, so a mid-vote role/freeze change (or a self-restore) can no
   // longer let an excluded member add a vote outside the counted denominator. Older
   // votings without the snapshot fall back to the membership-created check.
-  const roll = v.get("voter_ids");
-  if (roll && roll.length) {
+  // NB: read the snapshot via L.readIdList — a raw v.get("voter_ids") yields the
+  // JSON *bytes*, so the comparison below silently never matched and every single
+  // member was refused with not_in_electorate.
+  const roll = L.readIdList(v, "voter_ids");
+  if (roll.length) {
     let inRoll = false;
     for (let i = 0; i < roll.length; i++) {
       if (roll[i] === e.auth.id) {
@@ -112,6 +135,38 @@ onRecordCreateRequest((e) => {
   e.next();
 }, "feedback");
 
+// ===== Ownership can never be reassigned =====
+// PocketBase evaluates an updateRule against the record as it stood BEFORE the
+// change, and never re-checks it against the incoming values. So a rule like
+// `user = @request.auth.id` lets anyone PATCH their OWN row and move it into
+// somebody else's name — verified against 0.39.4. Consequences here: a resident
+// could hang their name and flat number on a neighbour (and the victim could not
+// undo it, profiles.deleteRule is superuser-only), or push a fabricated
+// "Administrator: ..." message into a neighbour's inbox. Pin the owner back.
+onRecordUpdateRequest((e) => {
+  if (e.auth && e.auth.collection().name === "_superusers") {
+    e.next();
+    return;
+  }
+  const orig = e.app.findRecordById("profiles", e.record.id);
+  e.record.set("user", orig.get("user"));
+  e.next();
+}, "profiles");
+
+onRecordUpdateRequest((e) => {
+  if (e.auth && e.auth.collection().name === "_superusers") {
+    e.next();
+    return;
+  }
+  const orig = e.app.findRecordById("notifications", e.record.id);
+  // Owner, sender-controlled text and kind all stay as delivered; the app only
+  // ever flips is_read / archived_at / metadata.
+  e.record.set("user", orig.get("user"));
+  e.record.set("type", orig.get("type"));
+  e.record.set("text", orig.get("text"));
+  e.next();
+}, "notifications");
+
 onRecordUpdateRequest((e) => {
   if (e.auth && e.auth.collection().name === "_superusers") {
     e.next();
@@ -123,13 +178,46 @@ onRecordUpdateRequest((e) => {
     throw new BadRequestError("only_active_to_deleted_allowed");
   if (e.record.getString("result") || e.record.getString("completed_at"))
     throw new BadRequestError("cannot_set_result");
-  // Only the author or a group admin may cancel a voting.
-  const uid = e.auth ? e.auth.id : "";
+  // Cancelling changes the STATUS and nothing else. The collection's update rule
+  // only asks for a logged-in user, so everything else is guarded here — and this
+  // list used to be missing. Sending {status: "deleted", type: "simple"} rewrote a
+  // SECRET ballot into an open one, and /voting-ballots then handed out who voted
+  // how, with names and flat numbers.
+  const pinned = [
+    "group",
+    "type",
+    "title",
+    "description",
+    "created_by",
+    "target_member",
+    "removal_reason",
+    "link",
+    "ends_at",
+    "voter_snapshot",
+    "freeze_duration_days",
+  ];
+  for (const f of pinned) {
+    if (e.record.getString(f) !== orig.getString(f))
+      throw new BadRequestError("only_status_change_allowed");
+  }
   if (
-    uid !== orig.get("created_by") &&
-    !L.isAdmin(e.app, orig.get("group"), uid)
+    JSON.stringify(L.readIdList(e.record, "voter_ids")) !==
+    JSON.stringify(L.readIdList(orig, "voter_ids"))
   )
-    throw new BadRequestError("not_allowed_to_delete");
+    throw new BadRequestError("only_status_change_allowed");
+  // Only the author or a group admin may cancel a voting — except for the two
+  // kinds aimed AT the admin. Letting an admin cancel the vote to replace them
+  // (or to dissolve the group) made them unremovable: residents propose, the
+  // admin cancels, forever. The app's own help promises the opposite. For those
+  // two types only the person who started it may withdraw it.
+  const uid = e.auth ? e.auth.id : "";
+  const aimedAtAdmin =
+    orig.get("type") === "admin-change" || orig.get("type") === "delete-group";
+  const allowed = aimedAtAdmin
+    ? uid === orig.get("created_by")
+    : uid === orig.get("created_by") ||
+      L.isAdmin(e.app, orig.get("group"), uid);
+  if (!allowed) throw new BadRequestError("not_allowed_to_delete");
   e.next();
 }, "votings");
 
@@ -412,7 +500,7 @@ routerAdd("POST", "/api/spilka/submit-join", (e) => {
   if (!asObs) {
     const c = e.app.findRecordsByFilter(
       "group_members",
-      "group = {:g} && is_observer = false && apartment = {:a}",
+      "group = {:g} && is_observer = false && is_frozen = false && apartment = {:a}",
       "",
       1,
       0,
@@ -489,7 +577,7 @@ routerAdd("POST", "/api/spilka/request-role-change", (e) => {
   if (!becomeObs) {
     const c = e.app.findRecordsByFilter(
       "group_members",
-      "group = {:g} && is_observer = false && apartment = {:a} && user != {:u}",
+      "group = {:g} && is_observer = false && is_frozen = false && apartment = {:a} && user != {:u}",
       "",
       1,
       0,
@@ -552,7 +640,7 @@ routerAdd("POST", "/api/spilka/approve-join", (e) => {
   if (!finalObs && apt) {
     const taken = e.app.findRecordsByFilter(
       "group_members",
-      "group = {:g} && is_observer = false && apartment = {:a} && user != {:u}",
+      "group = {:g} && is_observer = false && is_frozen = false && apartment = {:a} && user != {:u}",
       "",
       1,
       0,
@@ -658,7 +746,7 @@ routerAdd("POST", "/api/spilka/admin-change-role", (e) => {
     if (apt) {
       const taken = e.app.findRecordsByFilter(
         "group_members",
-        "group = {:g} && is_observer = false && apartment = {:a} && user != {:u}",
+        "group = {:g} && is_observer = false && is_frozen = false && apartment = {:a} && user != {:u}",
         "",
         1,
         0,
@@ -672,7 +760,58 @@ routerAdd("POST", "/api/spilka/admin-change-role", (e) => {
   }
   m.set("is_observer", makeObs);
   e.app.save(m);
+  // Losing the right to vote is not a silent bookkeeping change. Until this was
+  // added, an admin could move every resident to "observer" one call at a time —
+  // no notice, no trace — leaving themselves the only voter, push through any
+  // decision, then move everyone back. Telling the member and writing it into the
+  // group's history is what makes that visible.
+  try {
+    L.notify(
+      e.app,
+      targetUid,
+      "role_changed_by_admin",
+      makeObs
+        ? "Адміністратор змінив вашу роль: ви тепер спостерігач і не берете участі в голосуваннях."
+        : "Адміністратор змінив вашу роль: ви тепер голосуючий учасник.",
+      { group_id: gid, as_observer: makeObs, by: auth.id },
+    );
+    const h = new Record(e.app.findCollectionByNameOrId("group_history"));
+    h.set("group", gid);
+    h.set("action", "role_changed");
+    h.set("details", { user: targetUid, as_observer: makeObs, by: auth.id });
+    e.app.save(h);
+  } catch (er) {}
   return e.json(200, { data: true });
+});
+
+// Renaming a group / editing its description. The groups collection has no update
+// rule at all (superuser-only), so the client's direct PATCH could never succeed —
+// "Зберегти" on the edit-group dialog failed for every admin, every time.
+routerAdd("POST", "/api/spilka/update-group", (e) => {
+  const L = require(`${__hooks}/lib.js`);
+  const auth = e.auth;
+  if (!auth) return e.json(401, { error: "not_authenticated" });
+  const b = e.requestInfo().body;
+  const gid = b.group_id;
+  const name = (b.name || "").trim();
+  if (!name) return e.json(400, { error: "name_required" });
+  if (name.length > 200) return e.json(400, { error: "name_too_long" });
+  const desc = (b.description || "").trim();
+  if (desc.length > 2000) return e.json(400, { error: "description_too_long" });
+  if (!L.isAdmin(e.app, gid, auth.id))
+    return e.json(403, { error: "not_admin" });
+  let g;
+  try {
+    g = e.app.findRecordById("groups", gid);
+  } catch (er) {
+    return e.json(400, { error: "group_not_found" });
+  }
+  g.set("name", name);
+  g.set("description", desc);
+  e.app.save(g);
+  return e.json(200, {
+    data: { id: g.id, name: g.get("name"), description: g.get("description") },
+  });
 });
 
 routerAdd("POST", "/api/spilka/leave-group", (e) => {
@@ -734,7 +873,22 @@ routerAdd("POST", "/api/spilka/broadcast", (e) => {
 routerAdd("POST", "/api/spilka/complete-expired", (e) => {
   if (!e.auth) return e.json(401, { error: "not_authenticated" });
   const L = require(`${__hooks}/lib.js`);
-  L.completeExpired(e.app);
+  // Only the caller's own groups: this route exists so the screen refreshes
+  // promptly, not so one account can make the server sweep every group there is.
+  // The minute cron still covers everything.
+  const mine = e.app.findRecordsByFilter(
+    "group_members",
+    "user = {:u}",
+    "",
+    0,
+    0,
+    { u: e.auth.id },
+  );
+  const gids = mine.map(function (m) {
+    return m.get("group");
+  });
+  if (!gids.length) return e.json(200, { data: true });
+  L.completeExpired(e.app, gids);
   return e.json(200, { data: true });
 });
 
@@ -1102,7 +1256,10 @@ onBootstrap((e) => {
     e.app
       .db()
       .newQuery(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_voter_apartment ON group_members (`group`, apartment) WHERE is_observer = 0 AND apartment != ''",
+        // Must match the index that is actually in production, which also excludes
+        // excluded members — otherwise a rebuilt-from-scratch server would quietly
+        // get a stricter index and start refusing new owners of a sold flat.
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_voter_apartment ON group_members (`group`, apartment) WHERE is_observer = 0 AND is_frozen = 0 AND apartment != ''",
       )
       .execute();
   } catch (er) {}

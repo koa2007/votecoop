@@ -94,14 +94,19 @@ const app = {
 
     // Load saved language preference first (for error messages)
     const savedLang = localStorage.getItem("votecoop-language") || "uk";
-    if (savedLang !== "uk") {
-      document
-        .querySelectorAll("#language-select, #auth-language-select")
-        .forEach((sel) => {
-          sel.value = savedLang;
-        });
-      this.changeLanguage(savedLang);
-    }
+    document
+      .querySelectorAll("#language-select, #auth-language-select")
+      .forEach((sel) => {
+        sel.value = savedLang;
+      });
+    // Ukrainian used to be skipped here on the assumption that the markup already
+    // carries it. It does — but the markup is a snapshot of whatever the wording
+    // was when it was typed, so it drifted: the create-voting screen still called
+    // the feature "Заморозка учасників" and promised it "діє 7 днів", while the
+    // dictionary (and the server) had moved to "Виключення з підрахунку" with a
+    // 5-day objection window and no expiry. Only Ukrainian readers saw the stale
+    // version, i.e. almost everyone. The dictionary is the single source now.
+    this.changeLanguage(savedLang);
 
     // Initialize Supabase
     let supabaseReady = false;
@@ -1431,6 +1436,12 @@ const app = {
         const safeTotal = voting.totalMembers > 0 ? voting.totalMembers : 1;
         const progress = Math.round((totalVoted / safeTotal) * 100);
         const yesPercent = Math.round((voting.yesVotes / safeTotal) * 100);
+        // While a secret ballot is running the server deliberately withholds the
+        // tally, and the client used to fall back to zeros and print them as fact —
+        // "Так: 0 · Ні: 0 · 0% участі" with eighteen votes already cast. Say it is
+        // hidden instead.
+        const secretRunning =
+          voting.type === "secret" && voting.status === "active";
         const timeLeft = this.getTimeLeft(voting.endsAt);
 
         // Format creation date
@@ -1479,7 +1490,14 @@ const app = {
                     <div class="voting-date">
                         <i class="ph ph-calendar-blank" aria-hidden="true"></i> ${this.escapeHTML(dateRangeStr)}
                     </div>
-                    <div class="voting-progress">
+                    ${
+                      secretRunning
+                        ? `<div class="voting-progress">
+                        <div class="progress-text">
+                            <span><i class="ph ph-eye-slash" aria-hidden="true"></i> ${t.results_hidden}</span>
+                        </div>
+                    </div>`
+                        : `<div class="voting-progress">
                         <div class="progress-bar" role="progressbar" aria-valuenow="${yesPercent}" aria-valuemin="0" aria-valuemax="100">
                             <div class="progress-fill ${statusClass}" style="width: ${yesPercent}%"></div>
                         </div>
@@ -1487,7 +1505,8 @@ const app = {
                             <span>${t.yes}: ${voting.yesVotes} | ${t.no}: ${voting.noVotes}${abstainVotes > 0 ? ` | ${t.abstain_short || "Утр"}: ${abstainVotes}` : ""}</span>
                             <span>${progress}% ${t.participation}</span>
                         </div>
-                    </div>
+                    </div>`
+                    }
                 </div>
             `;
       })
@@ -2134,7 +2153,14 @@ const app = {
       const okBtn = document.getElementById("confirm-ok-btn");
       const cancelBtn = document.getElementById("confirm-cancel-btn");
       if (!titleEl || !msgEl || !okBtn || !cancelBtn) {
-        resolve(window.confirm(message || ""));
+        // No native confirm() fallback: it renders as a browser-chrome alert that
+        // reads like the app broke. If our own dialog is missing the page did not
+        // load properly, so the safe answer to "shall I do this irreversible thing"
+        // is no.
+        this.toastError(
+          t.error_generic || "Сталася помилка. Спробуйте ще раз.",
+        );
+        resolve(false);
         return;
       }
       titleEl.textContent = title || t.confirm_title || "Підтвердження";
@@ -2677,7 +2703,39 @@ const app = {
     this.showModal("create-voting-modal");
   },
 
-  onVotingTypeChange() {
+  // group.members is filled in showGroupDetail and nowhere else, so a member list
+  // was empty whenever the user had not opened the group first — which is the
+  // normal path, since "+ Create voting" lives on the votings tab. That made the
+  // three member-targeted kinds of voting (change admin, remove member, exclude
+  // from the count) impossible to create, with no hint why. Any screen that needs
+  // the roster can now ask for it.
+  _mapMembers(rows) {
+    return (rows || []).map((m) => ({
+      id: m.user_id,
+      name: `${m.user.first_name} ${m.user.last_name}`.trim(),
+      role: m.role,
+      phone: m.user.phone,
+      address: m.user.address
+        ? `${m.user.address}, кв. ${m.user.apartment}`
+        : `кв. ${m.user.apartment || "-"}`,
+      frozen: m.is_frozen,
+      frozenUntil: m.frozen_until,
+      isObserver: m.is_observer === true,
+      apartment: m.apartment || m.user.apartment || "",
+    }));
+  },
+
+  async ensureGroupMembers(groupId) {
+    const group = this.state.groups.find((g) => g.id === groupId);
+    if (!group) return null;
+    if (group.members && group.members.length) return group;
+    const { data, error } = await supabaseService.getGroupDetail(groupId);
+    if (error || !data) return group;
+    group.members = this._mapMembers(data.members);
+    return group;
+  },
+
+  async onVotingTypeChange() {
     const t = this.translations[this.currentLanguage];
     const type = document.getElementById("voting-type").value;
     const groupId = document.getElementById("voting-group").value;
@@ -2710,7 +2768,7 @@ const app = {
 
       // Populate members
       if (groupId) {
-        const group = this.state.groups.find((g) => g.id === groupId);
+        const group = await this.ensureGroupMembers(groupId);
         if (group) {
           // Filter members (for admin-change: exclude current admin, for remove: exclude admin too)
           const eligibleMembers = group.members.filter((m) =>
@@ -2736,6 +2794,9 @@ const app = {
       // Fixed 5-day objection window — the admin cannot shorten it (server enforces it too).
       durationGroup.classList.add("hidden");
       document.getElementById("voting-duration").value = "120";
+
+      // The search box below reads group.members, so make sure the roster is here.
+      if (groupId) await this.ensureGroupMembers(groupId);
 
       // Show freeze member selection
       if (freezeGroup) freezeGroup.classList.remove("hidden");
@@ -3287,6 +3348,9 @@ const app = {
     const abstainPercent = Math.round((abstainVotes / safeTotal) * 100);
     const totalVoted = voting.yesVotes + voting.noVotes + abstainVotes;
     const participation = Math.round((totalVoted / safeTotal) * 100);
+    // Same as in the list: no counts exist for a running secret ballot, so do not
+    // invent zeros.
+    const secretRunning = voting.type === "secret" && voting.status === "active";
 
     // Build target member info
     let targetInfo = "";
@@ -3497,7 +3561,18 @@ const app = {
             </div>
 
             ${
-              !isFreeze
+              !isFreeze && secretRunning
+                ? `
+            <div class="voting-results">
+                <div class="result-item">
+                    <span class="result-label"><i class="ph ph-eye-slash" aria-hidden="true"></i> ${t.results_hidden}</span>
+                </div>
+                <div class="participation-summary">
+                    <span class="result-label">${t.results_hidden_hint}</span>
+                </div>
+            </div>
+            `
+                : !isFreeze
                 ? `
             <div class="voting-results" role="region" aria-label="${t.yes}: ${yesPercent}%, ${t.no}: ${noPercent}%">
                 <div class="result-item">
@@ -3799,6 +3874,25 @@ const app = {
     const voting = this.state.votings.find((v) => v.id === votingId);
     if (!voting || voting.hasVoted) return;
 
+    // hasVoted is only set once the server answers, so on a slow connection two
+    // quick taps sent two ballots: the first was counted, the second hit the
+    // unique index and the resident saw a red "Ви вже проголосували" — believing
+    // their vote had NOT been recorded. Latch before the request goes out.
+    if (this._votingInFlight) return;
+    this._votingInFlight = votingId;
+    const voteButtons = Array.from(
+      document.querySelectorAll(".voting-actions button"),
+    );
+    voteButtons.forEach((b) => {
+      b.disabled = true;
+    });
+    const releaseVoteButtons = () => {
+      this._votingInFlight = null;
+      voteButtons.forEach((b) => {
+        b.disabled = false;
+      });
+    };
+
     // Observer check — observers cannot vote. Use the startup-loaded
     // myIsObserver flag (members array may be empty on the votings tab).
     const vGroup = this.state.groups.find((g) => g.id === voting.groupId);
@@ -3809,6 +3903,7 @@ const app = {
       this.toastError(
         t.observer_cannot_vote || "Спостерігачі не можуть голосувати",
       );
+      releaseVoteButtons();
       return;
     }
 
@@ -3845,6 +3940,16 @@ const app = {
           this.toastError(t.voting_ended || "Голосування вже завершено");
         } else if (error.code === "not_member") {
           this.toastError(t.not_member || "Ви не учасник цієї групи");
+        } else if (error.code === "frozen") {
+          // Without this branch the server's frozen_cannot_vote fell through
+          // to the generic catch below and the excluded resident was told
+          // "network error" — so they never learned they were excluded, nor
+          // that «Я тут» brings them back. That button is the whole safeguard
+          // against the exclusion feature being abused.
+          this.toastError(
+            t.frozen_cannot_vote ||
+              "Вас виключено з підрахунку. Натисніть «Я тут», щоб повернутися й голосувати.",
+          );
         } else if (error.code === "joined_after") {
           this.toastError(
             t.joined_after_vote ||
@@ -3876,6 +3981,8 @@ const app = {
       await this.showVotingDetail(votingId);
     } catch (err) {
       this.toastError(t.auth_error_network || "Помилка голосування");
+    } finally {
+      releaseVoteButtons();
     }
   },
 
@@ -4029,20 +4136,13 @@ const app = {
 
     // Fetch fresh data from Supabase
     const { data, error } = await supabaseService.getGroupDetail(groupId);
+    if (error && !data) {
+      // Without this the screen rendered "Учасників не знайдено" and "👍 0 · 👁️ 0"
+      // on a network hiccup, which reads as "everyone left the group".
+      this.toastError(t.load_failed || "Не вдалося завантажити, потягніть оновити");
+    }
     if (data) {
-      group.members = (data.members || []).map((m) => ({
-        id: m.user_id,
-        name: `${m.user.first_name} ${m.user.last_name}`.trim(),
-        role: m.role,
-        phone: m.user.phone,
-        address: m.user.address
-          ? `${m.user.address}, кв. ${m.user.apartment}`
-          : `кв. ${m.user.apartment || "-"}`,
-        frozen: m.is_frozen,
-        frozenUntil: m.frozen_until,
-        isObserver: m.is_observer === true,
-        apartment: m.apartment || m.user.apartment || "",
-      }));
+      group.members = this._mapMembers(data.members);
 
       group.requests = (data.requests || []).map((r) => ({
         id: r.id,
@@ -4060,16 +4160,24 @@ const app = {
         date: new Date(h.created_at).toLocaleString(),
         action: h.action,
         details: h.details || {},
-        from: h.details?.from || "",
-        to: h.details?.to || "",
-        member: h.details?.member || "",
+        // The server writes {new_admin} / {removed_user, reason} / {user} /
+        // {user, as_observer, by} — the names read here were invented and never
+        // matched, so every history line rendered as an empty row with a date.
+        newAdminId: h.details?.new_admin || "",
+        removedUserId: h.details?.removed_user || "",
+        userId: h.details?.user || "",
+        byId: h.details?.by || "",
+        asObserver: h.details?.as_observer,
         reason: h.details?.reason || "",
-        initiator: h.details?.initiator || "",
-        votingId: h.details?.votingId || "",
+        votingId: h.voting_id || "",
       }));
 
       group.membersCount = data.stats?.members_count || group.members.length;
-      group.votingsCount = data.stats?.total_votings_count || 0;
+      // getGroupDetail only returns members_count, so the old `|| 0` wiped a
+      // correct number that my-groups had already supplied: a group card read
+      // "7 голосувань" until you opened it, then "0" until the next restart.
+      if (typeof data.stats?.total_votings_count === "number")
+        group.votingsCount = data.stats.total_votings_count;
     }
 
     // Fetch per-member vote counts so participation column shows real data
@@ -4382,21 +4490,52 @@ const app = {
 
       historyList.innerHTML = group.history
         .map((item) => {
+          // The history stores user ids; show the person's name when we know them,
+          // and fall back to nothing rather than printing a raw id at a resident.
+          const nameOf = (uid) => {
+            if (!uid) return "";
+            const m = (group.members || []).find((x) => x.id === uid);
+            return m ? m.name : "";
+          };
+          const withName = (label, uid, extra) => {
+            const n = nameOf(uid);
+            return `${label}${n ? ": " + this.escapeHTML(n) : ""}${extra || ""}`;
+          };
+
           let actionText = "";
           if (item.action === "admin_change") {
-            actionText = `<i class="ph-fill ph-crown text-warning" aria-hidden="true"></i> ${t.history_admin_change}: ${this.escapeHTML(item.from)} → ${this.escapeHTML(item.to)}`;
+            actionText = `<i class="ph-fill ph-crown text-warning" aria-hidden="true"></i> ${withName(t.history_admin_change, item.newAdminId)}`;
           } else if (item.action === "member_removed") {
-            actionText = `<i class="ph-fill ph-prohibit text-danger" aria-hidden="true"></i> ${t.history_member_removed}: ${this.escapeHTML(item.member)}`;
-            if (item.reason) actionText += ` (${this.escapeHTML(item.reason)})`;
+            actionText = `<i class="ph-fill ph-prohibit text-danger" aria-hidden="true"></i> ${withName(
+              t.history_member_removed,
+              item.removedUserId,
+              item.reason ? ` (${this.escapeHTML(item.reason)})` : "",
+            )}`;
+          } else if (item.action === "member_excluded") {
+            actionText = `<i class="ph ph-eye-slash text-info" aria-hidden="true"></i> ${withName(t.history_member_excluded, item.userId)}`;
+          } else if (item.action === "member_self_restored") {
+            actionText = `<i class="ph ph-hand-waving text-success" aria-hidden="true"></i> ${withName(t.history_member_self_restored, item.userId)}`;
+          } else if (item.action === "member_restored") {
+            actionText = `<i class="ph ph-arrow-counter-clockwise text-success" aria-hidden="true"></i> ${withName(t.history_member_restored, item.userId)}`;
+          } else if (item.action === "role_changed") {
+            actionText = `<i class="ph ph-user-switch text-warning" aria-hidden="true"></i> ${withName(
+              item.asObserver
+                ? t.history_role_to_observer
+                : t.history_role_to_voter,
+              item.userId,
+            )}`;
+          } else {
+            actionText = `<i class="ph ph-clock-counter-clockwise" aria-hidden="true"></i> ${this.escapeHTML(item.action || "")}`;
           }
 
           const date = new Date(item.date).toLocaleDateString();
+          const initiator = nameOf(item.byId);
 
           return `
                     <div class="history-item">
                         <div class="history-item-action">${actionText}</div>
                         <div class="history-item-meta">
-                            <i class="ph ph-calendar-blank" aria-hidden="true"></i> ${this.escapeHTML(date)} • <i class="ph ph-user" aria-hidden="true"></i> ${t.history_initiator}: ${this.escapeHTML(item.initiator)}
+                            <i class="ph ph-calendar-blank" aria-hidden="true"></i> ${this.escapeHTML(date)}${initiator ? ` • <i class="ph ph-user" aria-hidden="true"></i> ${t.history_initiator}: ${this.escapeHTML(initiator)}` : ""}
                         </div>
                     </div>
                 `;
@@ -5132,6 +5271,16 @@ const app = {
       freeze_auto_rejected: "Виключення скасовано: учасники заперечили",
       frozen_badge: "поза підрахунком",
       frozen_abbr: "поза",
+      results_hidden: "Результати приховані до завершення",
+      results_hidden_hint: "Це таємне голосування — підсумки стануть видимі після його завершення.",
+      auth_email_label: "Email",
+      auth_password_label: "Пароль",
+      register_password_label: "Пароль",
+      reset_pass1_label: "Новий пароль",
+      reset_pass2_label: "Повторіть новий пароль",
+      complete_profile: "Заповніть профіль",
+      archive_search_label: "Пошук в архіві",
+      search_members_label: "Пошук учасників",
       frozen_cannot_vote:
         "Вас виключено з підрахунку. Натисніть «Я тут», щоб повернутися й голосувати.",
       excluded_self_text:
@@ -5155,6 +5304,9 @@ const app = {
       protocol_results: "Результати",
       protocol_decision_accepted: "Рішення прийнято",
       protocol_decision_rejected: "Рішення відхилено",
+      protocol_chair: "Голова зборів",
+      protocol_secretary: "Секретар",
+      protocol_generated: "Сформовано в Spilka",
       protocol_rule: "Потрібно більше половини голосуючих",
       protocol_namewise: "Поіменний список голосів",
       protocol_secret_note:
@@ -5379,6 +5531,11 @@ const app = {
       min_3_members_required: "Потрібно мінімум 3 учасники в групі",
       history: "Історія змін",
       history_admin_change: "Зміна адміністратора",
+      history_member_excluded: "Виключено з підрахунку",
+      history_member_self_restored: "Повернувся до підрахунку («Я тут»)",
+      history_member_restored: "Повернуто до підрахунку адміністратором",
+      history_role_to_observer: "Роль змінено на спостерігача",
+      history_role_to_voter: "Роль змінено на голосуючого",
       history_member_removed: "Видалення учасника",
       history_date: "Дата",
       history_action: "Дія",
@@ -5739,6 +5896,16 @@ const app = {
       freeze_auto_rejected: "Exclusion cancelled: members objected",
       frozen_badge: "out of count",
       frozen_abbr: "out",
+      results_hidden: "Results hidden until the vote closes",
+      results_hidden_hint: "This is a secret ballot — the tally becomes visible once voting ends.",
+      auth_email_label: "Email",
+      auth_password_label: "Password",
+      register_password_label: "Password",
+      reset_pass1_label: "New password",
+      reset_pass2_label: "Repeat new password",
+      complete_profile: "Complete your profile",
+      archive_search_label: "Search the archive",
+      search_members_label: "Search members",
       frozen_cannot_vote:
         'You are excluded from the count. Tap "I\'m here" to return and vote.',
       excluded_self_text:
@@ -5762,6 +5929,9 @@ const app = {
       protocol_results: "Results",
       protocol_decision_accepted: "Decision adopted",
       protocol_decision_rejected: "Decision rejected",
+      protocol_chair: "Chair of the meeting",
+      protocol_secretary: "Secretary",
+      protocol_generated: "Generated in Spilka",
       protocol_rule: "Requires more than half of eligible voters",
       protocol_namewise: "Itemized list of votes",
       protocol_secret_note:
@@ -5984,6 +6154,11 @@ const app = {
       min_3_members_required: "Minimum 3 members required in group",
       history: "Change history",
       history_admin_change: "Administrator change",
+      history_member_excluded: "Excluded from the count",
+      history_member_self_restored: "Returned to the count",
+      history_member_restored: "Returned to the count by the administrator",
+      history_role_to_observer: "Role changed to observer",
+      history_role_to_voter: "Role changed to voting member",
       history_member_removed: "Member removal",
       history_date: "Date",
       history_action: "Action",
@@ -6340,6 +6515,16 @@ const app = {
       freeze_auto_rejected: "Исключение отменено: участники возразили",
       frozen_badge: "вне подсчёта",
       frozen_abbr: "вне",
+      results_hidden: "Результаты скрыты до завершения",
+      results_hidden_hint: "Это тайное голосование — итоги станут видны после его завершения.",
+      auth_email_label: "Email",
+      auth_password_label: "Пароль",
+      register_password_label: "Пароль",
+      reset_pass1_label: "Новый пароль",
+      reset_pass2_label: "Повторите новый пароль",
+      complete_profile: "Заполните профиль",
+      archive_search_label: "Поиск в архиве",
+      search_members_label: "Поиск участников",
       frozen_cannot_vote:
         "Вы исключены из подсчёта. Нажмите «Я тут», чтобы вернуться и голосовать.",
       excluded_self_text:
@@ -6363,6 +6548,9 @@ const app = {
       protocol_results: "Результаты",
       protocol_decision_accepted: "Решение принято",
       protocol_decision_rejected: "Решение отклонено",
+      protocol_chair: "Председатель собрания",
+      protocol_secretary: "Секретарь",
+      protocol_generated: "Сформировано в Spilka",
       protocol_rule: "Нужно больше половины голосующих",
       protocol_namewise: "Поименный список голосов",
       protocol_secret_note:
@@ -6588,6 +6776,11 @@ const app = {
       min_3_members_required: "Требуется минимум 3 участника в группе",
       history: "История изменений",
       history_admin_change: "Смена администратора",
+      history_member_excluded: "Исключён из подсчёта",
+      history_member_self_restored: "Вернулся в подсчёт («Я тут»)",
+      history_member_restored: "Возвращён в подсчёт администратором",
+      history_role_to_observer: "Роль изменена на наблюдателя",
+      history_role_to_voter: "Роль изменена на голосующего",
       history_member_removed: "Удаление участника",
       history_date: "Дата",
       history_action: "Действие",

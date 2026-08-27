@@ -40,3 +40,6 @@ credentials
 uptimerobot.txt
 .playwright-mcp/
 .claude/
+
+# Test binary (download separately, see tests/README.md)
+tests/.bin/
