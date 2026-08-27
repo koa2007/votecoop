@@ -32,4 +32,10 @@
 - design-system.md - дизайн-система
 - review.md - QA отчёт с полным списком багов/улучшений
 
-Для запуска: открыть index.html в браузере
+Для запуска: приложению нужен свой сервер — открытие index.html с диска
+(file://) даёт молча неработающий экран, потому что адрес бэкенда берётся из
+window.location.origin.
+
+  python3 -m http.server 8080     # только вёрстка, без входа
+  # полноценно, с настоящим сервером и хуками:
+  PB_BIN=tests/.bin/pocketbase.exe PB_PUBLIC_DIR="$PWD" node --test tests/decision-execution.test.mjs

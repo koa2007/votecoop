@@ -1,4 +1,6 @@
-// Copy this file to config.js and fill in your Supabase credentials
-// Get them from: https://supabase.com → Your Project → Settings → API
-const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+// Copy this file to config.js.
+//
+// The app is served from the same host as its backend (PocketBase), so there is
+// nothing secret here and nothing to fill in — config.js is committed on purpose.
+// Point this elsewhere only when the backend is NOT on the same origin.
+const POCKETBASE_URL = window.location.origin;

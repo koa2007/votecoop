@@ -2,7 +2,8 @@
 
 Журнал помітних змін продукту. Найновіше — зверху.
 Позначки: **[frontend]** — код у цьому репозиторії (git); **[backend]** — хуки/правила
-PocketBase на VPS (`/opt/pocketbase/pb_hooks`, у git цього репо їх немає, бекапи в
+PocketBase на VPS (`/opt/pocketbase/pb_hooks`; з 02.07.2026 хуки під контролем версій
+у цьому репо — `pb_hooks/`, `pb_migrations/`; бекапи в
 `/opt/pocketbase/_backups`); **[infra]** — сервер/nginx/PocketBase-налаштування.
 
 Докладна історія до міграції на PocketBase (ера Supabase, до 2026-04-25) — у `PROGRESS.md`.
