@@ -7,7 +7,7 @@ status: active
 # Короткі поля для картки дашборда
 stage: prod · код стабільний (phase16 + пост-рев'ю фікси)
 blocker: немає (по коду); бізнес — поки немає платящих клієнтів
-next: brain докотить SQL #3/#6/#7 (admin-less group, group_stats leak, schema.sql sync) → далі маркетинг
+next: вирішити долю старого проєкту Supabase (жива база з ПДн мешканців, ніхто нею не користується) → далі маркетинг
 
 code_path: D:\claudeprojects\votingapp
 per_project_memory: D:\claudeprojects\votingapp\CLAUDE.md
@@ -17,7 +17,10 @@ zep_group_id: votecoop
 prod:
   domain: https://spilka.top
   hosting: VPS 173.242.50.141 — nginx віддає статику з /opt/spilka-web, HTTPS Let's Encrypt
-  repo: github.com/koa2007/votecoop (public, branch main, push → авто-деплой GitHub Actions)
+  repo: github.com/koa2007/votecoop (public). Робоча гілка — pocketbase-migration, у main НЕ влита.
+  deploy: АВТОДЕПЛОЮ НЕМАЄ. Каталогу .github/workflows не існує; попередній конвеєр видалено
+    комітом 0953868. Викочування вручну: статика в /opt/spilka-web, хуки в /opt/pocketbase/pb_hooks
+    + рестарт pocketbase.service. Відкат — каталоги /opt/spilka-web-prev-* і /opt/spilka-web-old-*.
   backend: PocketBase 0.39.4 (Go + SQLite) на тому ж VPS, служба pocketbase.service
   db_access: SQLite /opt/pocketbase/pb_data/data.db (тільки через SSH, вхід за ключем ~/.ssh/spilka_vps)
   email: Resend mail.spilka.top (DNS pending до AWS SES, SMTP ще не підключено)
@@ -37,9 +40,10 @@ domain: https://spilka.top
 notes: |
   ДЕ ЩО ЛЕЖИТЬ:
   • Код (локально): D:\claudeprojects\votingapp — index.html, js/app.js (вся логіка),
-    js/supabase.js (обгортка БД), js/config.js (URL + публічний anon-ключ, безпечно),
-    css/style.css, service-worker.js (зараз spilka-v18), supabase/*.sql (міграції phase2..phase16).
-  • Репозиторій: github.com/koa2007/votecoop — гілка main, push авто-деплоїть на spilka.top.
+    js/supabase.js (обгортка PocketBase, назва історична), js/config.js (лише URL, секретів немає),
+    css/style.css, service-worker.js (зараз spilka-v55), tests/ (34 регресійні тести).
+    supabase/*.sql — ІСТОРІЯ, а не схема: цього бекенду немає з червня 2026.
+  • Репозиторій: github.com/koa2007/votecoop — робоча гілка pocketbase-migration. Автодеплою немає.
   • База даних: SQLite /opt/pocketbase/pb_data/data.db на VPS. Схема — у tests/fixtures/collections.json.
     Правила доступу живуть у самих колекціях PocketBase; серверна логіка — у pb_hooks/.
   • Доступи (поза репо, локально): D:\claudeprojects\superbase-db.txt (пароль Postgres),
@@ -49,8 +53,11 @@ notes: |
 
   НЮАНСИ:
   • Два агенти працюють паралельно: я (Claude на ноуті) + autonomus-brain (VPS, через Telegram).
-    Brain має прямий psql-доступ ($VOTECOOP_DB) і сам накатує SQL-міграції (dry-run BEGIN/ROLLBACK → COMMIT).
-  • Анон-ключ у js/config.js публічний і це нормально — дані захищає RLS, не секретність ключа.
+    🔴 $VOTECOOP_DB на тому сервері вказує на МЕРТВУ базу Supabase — вона жива й відповідає,
+    але продукт з червня 2026 працює на PocketBase, і SQL туди ні на що не впливає.
+    Спільна карта проєкту: autonomus-memory/projects/votecoop/profile.md (переписана 27.08.2026).
+  • js/config.js містить лише адресу того ж хоста — жодного ключа там немає й бути не повинно.
   • Адмінка PocketBase /_/ закрита ззовні — тільки через SSH-тунель на 127.0.0.1:8090.
-  • Деплой: просто git push у main, GitHub Actions сам публікує. PWA-кеш бампиться версією SW.
+  • Деплой: РУЧНИЙ (автодеплою немає, див. поле deploy вище). Після викочування обовʼязково
+    бампнути версію в service-worker.js, інакше браузери мешканців віддадуть старий код.
   • status НЕ frozen — проєкт активний, код стабільний; "frozen" на старій картці було помилкою.
