@@ -1251,6 +1251,10 @@ const app = {
         noVotes: r.no_votes,
         abstainVotes: r.abstain_votes,
         totalMembers: 0,
+        // The electorate fixed at the moment this voting started — the number
+        // the server counts against. 0 means an old voting from before
+        // snapshots existed; only then do we fall back to a live count.
+        electorateSize: v.electorate_size || 0,
         link: v.link,
         hasVoted: votedSet.has(v.id),
         targetMemberId: v.target_member_id,
@@ -1274,7 +1278,11 @@ const app = {
       statsMap[g.id] = g.membersCount;
     });
     this.state.votings.forEach((v) => {
-      v.totalMembers = statsMap[v.groupId] || 1;
+      // Prefer the electorate as it stood when the voting started. membersCount
+      // counts everyone in the group — observers and excluded members included —
+      // so the card used to show a smaller share than the one that decides the
+      // outcome, and a different one from the voting's own screen.
+      v.totalMembers = v.electorateSize || statsMap[v.groupId] || 1;
     });
 
     this.state.fetched.votings = true;
@@ -3059,7 +3067,10 @@ const app = {
         endsAt: new Date(newVotingRow.ends_at),
         yesVotes: 0,
         noVotes: 0,
-        totalMembers: group.membersCount,
+        // The server just fixed the electorate for this voting; show that, not
+        // the group's headcount (which includes observers and excluded members).
+        electorateSize: newVotingRow.electorate_size || 0,
+        totalMembers: newVotingRow.electorate_size || group.membersCount,
         link,
         hasVoted: false,
         targetMemberId: targetMemberId || null,
@@ -3333,13 +3344,19 @@ const app = {
     const isObserver =
       dvGroup?.myIsObserver === true || dvCurrentMember?.isObserver === true;
 
-    // Use voter count (non-observers) as the quorum denominator
-    let voterTotalCount = voting.totalMembers;
-    try {
-      const vcRes = await supabaseService.getVoterCount(voting.groupId);
-      if (vcRes.data != null) voterTotalCount = vcRes.data;
-    } catch (_) {
-      /* keep totalMembers as fallback */
+    // Quorum denominator = the electorate at the moment the voting started.
+    // Anyone who joined afterwards is not part of THIS vote (the server refuses
+    // their ballot), so counting them here would understate the turnout.
+    let voterTotalCount = voting.electorateSize || 0;
+    if (!voterTotalCount) {
+      // Only votings created before snapshots existed reach this branch.
+      voterTotalCount = voting.totalMembers;
+      try {
+        const vcRes = await supabaseService.getVoterCount(voting.groupId);
+        if (vcRes.data != null) voterTotalCount = vcRes.data;
+      } catch (_) {
+        /* keep totalMembers as fallback */
+      }
     }
 
     const safeTotal = voterTotalCount > 0 ? voterTotalCount : 1;
@@ -3686,12 +3703,16 @@ const app = {
       no: voting.noVotes || 0,
       abstain: voting.abstainVotes || 0,
     };
-    let voterTotal = voting.totalMembers || 0;
+    // The protocol is the document people take to a meeting, so its arithmetic
+    // must be the server's arithmetic: the electorate fixed at the start.
+    let voterTotal = voting.electorateSize || voting.totalMembers || 0;
     try {
       const [votesRes, resultsRes, vcRes] = await Promise.all([
         supabaseService.getVotingVotes(votingId),
         supabaseService.getVotingResults([votingId]),
-        supabaseService.getVoterCount(voting.groupId),
+        voting.electorateSize
+          ? Promise.resolve({ data: voting.electorateSize })
+          : supabaseService.getVoterCount(voting.groupId),
       ]);
       if (votesRes.data) votes = votesRes.data;
       if (resultsRes.data && resultsRes.data[0]) {
@@ -5420,6 +5441,8 @@ const app = {
       instr_cast_vote_title: "Процес голосування",
       instr_cast_vote_desc:
         "Відкрийте активне голосування → оберіть «За», «Проти» або «Утримуюсь» → за бажанням додайте коментар (до 500 символів) → голос зараховано.",
+      instr_electorate_title: "Хто бере участь у голосуванні",
+      instr_electorate_desc: "Склад учасників фіксується в момент створення голосування. Голосувати можуть лише ті, хто був у групі на цей момент і має право голосу (не спостерігач і не виключений з підрахунку). Хто вступив до групи пізніше — у цьому голосуванні участі не бере й у підрахунок не входить; він голосуватиме в наступних. Тому «Участь» і протокол рахуються від складу на момент старту, а не від сьогоднішньої кількості мешканців.",
       instr_create_vote_title: "Створення голосування",
       instr_create_vote_desc:
         "Натисніть «+» у вкладці «Голосування». Заповніть: назву, опис, тип, групу, тривалість. Можна додати посилання на матеріали. Звичайні учасники можуть створити 1 голосування на день у кожній групі.",
@@ -6021,7 +6044,7 @@ const app = {
         'Who can create: any group member (regular members — max 1 voting per day). How it works: each person picks "Yes", "No", or "Abstain"; the name and an optional comment (up to 500 chars) are visible to everyone. Duration: 1 hour to 5 days, set by the author. Accepted if more than half of ALL group members voted "Yes" (with 10 members you need 6 yeses). When time runs out, if "Yes" hasn\'t reached this — rejected. Use for: repairs, expenses, rules.',
       instr_secret_title: "Secret",
       instr_secret_desc:
-        'Same as Standard, but all voter names are hidden — only the totals "Yes / No / Abstain" are shown. No comments. The acceptance rule is identical: more than half of all group members must vote "Yes". Use for sensitive topics (personal disputes, financial accountability).',
+        'Same as Standard, but all voter names are hidden — only the totals "Yes / No / Abstain" are shown, and only once the voting has closed. No comments. The acceptance rule is identical: more than half of those entitled to vote when the voting started must vote "Yes". Use for sensitive topics (personal disputes, financial accountability).',
       instr_admin_title: "Change Administrator",
       instr_admin_desc:
         'Who can create: any member. Who can be elected: any non-admin member from the list. Requirements: at least 3 members in the group. Duration is fixed at 72 hours (3 days). Accepted if more than half of ALL members vote "Yes". On success roles are swapped automatically: the previous admin becomes a regular member and the elected member becomes admin. Only one such voting can run at a time per group.',
@@ -6045,6 +6068,8 @@ const app = {
       instr_cast_vote_title: "Voting Process",
       instr_cast_vote_desc:
         'Open an active voting → choose "Yes", "No", or "Abstain" → optionally add a comment (up to 500 characters) → your vote is recorded.',
+      instr_electorate_title: "Who takes part in a voting",
+      instr_electorate_desc: "The list of participants is fixed the moment a voting is created. Only those who were in the group at that moment and are entitled to vote (not observers, not excluded from the count) may cast a ballot. Anyone who joins later does not take part in this voting and is not counted in it — they will vote in the next ones. That is why turnout and the printed protocol are calculated against the electorate at the start, not against today's number of residents.",
       instr_create_vote_title: "Creating a Voting",
       instr_create_vote_desc:
         'Tap "+" in the "Votings" tab. Fill in: title, description, type, group, duration. You can attach a link to materials. Regular members can create 1 voting per day per group.',
@@ -6664,6 +6689,8 @@ const app = {
       instr_cast_vote_title: "Процесс голосования",
       instr_cast_vote_desc:
         "Откройте активное голосование → выберите «За», «Против» или «Воздержусь» → по желанию добавьте комментарий (до 500 символов) → голос засчитан.",
+      instr_electorate_title: "Кто участвует в голосовании",
+      instr_electorate_desc: "Состав участников фиксируется в момент создания голосования. Голосовать могут только те, кто был в группе на этот момент и имеет право голоса (не наблюдатель и не исключённый из подсчёта). Кто вступил в группу позже — в этом голосовании не участвует и в подсчёт не входит; он будет голосовать в следующих. Поэтому «Участие» и протокол считаются от состава на момент старта, а не от сегодняшнего числа жильцов.",
       instr_create_vote_title: "Создание голосования",
       instr_create_vote_desc:
         "Нажмите «+» во вкладке «Голосования». Заполните: название, описание, тип, группу, длительность. Можно добавить ссылку на материалы. Обычные участники могут создать 1 голосование в день в каждой группе.",
@@ -7445,7 +7472,7 @@ const app = {
         "Введіть 6-значний ID групи в поле пошуку. Адміністратор отримає запит на підтвердження.",
       decision_title: "Прийняття рішень",
       decision_desc:
-        "Для прийняття будь-якого рішення потрібно мінімум 50%+1 голос від усіх учасників групи. Якщо набрано менше — голосування вважається «не відбулися» (🟡).",
+        "Для прийняття будь-якого рішення потрібно більше половини голосів від тих, хто мав право голосу на момент створення голосування (спостерігачі та виключені з підрахунку не враховуються). Хто вступив пізніше — у цьому голосуванні не бере участі. Якщо набрано менше — голосування вважається «не відбулося» (🟡).",
       delete_group_title: "Видалення групи",
       delete_group_desc:
         "Якщо адміністратор єдиний учасник групи — він може видалити її напряму. Якщо в групі 2 або більше учасників — видалення можливе тільки через голосування типу «Видалення групи».",
@@ -7488,7 +7515,7 @@ const app = {
         "Enter the 6-digit group ID in the search field. The administrator will receive a request for approval.",
       decision_title: "Decision Making",
       decision_desc:
-        'To make any decision, at least 50%+1 vote from all group members is required. If fewer votes are cast — the voting is considered "did not take place" (🟡).',
+        'To make any decision, more than half of those entitled to vote at the moment the voting was created must vote in favour (observers and members excluded from the count do not count). Anyone who joined later does not take part in this voting. If fewer votes are cast, the voting is considered "did not take place" (🟡).',
       delete_group_title: "Deleting a Group",
       delete_group_desc:
         'If the administrator is the only member — they can delete the group directly. If there are 2 or more members — deletion is only possible through a "Delete group" voting.',
@@ -7531,7 +7558,7 @@ const app = {
         "Введите 6-значный ID группы в поле поиска. Администратор получит запрос на подтверждение.",
       decision_title: "Принятие решений",
       decision_desc:
-        "Для принятия любого решения требуется минимум 50%+1 голос от всех участников группы. Если набрано меньше — голосование считается «не состоявшимся» (🟡).",
+        "Для принятия любого решения нужно больше половины голосов от тех, кто имел право голоса на момент создания голосования (наблюдатели и исключённые из подсчёта не учитываются). Кто вступил позже — в этом голосовании не участвует. Если набрано меньше — голосование считается «не состоявшимся» (🟡).",
       delete_group_title: "Удаление группы",
       delete_group_desc:
         "Если администратор единственный участник группы — он может удалить её напрямую. Если в группе 2 или более участников — удаление возможно только через голосование типа «Удаление группы».",

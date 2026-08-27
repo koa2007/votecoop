@@ -590,6 +590,10 @@ const supabaseService = {
           group_id: rec.group,
           title: rec.title,
           description: rec.description,
+          electorate_size:
+            Array.isArray(rec.voter_ids) && rec.voter_ids.length
+              ? rec.voter_ids.length
+              : rec.voter_snapshot || 0,
           type: rec.type,
           status: rec.status,
           created_by: rec.created_by || null,
@@ -664,6 +668,13 @@ const supabaseService = {
         target_member_id: v.target_member || null,
         removal_reason: v.removal_reason || null,
         freeze_duration_days: v.freeze_duration_days,
+        // How many residents were entitled to vote when this voting STARTED.
+        // That is the number the server decides the outcome by, so it is the
+        // only number the app may show as "of N" — a live count drifts as
+        // people join or leave and makes the printed protocol contradict itself.
+        electorate_size: Array.isArray(v.voter_ids) && v.voter_ids.length
+          ? v.voter_ids.length
+          : (v.voter_snapshot || 0),
         ends_at: this._d(v.ends_at),
         completed_at: this._d(v.completed_at),
         created_at: this._d(v.created),

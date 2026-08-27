@@ -435,3 +435,104 @@ describe("editing a group", () => {
     assert.equal(res.status, 403);
   });
 });
+
+describe("the electorate is fixed when the voting starts", () => {
+  test("someone who joins later cannot vote and does not enlarge the quorum", async () => {
+    // The house rule: whoever is entitled to vote at the moment a voting is
+    // created is its electorate. A resident who joins the next day votes in the
+    // NEXT voting, and must not appear in this one's denominator — otherwise a
+    // decision could be dragged below the threshold by people who never had a
+    // say in it.
+    const v = await api(
+      base,
+      "POST",
+      "/api/collections/votings/records",
+      {
+        group: groupId,
+        title: "Склад фіксується на старті",
+        type: "simple",
+        status: "active",
+        ends_at: soon(),
+      },
+      admin.token,
+    );
+
+    const atStart = await api(
+      base,
+      "GET",
+      `/api/collections/votings/records/${v.id}`,
+      undefined,
+      pb.adminToken,
+    );
+    const sizeAtStart = atStart.voter_ids.length;
+    assert.ok(sizeAtStart >= 2, "the house should have at least two voters");
+
+    // a new resident moves in AFTER the voting started
+    const newcomer = await makeUser(
+      base,
+      pb.adminToken,
+      `newcomer${Date.now()}@test.local`,
+    );
+    const r = await api(
+      base,
+      "POST",
+      "/api/spilka/submit-join",
+      { group_id: groupId, apartment: `5${Date.now() % 100}`, as_observer: false },
+      newcomer.token,
+    );
+    await api(
+      base,
+      "POST",
+      "/api/spilka/approve-join",
+      { request_id: r.data },
+      admin.token,
+    );
+
+    // they may not vote in this one
+    const attempt = await tryApi(
+      base,
+      "POST",
+      "/api/collections/votes/records",
+      { voting: v.id, choice: "yes" },
+      newcomer.token,
+    );
+    assert.equal(attempt.status, 400, "a newcomer must not vote in a running voting");
+
+    // and the electorate has not grown
+    const afterwards = await api(
+      base,
+      "GET",
+      `/api/collections/votings/records/${v.id}`,
+      undefined,
+      pb.adminToken,
+    );
+    assert.equal(
+      afterwards.voter_ids.length,
+      sizeAtStart,
+      "the electorate must not change once the voting has started",
+    );
+    assert.ok(
+      !afterwards.voter_ids.includes(newcomer.id),
+      "the newcomer must not be in this voting's electorate",
+    );
+
+    // but they ARE in the next one
+    const next = await api(
+      base,
+      "POST",
+      "/api/collections/votings/records",
+      {
+        group: groupId,
+        title: "Наступне голосування",
+        type: "simple",
+        status: "active",
+        ends_at: soon(),
+      },
+      admin.token,
+    );
+    assert.ok(
+      next.voter_ids.includes(newcomer.id),
+      "a newcomer must be able to vote in votings started after they joined",
+    );
+  });
+});
