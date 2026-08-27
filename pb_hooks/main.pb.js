@@ -261,6 +261,45 @@ onRecordUpdateRequest((e) => {
   e.next();
 }, "votings");
 
+// Cancelling a voting told nobody and left no trace. The client called
+// `notifyGroupMembers`, which has been an empty stub since the PocketBase move, so
+// the author believed the house had been informed. Residents who had already voted
+// simply found the question gone, with no record of who withdrew it or why.
+onRecordAfterUpdateSuccess((e) => {
+  try {
+    if (e.record.get("status") !== "deleted") {
+      e.next();
+      return;
+    }
+    const L = require(`${__hooks}/lib.js`);
+    const gid = e.record.get("group");
+    const reason = e.record.getString("deleted_reason") || "";
+    const h = new Record(e.app.findCollectionByNameOrId("group_history"));
+    h.set("group", gid);
+    h.set("action", "voting_cancelled");
+    h.set("voting", e.record.id);
+    h.set("details", { by: e.auth ? e.auth.id : "", reason: reason });
+    e.app.save(h);
+    L.notifyGroup(
+      e.app,
+      gid,
+      e.auth ? e.auth.id : null,
+      "voting_cancelled",
+      'Голосування "' +
+        (e.record.get("title") || "") +
+        '" скасовано' +
+        (reason ? ": " + reason : ""),
+      {
+        group_id: gid,
+        voting_id: e.record.id,
+        i18n: reason ? "notif_voting_cancelled_reason" : "notif_voting_cancelled",
+        p: { title: e.record.get("title") || "", reason: reason },
+      },
+    );
+  } catch (er) {}
+  e.next();
+}, "votings");
+
 // ===== RPC routes =====
 routerAdd("POST", "/api/spilka/create-group", (e) => {
   const L = require(`${__hooks}/lib.js`);
@@ -400,6 +439,51 @@ routerAdd("POST", "/api/spilka/my-groups", (e) => {
     }
   } catch (er) {}
   return e.json(200, { data: data, pending: pending });
+});
+
+// Pending applications, for the admin who has to decide on them. This exists so the
+// applicant's profile can stop being readable by the whole house: the third branch of
+// profiles.listRule made an applicant's name, phone and address visible to EVERY
+// resident from the moment they applied — while the product deliberately hides the
+// occupant's name in the other direction, inside submit-join.
+routerAdd("POST", "/api/spilka/group-requests", (e) => {
+  const L = require(`${__hooks}/lib.js`);
+  if (!e.auth) return e.json(401, { error: "not_authenticated" });
+  const gid = e.requestInfo().body.group_id;
+  if (!L.isAdmin(e.app, gid, e.auth.id))
+    return e.json(403, { error: "not_admin" });
+  const reqs = e.app.findRecordsByFilter(
+    "join_requests",
+    "group = {:g} && status = 'pending'",
+    "-created",
+    100,
+    0,
+    { g: gid },
+  );
+  const out = [];
+  for (const r of reqs) {
+    const uid = r.get("user");
+    let apt = r.getString("apartment");
+    let addr = "";
+    try {
+      const pr = e.app.findFirstRecordByFilter("profiles", "user = {:u}", {
+        u: uid,
+      });
+      if (!apt) apt = pr.getString("apartment");
+      addr = pr.getString("address");
+    } catch (er) {}
+    out.push({
+      id: r.id,
+      user_id: uid,
+      name: L.fullName(e.app, uid),
+      apartment: apt,
+      address: addr,
+      requested_as_observer: !!r.get("requested_as_observer"),
+      is_role_change: !!r.get("is_role_change"),
+      created: r.getString("created"),
+    });
+  }
+  return e.json(200, { data: out });
 });
 
 routerAdd("POST", "/api/spilka/voter-count", (e) => {
@@ -915,10 +999,14 @@ routerAdd("POST", "/api/spilka/update-group", (e) => {
   if (!auth) return e.json(401, { error: "not_authenticated" });
   const b = e.requestInfo().body;
   const gid = b.group_id;
-  const name = (b.name || "").trim();
+  // A number or an object in `name` threw inside .trim() and PocketBase answered with
+  // an untranslated "Something went wrong while processing your request".
+  if (typeof b.name !== "string") return e.json(400, { error: "name_required" });
+  const name = b.name.trim();
   if (!name) return e.json(400, { error: "name_required" });
   if (name.length > 200) return e.json(400, { error: "name_too_long" });
-  const desc = (b.description || "").trim();
+  const hasDesc = typeof b.description === "string";
+  const desc = hasDesc ? b.description.trim() : "";
   if (desc.length > 2000) return e.json(400, { error: "description_too_long" });
   if (!L.isAdmin(e.app, gid, auth.id))
     return e.json(403, { error: "not_admin" });
@@ -928,9 +1016,35 @@ routerAdd("POST", "/api/spilka/update-group", (e) => {
   } catch (er) {
     return e.json(400, { error: "group_not_found" });
   }
+  const oldName = g.getString("name");
   g.set("name", name);
-  g.set("description", desc);
+  // Only touch the description when it was actually sent. Writing "" for an absent
+  // field silently erased the house description on any caller that omitted it.
+  if (hasDesc) g.set("description", desc);
   e.app.save(g);
+  // The house name is the address every resident sees and every protocol carries.
+  // Changing it left no trace at all, while the neighbouring role change writes one.
+  if (oldName !== name) {
+    try {
+      const h = new Record(e.app.findCollectionByNameOrId("group_history"));
+      h.set("group", gid);
+      h.set("action", "group_renamed");
+      h.set("details", { by: auth.id, from: oldName, to: name });
+      e.app.save(h);
+      L.notifyGroup(
+        e.app,
+        gid,
+        auth.id,
+        "group_renamed",
+        'Спільноту перейменовано: "' + oldName + '" → "' + name + '"',
+        {
+          group_id: gid,
+          i18n: "notif_group_renamed",
+          p: { from: oldName, to: name },
+        },
+      );
+    } catch (er) {}
+  }
   return e.json(200, {
     data: { id: g.id, name: g.get("name"), description: g.get("description") },
   });
@@ -1048,6 +1162,7 @@ onRecordAfterCreateSuccess((e) => {
 
 routerAdd("POST", "/api/spilka/admin-stats", (e) => {
   const L = require(`${__hooks}/lib.js`);
+  if (!e.auth) return e.json(401, { error: "not_authenticated" });
   if (!L.isAppAdmin(e.auth)) return e.json(403, { error: "not_admin" });
   const now = Date.now();
   // Space-separated format to match PB date storage (string comparison in filters).
@@ -1077,6 +1192,7 @@ routerAdd("POST", "/api/spilka/admin-stats", (e) => {
 
 routerAdd("POST", "/api/spilka/admin-users", (e) => {
   const L = require(`${__hooks}/lib.js`);
+  if (!e.auth) return e.json(401, { error: "not_authenticated" });
   if (!L.isAppAdmin(e.auth)) return e.json(403, { error: "not_admin" });
   const users = e.app.findRecordsByFilter(
     "users",
@@ -1112,6 +1228,7 @@ routerAdd("POST", "/api/spilka/admin-users", (e) => {
 
 routerAdd("POST", "/api/spilka/admin-groups", (e) => {
   const L = require(`${__hooks}/lib.js`);
+  if (!e.auth) return e.json(401, { error: "not_authenticated" });
   if (!L.isAppAdmin(e.auth)) return e.json(403, { error: "not_admin" });
   const groups = e.app.findRecordsByFilter(
     "groups",
@@ -1163,6 +1280,7 @@ routerAdd("POST", "/api/spilka/admin-groups", (e) => {
 
 routerAdd("POST", "/api/spilka/admin-feedback", (e) => {
   const L = require(`${__hooks}/lib.js`);
+  if (!e.auth) return e.json(401, { error: "not_authenticated" });
   if (!L.isAppAdmin(e.auth)) return e.json(403, { error: "not_admin" });
   const fb = e.app.findRecordsByFilter(
     "feedback",
@@ -1205,6 +1323,7 @@ routerAdd("POST", "/api/spilka/admin-feedback", (e) => {
 
 routerAdd("POST", "/api/spilka/feedback-status", (e) => {
   const L = require(`${__hooks}/lib.js`);
+  if (!e.auth) return e.json(401, { error: "not_authenticated" });
   if (!L.isAppAdmin(e.auth)) return e.json(403, { error: "not_admin" });
   const b = e.requestInfo().body;
   let f;
@@ -1220,6 +1339,7 @@ routerAdd("POST", "/api/spilka/feedback-status", (e) => {
 
 routerAdd("POST", "/api/spilka/reply-feedback", (e) => {
   const L = require(`${__hooks}/lib.js`);
+  if (!e.auth) return e.json(401, { error: "not_authenticated" });
   if (!L.isAppAdmin(e.auth)) return e.json(403, { error: "not_admin" });
   const b = e.requestInfo().body;
   const fid = b.feedback_id;
@@ -1383,6 +1503,48 @@ routerAdd("POST", "/api/spilka/set-frozen", (e) => {
   }
   return e.json(200, { data: true });
 });
+
+// A house must never be left without an administrator. Membership rows cascade with
+// the user record, so an admin deleting their own account took the last admin with
+// them and nobody could approve newcomers, change roles, restore an excluded
+// neighbour, rename the house or dissolve it — recoverable only by hand in the
+// database. `leave-group` already refuses this; the account-deletion path did not.
+onRecordDeleteRequest((e) => {
+  try {
+    const L = require(`${__hooks}/lib.js`);
+    const mine = e.app.findRecordsByFilter(
+      "group_members",
+      "user = {:u} && role = 'admin'",
+      "",
+      0,
+      0,
+      { u: e.record.id },
+    );
+    for (const m of mine) {
+      const admins = e.app.findRecordsByFilter(
+        "group_members",
+        "group = {:g} && role = 'admin'",
+        "",
+        0,
+        0,
+        { g: m.get("group") },
+      );
+      const others = e.app.findRecordsByFilter(
+        "group_members",
+        "group = {:g}",
+        "",
+        0,
+        0,
+        { g: m.get("group") },
+      );
+      if (admins.length <= 1 && others.length > 1)
+        throw new BadRequestError("admin_must_transfer_first");
+    }
+  } catch (er) {
+    if (er instanceof BadRequestError) throw er;
+  }
+  e.next();
+}, "users");
 
 cronAdd("complete_expired", "* * * * *", () => {
   const L = require(`${__hooks}/lib.js`);

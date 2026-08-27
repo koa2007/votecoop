@@ -330,8 +330,8 @@
     "indexes": [
       "CREATE UNIQUE INDEX `idx_profiles_user_unique` ON `profiles` (`user`)"
     ],
-    "listRule": "@request.auth.id != \"\" && (user = @request.auth.id || (@collection.group_members.group ?= user.group_members_via_user.group && @collection.group_members.user ?= @request.auth.id) || (@collection.join_requests.user ?= user && @collection.join_requests.status ?= \"pending\" && @collection.group_members.group ?= @collection.join_requests.group && @collection.group_members.user ?= @request.auth.id))",
-    "viewRule": "@request.auth.id != \"\" && (user = @request.auth.id || (@collection.group_members.group ?= user.group_members_via_user.group && @collection.group_members.user ?= @request.auth.id) || (@collection.join_requests.user ?= user && @collection.join_requests.status ?= \"pending\" && @collection.group_members.group ?= @collection.join_requests.group && @collection.group_members.user ?= @request.auth.id))",
+    "listRule": "@request.auth.id != \"\" && (user = @request.auth.id || (@collection.group_members.group ?= user.group_members_via_user.group && @collection.group_members.user ?= @request.auth.id))",
+    "viewRule": "@request.auth.id != \"\" && (user = @request.auth.id || (@collection.group_members.group ?= user.group_members_via_user.group && @collection.group_members.user ?= @request.auth.id))",
     "createRule": "@request.auth.id != \"\" && user = @request.auth.id",
     "updateRule": "user = @request.auth.id",
     "deleteRule": null

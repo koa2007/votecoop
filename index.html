@@ -312,7 +312,7 @@
                 </div>
                 <div class="form-group">
                     <label for="profile-lastname" data-lang="lastname">Прізвище</label>
-                    <input type="text" id="profile-lastname" data-lang-placeholder="lastname_placeholder" placeholder="Ваше прізвище">
+                    <input type="text" id="profile-lastname" data-lang-placeholder="lastname_placeholder" data-lang-placeholder="profile_lastname_ph" placeholder="Ваше прізвище">
                 </div>
                 <div class="form-group">
                     <label for="profile-phone" data-lang="phone">Телефон</label>
@@ -320,7 +320,7 @@
                 </div>
                 <div class="form-group">
                     <label for="profile-address" data-lang="address">Адреса об'єкта</label>
-                    <input type="text" id="profile-address" data-lang-placeholder="address_placeholder" placeholder="вул. Шевченка, буд. 61">
+                    <input type="text" id="profile-address" data-lang-placeholder="address_placeholder" data-lang-placeholder="profile_address_ph" placeholder="вул. Шевченка, буд. 61">
                 </div>
                 <div class="form-group">
                     <label for="profile-apartment" data-lang="apartment">Квартира/офіс</label>
@@ -411,7 +411,7 @@
                 <div class="screen-header">
                     <h2 data-lang="notifications">Сповіщення</h2>
                     <div class="header-actions">
-                        <button class="btn-info" onclick="app.showNotificationsArchive()" aria-label="Open archive" title="Архів"><i class="ph ph-archive" aria-hidden="true"></i></button>
+                        <button class="btn-info" onclick="app.showNotificationsArchive()" data-lang-aria="notif_archive" aria-label="Архів" data-lang-title="notif_archive" title="Архів"><i class="ph ph-archive" aria-hidden="true"></i></button>
                         <button class="btn-info" onclick="app.showInstructions()" aria-label="Instructions"><i class="ph ph-info" aria-hidden="true"></i></button>
                     </div>
                 </div>
@@ -473,15 +473,15 @@
                     <div class="profile-card">
                         <div class="profile-avatar"><i class="ph ph-user-circle"></i></div>
                         <div class="profile-info">
-                            <h3 id="profile-name">Олександр Петренко</h3>
-                            <p id="profile-email">oleksandr@example.com</p>
-                            <p id="profile-phone-display">+380 50 123 4567</p>
+                            <h3 id="profile-name"></h3>
+                            <p id="profile-email"></p>
+                            <p id="profile-phone-display"></p>
                         </div>
                     </div>
                     <div class="profile-details">
                         <div class="detail-row">
                             <span class="detail-label" data-lang="address">Адреса</span>
-                            <span class="detail-value" id="profile-address-display">вул. Шевченка, 61, кв. 15</span>
+                            <span class="detail-value" id="profile-address-display"></span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label" data-lang="groups_count">Груп</span>
@@ -562,7 +562,7 @@
                     </div>
                     <div class="form-group">
                         <label data-lang="group_description">Опис (необов'язково)</label>
-                        <textarea id="group-description" maxlength="500" data-lang-placeholder="group_desc_placeholder" placeholder="Короткий опис групи..."></textarea>
+                        <textarea id="group-description" maxlength="500" data-lang-placeholder="group_desc_placeholder" data-lang-placeholder="group_desc_ph" placeholder="Короткий опис групи..."></textarea>
                     </div>
                     <p class="hint" data-lang="group_hint">Після створення ви отримаєте унікальний ID для запрошення учасників</p>
                 </div>
@@ -614,7 +614,7 @@
                         <label data-lang="freeze_members">Учасники для заморозки</label>
                         <div class="member-chips-search">
                             <input type="text" id="freeze-search" data-lang-placeholder="search_members" placeholder="Пошук учасників…"
-                                   oninput="app.searchFreezeMembers(this.value)" autocomplete="off" aria-label="Пошук учасників для заморозки">
+                                   oninput="app.searchFreezeMembers(this.value)" autocomplete="off" data-lang-aria="freeze_search_aria" aria-label="Пошук учасників для виключення з підрахунку">
                             <div id="freeze-search-results" class="freeze-search-results hidden"></div>
                         </div>
                         <div id="freeze-selected-members" class="member-chips"></div>
@@ -731,15 +731,15 @@
                         <span class="stat-value info" id="group-votings-count">5</span>
                         <span class="stat-label" data-lang="votings_label">Голосувань</span>
                         <div class="stat-breakdown" aria-label="Voting outcomes">
-                            <span class="stat-pill stat-accepted" title="Прийнято">
+                            <span class="stat-pill stat-accepted" data-lang-title="stats_accepted" title="Прийнято">
                                 <i class="ph-fill ph-check-circle" aria-hidden="true"></i>
                                 <span id="votings-accepted">0</span>
                             </span>
-                            <span class="stat-pill stat-rejected" title="Відхилено">
+                            <span class="stat-pill stat-rejected" data-lang-title="stats_rejected" title="Відхилено">
                                 <i class="ph-fill ph-x-circle" aria-hidden="true"></i>
                                 <span id="votings-rejected">0</span>
                             </span>
-                            <span class="stat-pill stat-pending" title="Активні">
+                            <span class="stat-pill stat-pending" data-lang-title="stats_active" title="Активні">
                                 <i class="ph-fill ph-circle" aria-hidden="true"></i>
                                 <span id="votings-pending">0</span>
                             </span>
@@ -762,7 +762,7 @@
                 <!-- Members Controls -->
                 <div class="members-controls">
                     <div class="search-row">
-                        <button class="btn-icon sort-btn" onclick="app.sortMembersByName()" title="Сортувати за іменем" aria-label="Sort by name">
+                        <button class="btn-icon sort-btn" onclick="app.sortMembersByName()" data-lang-title="sort_by_name" title="Сортувати за іменем" data-lang-aria="sort_by_name" aria-label="Сортувати за іменем">
                             <i class="ph ph-sort-ascending" id="name-sort-icon" aria-hidden="true"></i>
                         </button>
                         <div class="search-input-wrapper">
@@ -773,7 +773,7 @@
                                 <i class="ph ph-x-circle" aria-hidden="true"></i>
                             </button>
                         </div>
-                        <button class="btn-icon sort-btn" onclick="app.sortMembersByParticipation()" title="Сортувати за участю" aria-label="Sort by participation">
+                        <button class="btn-icon sort-btn" onclick="app.sortMembersByParticipation()" data-lang-title="sort_by_participation" title="Сортувати за участю" data-lang-aria="sort_by_participation" aria-label="Сортувати за участю">
                             <i class="ph ph-sort-descending" id="participation-sort-icon" aria-hidden="true"></i>
                         </button>
                     </div>
@@ -810,11 +810,11 @@
                 <div class="modal-body">
                     <div class="form-group">
                         <label for="edit-firstname" data-lang="firstname">Ім'я</label>
-                        <input type="text" id="edit-firstname" maxlength="50" placeholder="Ваше ім'я">
+                        <input type="text" id="edit-firstname" maxlength="50" data-lang-placeholder="profile_firstname_ph" placeholder="Ваше ім'я">
                     </div>
                     <div class="form-group">
                         <label for="edit-lastname" data-lang="lastname">Прізвище</label>
-                        <input type="text" id="edit-lastname" maxlength="50" placeholder="Ваше прізвище">
+                        <input type="text" id="edit-lastname" maxlength="50" data-lang-placeholder="profile_lastname_ph" placeholder="Ваше прізвище">
                     </div>
                     <div class="form-group">
                         <label for="edit-phone" data-lang="phone">Телефон</label>
@@ -822,7 +822,7 @@
                     </div>
                     <div class="form-group">
                         <label for="edit-address" data-lang="address">Адреса об'єкта</label>
-                        <input type="text" id="edit-address" maxlength="120" placeholder="вул. Шевченка, буд. 61">
+                        <input type="text" id="edit-address" maxlength="120" data-lang-placeholder="profile_address_ph" placeholder="вул. Шевченка, буд. 61">
                     </div>
                     <div class="form-group">
                         <label for="edit-apartment" data-lang="apartment">Квартира/офіс</label>
@@ -879,11 +879,11 @@
                 <div class="modal-body">
                     <div class="form-group">
                         <label for="edit-group-name" data-lang="group_name">Назва групи</label>
-                        <input type="text" id="edit-group-name" maxlength="80" placeholder="Назва групи">
+                        <input type="text" id="edit-group-name" maxlength="80" data-lang-placeholder="group_name_ph" placeholder="Назва групи">
                     </div>
                     <div class="form-group">
                         <label data-lang="group_description">Опис (необов'язково)</label>
-                        <textarea id="edit-group-description" maxlength="500" placeholder="Короткий опис групи..." rows="3"></textarea>
+                        <textarea id="edit-group-description" maxlength="500" data-lang-placeholder="group_desc_ph" placeholder="Короткий опис групи..." rows="3"></textarea>
                     </div>
                 </div>
                 <div class="modal-footer">

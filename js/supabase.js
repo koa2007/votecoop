@@ -420,10 +420,20 @@ const supabaseService = {
           .collection("group_history")
           .getFullList({ filter: `group="${groupId}"`, sort: "-created" });
       } catch (e) {}
-      const pmap = await this._profilesMap([
-        ...members.map((m) => m.user),
-        ...reqs.map((r) => r.user),
-      ]);
+      const pmap = await this._profilesMap(members.map((m) => m.user));
+      // Applicant details come from an admin-only route, not from the profiles
+      // collection: while a request was pending, every resident of the house could
+      // read the applicant's name, phone and address straight from the API.
+      let reqDetails = {};
+      try {
+        const rr = await this.pb.send("/api/spilka/group-requests", {
+          method: "POST",
+          body: { group_id: groupId },
+        });
+        for (const r of rr.data || []) reqDetails[r.id] = r;
+      } catch (e) {
+        /* not an admin — the list stays empty, which is the point */
+      }
       const prof = (uid) => {
         const p = pmap[uid];
         return p
@@ -448,16 +458,25 @@ const supabaseService = {
             apartment: m.apartment || "",
             user: prof(m.user),
           })),
-          requests: reqs.map((r) => ({
-            id: r.id,
-            user_id: r.user,
-            status: r.status,
-            created_at: this._d(r.created),
-            apartment: r.apartment || "",
-            requested_as_observer: !!r.requested_as_observer,
-            is_role_change: !!r.is_role_change,
-            user: prof(r.user),
-          })),
+          requests: reqs.map((r) => {
+            const d = reqDetails[r.id] || {};
+            return {
+              id: r.id,
+              user_id: r.user,
+              status: r.status,
+              created_at: this._d(r.created),
+              apartment: d.apartment || r.apartment || "",
+              requested_as_observer: !!r.requested_as_observer,
+              is_role_change: !!r.is_role_change,
+              user: {
+                id: r.user,
+                first_name: d.name || "",
+                last_name: "",
+                apartment: d.apartment || r.apartment || "",
+                address: d.address || "",
+              },
+            };
+          }),
           history: history.map((h) => ({
             id: h.id,
             action: h.action,
@@ -944,9 +963,6 @@ const supabaseService = {
       return { data: [], error: this._err(e) };
     }
   },
-  async createNotification() {
-    return { error: null };
-  }, // server-side via routes
   async markNotificationRead(id) {
     try {
       await this.pb.collection("notifications").update(id, { is_read: true });
@@ -1069,12 +1085,6 @@ const supabaseService = {
     } catch (e) {
       return { error: this._err(e) };
     }
-  },
-  async notifyJoinRequest() {
-    return { error: null };
-  }, // handled server-side
-  async notifyGroupMembers() {
-    return { error: null };
   },
   async adminBroadcastNotification(userIds, text) {
     try {

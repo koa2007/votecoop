@@ -1661,9 +1661,24 @@ const app = {
       .map((notif) => {
         const icons = {
           voting: '<i class="ph ph-scales"></i>',
+          new_voting: '<i class="ph ph-scales"></i>',
           member: '<i class="ph ph-user"></i>',
           join_request: '<i class="ph ph-user-plus"></i>',
+          join_approved: '<i class="ph-fill ph-check-circle text-success"></i>',
+          join_rejected: '<i class="ph-fill ph-x-circle text-danger"></i>',
+          role_change_request: '<i class="ph ph-user-switch"></i>',
+          role_change_approved: '<i class="ph ph-user-switch text-success"></i>',
+          role_changed_by_admin: '<i class="ph ph-user-switch text-warning"></i>',
           result: '<i class="ph ph-check-circle"></i>',
+          voting_completed: '<i class="ph-fill ph-flag-checkered"></i>',
+          voting_cancelled: '<i class="ph ph-x-circle text-muted"></i>',
+          freeze_proposal: '<i class="ph ph-hand-palm text-warning"></i>',
+          freeze_result: '<i class="ph ph-hand-palm"></i>',
+          member_excluded: '<i class="ph ph-eye-slash text-warning"></i>',
+          effect_not_applied: '<i class="ph ph-warning-circle text-warning"></i>',
+          group_renamed: '<i class="ph ph-pencil-simple"></i>',
+          feedback_reply: '<i class="ph ph-chat-circle-text"></i>',
+          admin_message: '<i class="ph ph-megaphone"></i>',
           system: '<i class="ph ph-bell"></i>',
         };
 
@@ -2234,6 +2249,15 @@ const app = {
       cancelBtn.textContent = cancelText || t.cancel || "Скасувати";
       okBtn.className = `btn ${danger ? "btn-danger" : "btn-primary"}`;
 
+      // A second dialog used to overwrite the first resolver, leaving the first
+      // `await confirm(...)` pending forever. Settle the previous one as a refusal.
+      if (this._confirmResolver) {
+        const prev = this._confirmResolver;
+        this._confirmResolver = null;
+        try {
+          prev(false);
+        } catch (er) {}
+      }
       this._confirmResolver = resolve;
       this.showModal("confirm-modal");
     });
@@ -2781,8 +2805,8 @@ const app = {
       role: m.role,
       phone: m.user.phone,
       address: m.user.address
-        ? `${m.user.address}, кв. ${m.user.apartment}`
-        : `кв. ${m.user.apartment || "-"}`,
+        ? this.flatLabel(m.user.address, m.user.apartment)
+        : this.flatLabel("", m.user.apartment),
       frozen: m.is_frozen,
       frozenUntil: m.frozen_until,
       isObserver: m.is_observer === true,
@@ -3191,12 +3215,7 @@ const app = {
       this.renderVotings();
       this.hideModal("create-voting-modal");
 
-      // Notify group members
-      await supabaseService.notifyGroupMembers(
-        groupId,
-        "voting",
-        `${t.new_voting || "Нове голосування"}: "${title}"`,
-      );
+      // The server writes these notifications itself when the record is created.
 
       // Clear the form ONLY on success — otherwise the user keeps their input
       // after a network error and can retry without retyping.
@@ -3313,15 +3332,7 @@ const app = {
         .querySelectorAll('input[name="join-role"]')
         .forEach((r) => (r.checked = false));
 
-      // Notify group admin about the join request
-      await supabaseService.notifyJoinRequest(group.id);
-
-      // Create notification in DB for the requester
-      await supabaseService.createNotification(
-        this.state.user.id,
-        "system",
-        `${t.join_request_sent || "Запит на приєднання надіслано"}: ${group.name}`,
-      );
+      // The server writes these notifications itself when the record is created.
 
       // Add notification locally for instant display
       this.state.notifications.unshift({
@@ -3407,7 +3418,7 @@ const app = {
               ? `${ft.user.first_name} ${ft.user.last_name}`.trim()
               : "",
             address: ft.user
-              ? `${ft.user.address || ""}, кв. ${ft.user.apartment || ""}`
+              ? this.flatLabel(ft.user.address, ft.user.apartment)
               : "",
           }));
         }
@@ -3535,7 +3546,7 @@ const app = {
       commentsSection = `
                 <div class="comments-section">
                     <h4><i class="ph ph-chat-circle-text" aria-hidden="true"></i> ${t.comments}</h4>
-                    <div class="empty-state-inline">${t.no_comments}</div>
+                    <div class="empty-state-inline">${voting.type === "secret" ? this.escapeHTML(t.comments_hidden_secret) : this.escapeHTML(t.no_comments)}</div>
                 </div>
             `;
     }
@@ -4194,13 +4205,8 @@ const app = {
 
       this.state.votings = this.state.votings.filter((v) => v.id !== votingId);
 
-      // Notify group members
-      const notifText = `${t.voting_deleted_by || "Голосування видалено"}: "${voting.title}". ${t.reason_label || "Причина"}: ${reason}`;
-      await supabaseService.notifyGroupMembers(
-        voting.groupId,
-        "system",
-        notifText,
-      );
+      // The server notifies the house and journals the cancellation itself; the
+      // client used to call an empty stub here and believe the job was done.
 
       this.hideModal("delete-voting-modal");
       this.hideModal("voting-detail-modal");
@@ -4292,8 +4298,8 @@ const app = {
         userId: r.user_id,
         name: `${r.user.first_name} ${r.user.last_name}`.trim(),
         address: r.user.address
-          ? `${r.user.address}, кв. ${r.user.apartment}`
-          : `кв. ${r.user.apartment || "-"}`,
+          ? this.flatLabel(r.user.address, r.user.apartment)
+          : this.flatLabel("", r.user.apartment),
         apartment: r.apartment || r.user.apartment || "",
         asObserver: r.requested_as_observer === true,
         isRoleChange: r.is_role_change === true,
@@ -4480,6 +4486,18 @@ const app = {
   // role changed. The server now also stores a dictionary key and its parameters;
   // use them when both are present, and otherwise keep the stored text. A missing
   // key or parameter therefore degrades to the old behaviour, never to an empty line.
+  // "кв." was written into eight templates by hand, so an English or Russian reader
+  // met a Ukrainian abbreviation everywhere, and an empty address produced a stray
+  // leading comma: "Іван Іванов (, кв. 7)".
+  flatLabel(address, apartment) {
+    const t = this.translations[this.currentLanguage] || {};
+    const flat = String(apartment || "").trim();
+    const addr = String(address || "").trim();
+    const flatPart = flat ? `${t.flat_short} ${flat}` : "";
+    if (addr && flatPart) return `${addr}, ${flatPart}`;
+    return addr || flatPart || `${t.flat_short} —`;
+  },
+
   notificationText(notif) {
     const t = this.translations[this.currentLanguage] || {};
     const meta = notif?.metadata || {};
@@ -4606,7 +4624,7 @@ const app = {
           ? `<span class="role-badge observer" title="${t.role_observer || "Спостерігач"}">👁️</span>`
           : `<span class="role-badge voter" title="${t.role_voter || "Голосуючий"}">👍</span>`;
         const aptDisplay = member.apartment
-          ? `кв. ${this.escapeHTML(member.apartment)}`
+          ? this.escapeHTML(this.flatLabel("", member.apartment))
           : "";
         const restoreBtn =
           isAdmin && member.frozen
@@ -4623,7 +4641,7 @@ const app = {
                 </div>
                 <div class="member-info">
                     <div class="member-name">${this.escapeHTML(member.name)} ${roleBadge} ${frozenIndicator}</div>
-                    <div class="member-address">${aptDisplay || this.escapeHTML(member.address || "кв. -")}</div>
+                    <div class="member-address">${aptDisplay || this.escapeHTML(member.address || this.flatLabel("", ""))}</div>
                 </div>
                 <div class="member-participation ${member.frozen ? "text-info" : ""}">
                     ${member.frozen ? `<i class="ph-fill ph-snowflake" aria-hidden="true"></i> ${t.frozen_badge}` : participationText}
@@ -4643,7 +4661,7 @@ const app = {
             ? `👁️ ${t.role_observer || "Спостерігач"}`
             : `👍 ${t.role_voter || "Голосуючий"}`;
           const aptLabel = request.apartment
-            ? `кв. ${this.escapeHTML(request.apartment)}`
+            ? this.escapeHTML(this.flatLabel("", request.apartment))
             : "";
           const roleChangeBadge = request.isRoleChange
             ? `<span class="role-change-badge">${t.role_change_badge || "зміна ролі"}</span>`
@@ -4716,6 +4734,10 @@ const app = {
                 : t.history_role_to_voter,
               item.userId,
             )}`;
+          } else if (item.action === "group_renamed") {
+            actionText = `<i class="ph ph-pencil-simple text-info" aria-hidden="true"></i> ${this.escapeHTML(t.history_group_renamed)}`;
+          } else if (item.action === "voting_cancelled") {
+            actionText = `<i class="ph ph-x-circle text-muted" aria-hidden="true"></i> ${this.escapeHTML(t.history_voting_cancelled)}${item.notAppliedReason ? ` (${this.escapeHTML(item.notAppliedReason)})` : ""}`;
           } else if (item.action === "effect_not_applied") {
             actionText = `<i class="ph ph-warning-circle text-warning" aria-hidden="true"></i> ${this.escapeHTML(t.history_effect_not_applied)}`;
           } else {
@@ -5281,7 +5303,7 @@ const app = {
       this.state.user.phone || "";
     document.getElementById("profile-address-display").textContent = this.state
       .user.address
-      ? `${this.state.user.address}, кв. ${this.state.user.apartment}`
+      ? this.flatLabel(this.state.user.address, this.state.user.apartment)
       : "";
     document.getElementById("profile-groups-count").textContent =
       this.state.groups.length;
@@ -5372,7 +5394,6 @@ const app = {
       register_subtitle: "Створіть акаунт для голосувань",
       register_password_placeholder: "Пароль (мін. 8 символів)",
       register_submit_btn: "Створити акаунт",
-      register_google_btn: "Реєстрація через Google",
       register_have_account: "Вже маєте акаунт?",
       forgot_title: "Відновлення пароля",
       forgot_subtitle: "Введіть email — надішлемо посилання",
@@ -5414,7 +5435,6 @@ const app = {
       refresh_group: "Оновити дані",
       refresh_in_progress: "Оновлюємо…",
       refresh_done: "Дані оновлено",
-      dev_banner: "⚠️ Сайт у розробці — деякі функції можуть змінюватись",
       archive_all: "В архів",
       archive_confirm_title: "В архів",
       archive_confirm_msg:
@@ -5454,7 +5474,6 @@ const app = {
       notifications: "Сповіщення",
       active_votings: "Активні",
       completed_votings: "Завершені",
-      enter_group_id: "Введіть ID групи (6 цифр)",
       join: "Приєднатися",
       mark_all_read: "Прочитано все",
       new_group: "Нова група",
@@ -5498,7 +5517,6 @@ const app = {
       no_objections: "Поки що ніхто не висловив незгоду",
       objections_needed: "Щоб скасувати, бракує заперечень: {count}",
       auto_rejected: "автоматично скасовано",
-      freeze_rejected: "Виключення скасовано",
       freeze_auto_rejected: "Виключення скасовано: учасники заперечили",
       frozen_badge: "поза підрахунком",
       frozen_abbr: "поза",
@@ -5720,14 +5738,6 @@ const app = {
         "Кнопка «Пропозиція / зауваження» у профілі дозволяє надіслати нам ідею або повідомити про проблему. Ми читаємо всі повідомлення.",
       fill_name_error: "Будь ласка, заповніть ім'я та прізвище",
       profile_saved: "Профіль оновлено!",
-      notif_join_request: "хоче приєднатися до групи",
-      notif_voting_completed: "Голосування завершено",
-      notif_accepted: "ПРИЙНЯТО",
-      notif_rejected: "ВІДХИЛЕНО",
-      notif_welcome_admin: "Вітаємо! Ви стали адміністратором групи",
-      hours_ago: "годин тому",
-      days_ago: "днів тому",
-      day_ago: "день тому",
       just_now: "Щойно",
       participation_label: "Участь",
       already_voted: "Ви вже проголосували",
@@ -5735,7 +5745,6 @@ const app = {
         "Ви приєдналися після початку цього голосування і не входите до його складу",
       vote_against: "Проти",
       vote_for: "За",
-      admin_full: "Адміністратор",
       no_requests: "Немає запитів",
       join_requests: "Запити на вступ",
       target_member: "Учасник",
@@ -5750,15 +5759,11 @@ const app = {
       reason_details: "Детальний опис причини...",
       target_admin_candidate: "Кандидат на посаду адміністратора",
       target_member_remove: "Учасник для видалення",
-      candidate_profile: "Профіль кандидата",
       admin_change_success: "Адміністратора змінено",
       new_admin_is: "Новий адміністратор",
-      you_removed_admin: "Ви зняті з посади адміністратора групи",
-      you_became_admin: "Ви стали адміністратором групи",
       member_removed: "Учасника видалено",
       removed_from_group: "Вас видалено з групи",
       removal_reason_label: "Причина",
-      auto_fixed_duration: "Тривалість фіксована для цього типу голосування",
       min_3_members_required: "Потрібно мінімум 3 учасники в групі",
       history: "Історія змін",
       history_admin_change: "Зміна адміністратора",
@@ -5768,11 +5773,7 @@ const app = {
       history_role_to_observer: "Роль змінено на спостерігача",
       history_role_to_voter: "Роль змінено на голосуючого",
       history_member_removed: "Видалення учасника",
-      history_date: "Дата",
-      history_action: "Дія",
       history_initiator: "Ініціатор",
-      history_result: "Результат",
-      cant_remove_admin: "Не можна видалити адміністратора",
       one_admin_change_at_time:
         "Одночасно може бути тільки одне голосування про зміну адміністратора",
       author: "Автор",
@@ -5802,11 +5803,9 @@ const app = {
       comment_placeholder:
         "Ваш коментар (необов'язково, макс. 500 символів)...",
       comments: "Коментарі",
-      comment_count: "символів",
       vote_yes: "За",
       vote_no: "Проти",
       vote_abstain: "Утримався",
-      your_comment: "Ваш коментар",
       no_comments: "Коментарів ще немає",
       terms_title: "Умови використання",
       terms_intro:
@@ -5859,7 +5858,6 @@ const app = {
       accept: "Погодитись та продовжити",
       apartment_required:
         "Вкажіть номер квартири або ділянки для участі в голосуваннях",
-      apartment_required_title: "Необхідно заповнити адресу",
       export_csv: "Експорт історії (CSV)",
       export_date: "Дата створення",
       export_author: "Автор",
@@ -5870,16 +5868,10 @@ const app = {
       export_no: "Проти",
       export_abstain: "Утримались",
       export_comments: "Коментарі",
-      export_unit: "Квартира/Ділянка",
       export_votes: "Голоси",
       search_members: "Пошук за ПІБ або телефоном...",
-      participation_count: "Участь",
       sort_by_name: "Сортувати за іменем",
       sort_by_participation: "Сортувати за участю",
-      total_votings: "всього",
-      accepted_short: "прийн.",
-      active_short: "актив.",
-      rejected_short: "відх.",
       no_members_found: "Учасників не знайдено",
       stats_accepted: "прийнято",
       stats_rejected: "відхилено",
@@ -5889,11 +5881,7 @@ const app = {
       auth_email_placeholder: "Email",
       auth_password_placeholder: "Пароль",
       auth_login_btn: "Увійти",
-      auth_register_btn: "Зареєструватися",
       auth_forgot_password: "Забули пароль?",
-      auth_or_divider: "або",
-      auth_google_btn: "Увійти через Google",
-      auth_hint: "Автоматична реєстрація при першому вході",
       auth_error_invalid: "Невірний email або пароль",
       auth_error_exists: "Цей email вже зареєстрований",
       auth_error_invalid_email: "Введіть коректну email-адресу",
@@ -5902,7 +5890,6 @@ const app = {
       auth_error_password_short: "Пароль має бути не менше 8 символів",
       auth_error_not_confirmed: "Підтвердіть email перш ніж увійти",
       auth_error_enter_email: "Введіть email для відновлення пароля",
-      auth_check_email: "Перевірте пошту для підтвердження реєстрації",
       auth_reset_sent: "Лист для відновлення пароля надіслано на вашу пошту",
       group_menu: "Меню групи",
       edit_group: "Редагувати групу",
@@ -5910,8 +5897,6 @@ const app = {
       delete_group_confirm:
         "Ви впевнені, що хочете видалити цю групу? Всі голосування та історія будуть втрачені. Цю дію не можна скасувати.",
       group_name_required: "Введіть назву групи",
-      group_updated: "Групу оновлено",
-      group_deleted: "Групу видалено",
       leave_group: "Покинути групу",
       leave_group_confirm:
         "Ви впевнені, що хочете покинути цю групу? Ви втратите доступ до голосувань та історії групи.",
@@ -5930,7 +5915,6 @@ const app = {
       min_duration_24h:
         "Мінімальна тривалість для цього типу голосування — 24 години.",
       // Phase 14: voter/observer roles
-      apartment_label: "Квартира",
       role_voter: "Голосуючий",
       role_observer: "Спостерігач",
       join_role_required: "Оберіть роль",
@@ -5960,6 +5944,22 @@ const app = {
         "Учасника(ів) виключено з підрахунку за результатами голосування",
       notif_effect_not_applied:
         "Рішення «{title}» ухвалено, але не виконано: учасник, якого воно стосується, вже не бере участі в голосуваннях спільноти.",
+      notif_group_renamed: "Спільноту перейменовано: «{from}» → «{to}»",
+      history_group_renamed: "Спільноту перейменовано",
+      notif_voting_cancelled: "Голосування «{title}» скасовано",
+      notif_voting_cancelled_reason:
+        "Голосування «{title}» скасовано: {reason}",
+      history_voting_cancelled: "Голосування скасовано",
+      comments_hidden_secret:
+        "Коментарі не показуються — це таємне голосування",
+      flat_short: "кв.",
+      notif_archive: "Архів",
+      freeze_search_aria: "Пошук учасників для виключення з підрахунку",
+      profile_firstname_ph: "Ваше ім'я",
+      profile_lastname_ph: "Ваше прізвище",
+      profile_address_ph: "вул. Шевченка, буд. 61",
+      group_name_ph: "Назва групи",
+      group_desc_ph: "Короткий опис групи…",
       duration_1h: "1 година",
       duration_24h: "24 години",
       duration_3d: "3 дні",
@@ -5997,13 +5997,10 @@ const app = {
       join_group_section_title: "Вступити до групи",
       join_id_label: "ID групи",
       join_id_ph: "6 цифр, напр. 123456",
-      join_apartment_label_full: "Номер вашої квартири / офісу / будинку",
-      join_apartment_ph: "напр. 12 або 12А",
       join_apartment_auto:
         "Номер квартири/ділянки візьмемо з вашого профілю. Одна квартира — один голос.",
       join_apartment_profile:
         "Спочатку вкажіть номер квартири у вашому профілі (вкладка «Профіль» → «Редагувати»), тоді приєднуйтесь",
-      join_apartment_hint: "Одна квартира — один голос.",
       join_role_label: "Ваша роль",
     },
     en: {
@@ -6030,7 +6027,6 @@ const app = {
       register_subtitle: "Create an account to vote",
       register_password_placeholder: "Password (min. 8 chars)",
       register_submit_btn: "Create account",
-      register_google_btn: "Sign up with Google",
       register_have_account: "Already have an account?",
       forgot_title: "Reset password",
       forgot_subtitle: "Enter your email — we'll send a reset link",
@@ -6072,7 +6068,6 @@ const app = {
       refresh_group: "Refresh data",
       refresh_in_progress: "Refreshing…",
       refresh_done: "Data refreshed",
-      dev_banner: "⚠️ Site in development — some features may change",
       archive_all: "Archive",
       archive_confirm_title: "Archive",
       archive_confirm_msg:
@@ -6112,7 +6107,6 @@ const app = {
       notifications: "Notifications",
       active_votings: "Active",
       completed_votings: "Completed",
-      enter_group_id: "Enter group ID (6 digits)",
       join: "Join",
       mark_all_read: "Mark all read",
       new_group: "New Group",
@@ -6156,7 +6150,6 @@ const app = {
       no_objections: "No objections yet",
       objections_needed: "Objections still needed to cancel: {count}",
       auto_rejected: "automatically cancelled",
-      freeze_rejected: "Exclusion cancelled",
       freeze_auto_rejected: "Exclusion cancelled: members objected",
       frozen_badge: "out of count",
       frozen_abbr: "out",
@@ -6376,14 +6369,6 @@ const app = {
         'The "Suggestion / feedback" button in the profile lets you send us an idea or report a problem. We read every message.',
       fill_name_error: "Please enter your first and last name",
       profile_saved: "Profile updated!",
-      notif_join_request: "wants to join group",
-      notif_voting_completed: "Voting completed",
-      notif_accepted: "ACCEPTED",
-      notif_rejected: "REJECTED",
-      notif_welcome_admin: "Congratulations! You are now admin of group",
-      hours_ago: "hours ago",
-      days_ago: "days ago",
-      day_ago: "day ago",
       just_now: "Just now",
       participation_label: "Participation",
       already_voted: "You have already voted",
@@ -6391,7 +6376,6 @@ const app = {
         "You joined after this voting had started and are not part of it",
       vote_against: "No",
       vote_for: "Yes",
-      admin_full: "Administrator",
       no_requests: "No requests",
       join_requests: "Join requests",
       target_member: "Member",
@@ -6406,15 +6390,11 @@ const app = {
       reason_details: "Detailed reason description...",
       target_admin_candidate: "Administrator candidate",
       target_member_remove: "Member to remove",
-      candidate_profile: "Candidate profile",
       admin_change_success: "Administrator changed",
       new_admin_is: "New administrator",
-      you_removed_admin: "You have been removed as group administrator",
-      you_became_admin: "You became group administrator",
       member_removed: "Member removed",
       removed_from_group: "You have been removed from group",
       removal_reason_label: "Reason",
-      auto_fixed_duration: "Duration is fixed for this voting type",
       min_3_members_required: "Minimum 3 members required in group",
       history: "Change history",
       history_admin_change: "Administrator change",
@@ -6424,11 +6404,7 @@ const app = {
       history_role_to_observer: "Role changed to observer",
       history_role_to_voter: "Role changed to voting member",
       history_member_removed: "Member removal",
-      history_date: "Date",
-      history_action: "Action",
       history_initiator: "Initiator",
-      history_result: "Result",
-      cant_remove_admin: "Cannot remove administrator",
       one_admin_change_at_time:
         "Only one administrator change voting can be active at a time",
       author: "Author",
@@ -6457,11 +6433,9 @@ const app = {
       comment: "Comment",
       comment_placeholder: "Your comment (optional, max 500 chars)...",
       comments: "Comments",
-      comment_count: "characters",
       vote_yes: "Yes",
       vote_no: "No",
       vote_abstain: "Abstained",
-      your_comment: "Your comment",
       no_comments: "No comments yet",
       terms_title: "Terms of Service",
       terms_intro: "The essentials in short — please read before you start:",
@@ -6513,7 +6487,6 @@ const app = {
       accept: "Accept and continue",
       apartment_required:
         "Please provide apartment or plot number to participate in voting",
-      apartment_required_title: "Address required",
       export_csv: "Export history (CSV)",
       export_date: "Creation date",
       export_author: "Author",
@@ -6524,16 +6497,10 @@ const app = {
       export_no: "No",
       export_abstain: "Abstained",
       export_comments: "Comments",
-      export_unit: "Apartment/Plot",
       export_votes: "Votes",
       search_members: "Search by name or phone...",
-      participation_count: "Participation",
       sort_by_name: "Sort by name",
       sort_by_participation: "Sort by participation",
-      total_votings: "total",
-      accepted_short: "acc.",
-      active_short: "act.",
-      rejected_short: "rej.",
       no_members_found: "No members found",
       stats_accepted: "accepted",
       stats_rejected: "rejected",
@@ -6543,11 +6510,7 @@ const app = {
       auth_email_placeholder: "Email",
       auth_password_placeholder: "Password",
       auth_login_btn: "Sign In",
-      auth_register_btn: "Sign Up",
       auth_forgot_password: "Forgot password?",
-      auth_or_divider: "or",
-      auth_google_btn: "Sign in with Google",
-      auth_hint: "Automatic registration on first login",
       auth_error_invalid: "Invalid email or password",
       auth_error_exists: "This email is already registered",
       auth_error_invalid_email: "Please enter a valid email address",
@@ -6556,7 +6519,6 @@ const app = {
       auth_error_password_short: "Password must be at least 8 characters",
       auth_error_not_confirmed: "Please confirm your email before signing in",
       auth_error_enter_email: "Enter your email to reset password",
-      auth_check_email: "Check your email to confirm registration",
       auth_reset_sent: "Password reset email has been sent",
       group_menu: "Group Menu",
       edit_group: "Edit Group",
@@ -6564,8 +6526,6 @@ const app = {
       delete_group_confirm:
         "Are you sure you want to delete this group? All votings and history will be lost. This action cannot be undone.",
       group_name_required: "Enter group name",
-      group_updated: "Group updated",
-      group_deleted: "Group deleted",
       leave_group: "Leave group",
       leave_group_confirm:
         "Are you sure you want to leave this group? You will lose access to votings and group history.",
@@ -6583,7 +6543,6 @@ const app = {
         "There is already an active voting to delete this group.",
       min_duration_24h: "Minimum duration for this voting type is 24 hours.",
       // Phase 14: voter/observer roles
-      apartment_label: "Apartment",
       role_voter: "Voter",
       role_observer: "Observer",
       join_role_required: "Select a role",
@@ -6614,6 +6573,22 @@ const app = {
         "Residents have been excluded from the count following a vote",
       notif_effect_not_applied:
         "The decision \"{title}\" was accepted but not carried out: the person it concerns no longer takes part in this community's votings.",
+      notif_group_renamed: "The house was renamed: \"{from}\" → \"{to}\"",
+      history_group_renamed: "House renamed",
+      notif_voting_cancelled: "The voting \"{title}\" was cancelled",
+      notif_voting_cancelled_reason:
+        "The voting \"{title}\" was cancelled: {reason}",
+      history_voting_cancelled: "Voting cancelled",
+      comments_hidden_secret:
+        "Comments are not shown — this is a secret ballot",
+      flat_short: "flat",
+      notif_archive: "Archive",
+      freeze_search_aria: "Search residents to exclude from the count",
+      profile_firstname_ph: "Your first name",
+      profile_lastname_ph: "Your last name",
+      profile_address_ph: "12 Shevchenka St.",
+      group_name_ph: "House name",
+      group_desc_ph: "A short description…",
       duration_1h: "1 hour",
       duration_24h: "24 hours",
       duration_3d: "3 days",
@@ -6649,13 +6624,10 @@ const app = {
       join_group_section_title: "Join a group",
       join_id_label: "Group ID",
       join_id_ph: "6 digits, e.g. 123456",
-      join_apartment_label_full: "Your apartment / office / house number",
-      join_apartment_ph: "e.g. 12 or 12A",
       join_apartment_auto:
         "Your apartment/plot number is taken from your profile. One apartment — one vote.",
       join_apartment_profile:
         "First fill in your apartment number in your profile (Profile tab → Edit), then join",
-      join_apartment_hint: "One apartment — one vote.",
       join_role_label: "Your role",
     },
     ru: {
@@ -6682,7 +6654,6 @@ const app = {
       register_subtitle: "Создайте аккаунт для голосований",
       register_password_placeholder: "Пароль (мин. 8 символов)",
       register_submit_btn: "Создать аккаунт",
-      register_google_btn: "Регистрация через Google",
       register_have_account: "Уже есть аккаунт?",
       forgot_title: "Восстановление пароля",
       forgot_subtitle: "Введите email — пришлём ссылку",
@@ -6724,7 +6695,6 @@ const app = {
       refresh_group: "Обновить данные",
       refresh_in_progress: "Обновляем…",
       refresh_done: "Данные обновлены",
-      dev_banner: "⚠️ Сайт в разработке — некоторые функции могут меняться",
       archive_all: "В архив",
       archive_confirm_title: "В архив",
       archive_confirm_msg:
@@ -6764,7 +6734,6 @@ const app = {
       notifications: "Уведомления",
       active_votings: "Активные",
       completed_votings: "Завершённые",
-      enter_group_id: "Введите ID группы (6 цифр)",
       join: "Присоединиться",
       mark_all_read: "Прочитано все",
       new_group: "Новая группа",
@@ -6808,7 +6777,6 @@ const app = {
       no_objections: "Пока никто не выразил несогласие",
       objections_needed: "Чтобы отменить, не хватает возражений: {count}",
       auto_rejected: "автоматически отменено",
-      freeze_rejected: "Исключение отменено",
       freeze_auto_rejected: "Исключение отменено: участники возразили",
       frozen_badge: "вне подсчёта",
       frozen_abbr: "вне",
@@ -7030,14 +6998,6 @@ const app = {
         "Кнопка «Предложение / замечание» в профиле позволяет отправить нам идею или сообщить о проблеме. Мы читаем все сообщения.",
       fill_name_error: "Пожалуйста, введите имя и фамилию",
       profile_saved: "Профиль обновлён!",
-      notif_join_request: "хочет присоединиться к группе",
-      notif_voting_completed: "Голосование завершено",
-      notif_accepted: "ПРИНЯТО",
-      notif_rejected: "ОТКЛОНЕНО",
-      notif_welcome_admin: "Поздравляем! Вы стали администратором группы",
-      hours_ago: "часов назад",
-      days_ago: "дней назад",
-      day_ago: "день назад",
       just_now: "Только что",
       participation_label: "Участие",
       already_voted: "Вы уже проголосовали",
@@ -7045,7 +7005,6 @@ const app = {
         "Вы присоединились после начала этого голосования и не входите в его состав",
       vote_against: "Против",
       vote_for: "За",
-      admin_full: "Администратор",
       no_requests: "Нет запросов",
       join_requests: "Запросы на вступление",
       target_member: "Участник",
@@ -7060,16 +7019,11 @@ const app = {
       reason_details: "Подробное описание причины...",
       target_admin_candidate: "Кандидат на должность администратора",
       target_member_remove: "Участник для удаления",
-      candidate_profile: "Профиль кандидата",
       admin_change_success: "Администратор изменён",
       new_admin_is: "Новый администратор",
-      you_removed_admin: "Вы сняты с должности администратора группы",
-      you_became_admin: "Вы стали администратором группы",
       member_removed: "Участник удалён",
       removed_from_group: "Вас удалили из группы",
       removal_reason_label: "Причина",
-      auto_fixed_duration:
-        "Длительность фиксирована для этого типа голосования",
       min_3_members_required: "Требуется минимум 3 участника в группе",
       history: "История изменений",
       history_admin_change: "Смена администратора",
@@ -7079,11 +7033,7 @@ const app = {
       history_role_to_observer: "Роль изменена на наблюдателя",
       history_role_to_voter: "Роль изменена на голосующего",
       history_member_removed: "Удаление участника",
-      history_date: "Дата",
-      history_action: "Действие",
       history_initiator: "Инициатор",
-      history_result: "Результат",
-      cant_remove_admin: "Нельзя удалить администратора",
       one_admin_change_at_time:
         "Одновременно может быть только одно голосование о смене администратора",
       author: "Автор",
@@ -7113,11 +7063,9 @@ const app = {
       comment_placeholder:
         "Ваш комментарий (необязательно, макс. 500 символов)...",
       comments: "Комментарии",
-      comment_count: "символов",
       vote_yes: "За",
       vote_no: "Против",
       vote_abstain: "Воздержался",
-      your_comment: "Ваш комментарий",
       no_comments: "Комментариев пока нет",
       terms_title: "Условия использования",
       terms_intro: "Коротко о главном — пожалуйста, прочитайте перед началом:",
@@ -7169,7 +7117,6 @@ const app = {
       accept: "Согласиться и продолжить",
       apartment_required:
         "Укажите номер квартиры или участка для участия в голосованиях",
-      apartment_required_title: "Необходимо заполнить адрес",
       export_csv: "Экспорт истории (CSV)",
       export_date: "Дата создания",
       export_author: "Автор",
@@ -7180,16 +7127,10 @@ const app = {
       export_no: "Против",
       export_abstain: "Воздержались",
       export_comments: "Комментарии",
-      export_unit: "Квартира/Участок",
       export_votes: "Голоса",
       search_members: "Поиск по ФИО или телефону...",
-      participation_count: "Участие",
       sort_by_name: "Сортировать по имени",
       sort_by_participation: "Сортировать по участию",
-      total_votings: "всего",
-      accepted_short: "прин.",
-      active_short: "актив.",
-      rejected_short: "откл.",
       no_members_found: "Участников не найдено",
       stats_accepted: "принято",
       stats_rejected: "отклонено",
@@ -7199,11 +7140,7 @@ const app = {
       auth_email_placeholder: "Email",
       auth_password_placeholder: "Пароль",
       auth_login_btn: "Войти",
-      auth_register_btn: "Зарегистрироваться",
       auth_forgot_password: "Забыли пароль?",
-      auth_or_divider: "или",
-      auth_google_btn: "Войти через Google",
-      auth_hint: "Автоматическая регистрация при первом входе",
       auth_error_invalid: "Неверный email или пароль",
       auth_error_exists: "Этот email уже зарегистрирован",
       auth_error_invalid_email: "Введите корректный email-адрес",
@@ -7212,7 +7149,6 @@ const app = {
       auth_error_password_short: "Пароль должен быть не менее 8 символов",
       auth_error_not_confirmed: "Подтвердите email перед входом",
       auth_error_enter_email: "Введите email для восстановления пароля",
-      auth_check_email: "Проверьте почту для подтверждения регистрации",
       auth_reset_sent:
         "Письмо для восстановления пароля отправлено на вашу почту",
       group_menu: "Меню группы",
@@ -7221,8 +7157,6 @@ const app = {
       delete_group_confirm:
         "Вы уверены, что хотите удалить эту группу? Все голосования и история будут потеряны. Это действие нельзя отменить.",
       group_name_required: "Введите название группы",
-      group_updated: "Группа обновлена",
-      group_deleted: "Группа удалена",
       leave_group: "Покинуть группу",
       leave_group_confirm:
         "Вы уверены, что хотите покинуть эту группу? Вы потеряете доступ к голосованиям и истории группы.",
@@ -7241,7 +7175,6 @@ const app = {
       min_duration_24h:
         "Минимальная длительность для этого типа голосования — 24 часа.",
       // Phase 14: voter/observer roles
-      apartment_label: "Квартира",
       role_voter: "Голосующий",
       role_observer: "Наблюдатель",
       join_role_required: "Выберите роль",
@@ -7273,6 +7206,22 @@ const app = {
         "Участник(и) исключены из подсчёта по результатам голосования",
       notif_effect_not_applied:
         "Решение «{title}» принято, но не выполнено: участник, которого оно касается, уже не участвует в голосованиях сообщества.",
+      notif_group_renamed: "Сообщество переименовано: «{from}» → «{to}»",
+      history_group_renamed: "Сообщество переименовано",
+      notif_voting_cancelled: "Голосование «{title}» отменено",
+      notif_voting_cancelled_reason:
+        "Голосование «{title}» отменено: {reason}",
+      history_voting_cancelled: "Голосование отменено",
+      comments_hidden_secret:
+        "Комментарии не показываются — это тайное голосование",
+      flat_short: "кв.",
+      notif_archive: "Архив",
+      freeze_search_aria: "Поиск участников для исключения из подсчёта",
+      profile_firstname_ph: "Ваше имя",
+      profile_lastname_ph: "Ваша фамилия",
+      profile_address_ph: "ул. Шевченко, д. 61",
+      group_name_ph: "Название дома",
+      group_desc_ph: "Короткое описание…",
       duration_1h: "1 час",
       duration_24h: "24 часа",
       duration_3d: "3 дня",
@@ -7309,13 +7258,10 @@ const app = {
       join_group_section_title: "Вступить в группу",
       join_id_label: "ID группы",
       join_id_ph: "6 цифр, напр. 123456",
-      join_apartment_label_full: "Номер вашей квартиры / офиса / дома",
-      join_apartment_ph: "напр. 12 или 12А",
       join_apartment_auto:
         "Номер квартиры/участка возьмём из вашего профиля. Одна квартира — один голос.",
       join_apartment_profile:
         "Сначала укажите номер квартиры в вашем профиле (вкладка «Профиль» → «Редактировать»), затем присоединяйтесь",
-      join_apartment_hint: "Одна квартира — один голос.",
       join_role_label: "Ваша роль",
     },
   },
@@ -7489,6 +7435,20 @@ const app = {
       }
     });
 
+    // Tooltips and accessible names. Fifteen of them were hardcoded Ukrainian in the
+    // markup, so a resident reading English or Russian met untranslated hints on the
+    // sort buttons, the group statistics, the profile form and the archive button —
+    // while the translations for several of them already existed in the dictionary
+    // and were simply never referenced.
+    document.querySelectorAll("[data-lang-title]").forEach((el) => {
+      const key = el.getAttribute("data-lang-title");
+      if (t[key]) el.title = t[key];
+    });
+    document.querySelectorAll("[data-lang-aria]").forEach((el) => {
+      const key = el.getAttribute("data-lang-aria");
+      if (t[key]) el.setAttribute("aria-label", t[key]);
+    });
+
     // Sync all language selectors
     document
       .querySelectorAll("#language-select, #auth-language-select")
@@ -7560,197 +7520,8 @@ const app = {
   },
 
   // Complete voting and apply automatic role changes
-  completeVoting(votingId) {
-    const t = this.translations[this.currentLanguage];
-    const voting = this.state.votings.find((v) => v.id === votingId);
-    if (!voting || voting.status !== "active") return;
-
-    const group = this.state.groups.find((g) => g.id === voting.groupId);
-    if (!group) return;
-
-    // Mark as completed
-    voting.status = "completed";
-    voting.endedAt = new Date();
-
-    // Check if passed (50%+1 votes)
-    const passed = voting.yesVotes > voting.totalMembers / 2;
-    voting.result = passed ? "accepted" : "rejected";
-
-    if (passed) {
-      if (voting.type === "admin-change" && voting.targetMemberId) {
-        // Find old admin
-        const oldAdmin = group.members.find((m) => m.role === "admin");
-        const newAdmin = group.members.find(
-          (m) => m.id === voting.targetMemberId,
-        );
-
-        if (oldAdmin && newAdmin) {
-          // Change roles
-          oldAdmin.role = "member";
-          newAdmin.role = "admin";
-
-          // Update group admin status for current user
-          if (oldAdmin.id === this.state.user.id) {
-            group.isAdmin = false;
-          }
-          if (newAdmin.id === this.state.user.id) {
-            group.isAdmin = true;
-          }
-
-          // Add to history
-          if (!group.history) group.history = [];
-          group.history.unshift({
-            date: new Date().toISOString(),
-            action: "admin_change",
-            from: oldAdmin.name,
-            to: newAdmin.name,
-            initiator: voting.initiatorName,
-            votingId: voting.id,
-          });
-
-          // Add notifications
-          this.state.notifications.unshift({
-            id: Date.now(),
-            type: "system",
-            text: `${t.admin_change_success}: ${newAdmin.name} ${t.new_admin_is}`,
-            time: t.just_now,
-            read: false,
-          });
-        }
-      } else if (voting.type === "remove-member" && voting.targetMemberId) {
-        const removedMember = group.members.find(
-          (m) => m.id === voting.targetMemberId,
-        );
-
-        if (removedMember) {
-          // Remove from group
-          group.members = group.members.filter(
-            (m) => m.id !== voting.targetMemberId,
-          );
-          group.membersCount--;
-
-          // Add to history
-          if (!group.history) group.history = [];
-          group.history.unshift({
-            date: new Date().toISOString(),
-            action: "member_removed",
-            member: removedMember.name,
-            reason: voting.removalReason,
-            initiator: voting.initiatorName,
-            votingId: voting.id,
-          });
-
-          // Add notification
-          this.state.notifications.unshift({
-            id: Date.now(),
-            type: "system",
-            text: `${t.member_removed}: ${removedMember.name}`,
-            time: t.just_now,
-            read: false,
-          });
-
-          // If removed member is current user, remove group from list
-          if (removedMember.id === this.state.user.id) {
-            this.state.groups = this.state.groups.filter(
-              (g) => g.id !== group.id,
-            );
-            this.state.notifications.unshift({
-              id: Date.now() + 1,
-              type: "system",
-              text: `${t.removed_from_group} "${group.name}". ${t.removal_reason_label}: ${voting.removalReason}`,
-              time: t.just_now,
-              read: false,
-            });
-          }
-        }
-      } else if (voting.type === "freeze" && voting.freezeMembers) {
-        // Apply freeze to selected members
-        voting.freezeMembers.forEach((freezeMember) => {
-          const member = group.members.find((m) => m.id === freezeMember.id);
-          if (member) {
-            member.frozen = true;
-            member.frozenAt = new Date().toISOString();
-            member.frozenByVotingId = voting.id;
-          }
-        });
-
-        // Store frozen member IDs in voting
-        voting.frozenMembers = voting.freezeMembers.map((m) => m.id);
-
-        // Add to history
-        if (!group.history) group.history = [];
-        group.history.unshift({
-          date: new Date().toISOString(),
-          action: "members_frozen",
-          members: voting.freezeMembers.map((m) => m.name),
-          count: voting.freezeMembers.length,
-          initiator: voting.initiatorName,
-          votingId: voting.id,
-        });
-
-        // Add notification
-        const frozenNames = voting.freezeMembers.map((m) => m.name).join(", ");
-        this.state.notifications.unshift({
-          id: Date.now(),
-          type: "system",
-          text: `${t.members_frozen}: ${frozenNames}`,
-          time: t.just_now,
-          read: false,
-        });
-
-        // If current user is frozen, update user state
-        const currentUserFrozen = voting.freezeMembers.find(
-          (m) => m.id === this.state.user.id,
-        );
-        if (currentUserFrozen) {
-          this.state.user.frozen = true;
-          this.state.notifications.unshift({
-            id: Date.now() + 1,
-            type: "system",
-            text: t.you_have_been_frozen,
-            time: t.just_now,
-            read: false,
-          });
-        }
-      } else if (voting.type === "delete-group") {
-        const groupName = group ? group.name : voting.groupName;
-
-        // Remove group from local state
-        this.state.groups = this.state.groups.filter(
-          (g) => g.id !== voting.groupId,
-        );
-
-        // Notify user
-        this.state.notifications.unshift({
-          id: Date.now(),
-          type: "system",
-          text: `${t.group_deleted_by_voting}: "${groupName}"`,
-          time: t.just_now,
-          read: false,
-        });
-
-        // If viewing this group, navigate away
-        if (this.state.currentGroupId === voting.groupId) {
-          this.state.currentGroupId = null;
-          this.showScreen("groups-screen");
-        }
-      }
-    }
-
-    this.renderVotings();
-    this.renderGroups();
-    this.renderNotifications();
-  },
 
   // Check and complete expired votings (call this periodically)
-  checkExpiredVotings() {
-    const now = new Date();
-    this.state.votings.forEach((voting) => {
-      if (voting.status === "active" && voting.endsAt <= now) {
-        this.completeVoting(voting.id);
-      }
-    });
-  },
 
   // Instructions content by language
   instructionsContent: {

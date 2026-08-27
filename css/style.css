@@ -1097,7 +1097,10 @@ html, body {
 
 .segment {
     flex: 1;
-    padding: 8px 12px;
+    /* 44 px is the tap target these buttons have to meet: this is the control an
+       elderly finger uses most, on the first screen of the app. It measured 33. */
+    min-height: 44px;
+    padding: 10px 12px;
     border: none;
     background: transparent;
     font-size: 14px;
@@ -2598,6 +2601,14 @@ html, body {
 }
 body.protocol-open { overflow: hidden; }
 @media print {
+    /* Without this the За/Проти/Утримався bars vanish on paper and in the PDF:
+       they are painted with background colour, and browsers drop backgrounds when
+       printing unless asked. The protocol is the document people take to a meeting. */
+    * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
     body > *:not(#protocol-overlay) { display: none !important; }
     body.protocol-open { overflow: visible; }
     #protocol-overlay {

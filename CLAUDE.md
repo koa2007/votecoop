@@ -55,7 +55,7 @@ this branch; ledger in `D:\claudeprojects\_audit\spilka\`.
   - `css/style.css` — all styles, CSS variables for theming
   - `pb_hooks/` — the server: 25 routes, the voting/vote/freeze hooks, the minute cron
   - `pb_migrations/` — schema migrations applied on the server
-  - `tests/` — 34 regression tests against a real PocketBase (see `tests/README.md`)
+  - `tests/` — 39 regression tests against a real PocketBase (see `tests/README.md`)
   - `supabase/*.sql` — history only; the Supabase backend is gone
 
 ## 🔑 Configuration

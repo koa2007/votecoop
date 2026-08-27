@@ -525,3 +525,173 @@ describe("a secret ballot stays secret after the urn closes", () => {
     }
   });
 });
+
+describe("nothing important happens without a trace", () => {
+  test("cancelling a voting notifies the house and is journalled", async () => {
+    // The client called an adapter method that has been an empty stub since the
+    // PocketBase move, so the author believed the house had been told. Residents who
+    // had already voted simply found the question gone.
+    const v = await createVoting(admin.token, { title: "Питання на відкликання" });
+    await api(
+      base,
+      "PATCH",
+      `/api/collections/votings/records/${v.id}`,
+      {
+        status: "deleted",
+        deleted_at: new Date().toISOString(),
+        deleted_reason: "помилився у формулюванні",
+      },
+      admin.token,
+    );
+
+    const rows = await historyFor(v.id);
+    assert.equal(
+      rows.filter((r) => r.action === "voting_cancelled").length,
+      1,
+      "the cancellation must appear in the group history",
+    );
+
+    const inbox = await api(
+      base,
+      "GET",
+      `/api/collections/notifications/records?filter=${encodeURIComponent(`user="${alice.id}" && type="voting_cancelled"`)}`,
+      undefined,
+      pb.adminToken,
+    );
+    assert.ok(
+      inbox.items.length >= 1,
+      "and the neighbours must be told it was withdrawn",
+    );
+  });
+
+  test("renaming the house leaves a trace", async () => {
+    // The house name is the address every resident sees and every protocol carries.
+    const before = await historyFor("");
+    await api(
+      base,
+      "POST",
+      "/api/spilka/update-group",
+      { group_id: groupId, name: "вул. Друга Перевірка 2-Б" },
+      admin.token,
+    );
+    const rows = await api(
+      base,
+      "GET",
+      `/api/collections/group_history/records?filter=${encodeURIComponent(`group="${groupId}" && action="group_renamed"`)}`,
+      undefined,
+      pb.adminToken,
+    );
+    assert.equal(rows.items.length, 1);
+    assert.equal(rows.items[0].details.to, "вул. Друга Перевірка 2-Б");
+  });
+
+  test("an update that omits the description does not erase it", async () => {
+    await api(
+      base,
+      "POST",
+      "/api/spilka/update-group",
+      { group_id: groupId, name: "Дім опису", description: "тут щось написано" },
+      admin.token,
+    );
+    await api(
+      base,
+      "POST",
+      "/api/spilka/update-group",
+      { group_id: groupId, name: "Дім опису" },
+      admin.token,
+    );
+    const g = await api(
+      base,
+      "GET",
+      `/api/collections/groups/records/${groupId}`,
+      undefined,
+      pb.adminToken,
+    );
+    assert.equal(g.description, "тут щось написано");
+  });
+});
+
+describe("a house is never left without an administrator", () => {
+  test("the sole admin cannot delete their own account", async () => {
+    // Memberships cascade with the user record, so this took the last admin with it
+    // and nobody could approve newcomers, restore an excluded neighbour or dissolve
+    // the house — recoverable only by hand in the database.
+    const res = await tryApi(
+      base,
+      "DELETE",
+      `/api/collections/users/records/${admin.id}`,
+      undefined,
+      admin.token,
+    );
+    assert.equal(res.status, 400);
+    assert.match(
+      JSON.stringify(res.body || {}).toLowerCase(),
+      /admin_must_transfer_first/,
+    );
+  });
+});
+
+describe("an applicant's details belong to the admin, not the whole house", () => {
+  test("an ordinary resident cannot read a pending applicant's profile", async () => {
+    const newcomer = await makeUser(
+      base,
+      pb.adminToken,
+      `r2newcomer${Date.now()}@test.local`,
+    );
+    await api(
+      base,
+      "POST",
+      "/api/collections/profiles/records",
+      {
+        user: newcomer.id,
+        first_name: "Ніна",
+        last_name: "Заявниця",
+        phone: "+380501112233",
+        address: "вул. Заявкова 5",
+        apartment: "12",
+      },
+      newcomer.token,
+    );
+    await api(
+      base,
+      "POST",
+      "/api/spilka/submit-join",
+      { group_id: groupId, apartment: "12", as_observer: false },
+      newcomer.token,
+    );
+
+    const seen = await api(
+      base,
+      "GET",
+      `/api/collections/profiles/records?filter=${encodeURIComponent(`user="${newcomer.id}"`)}`,
+      undefined,
+      alice.token,
+    );
+    assert.equal(
+      seen.items.length,
+      0,
+      "a neighbour must not read the applicant's name, phone and address",
+    );
+
+    const forAdmin = await api(
+      base,
+      "POST",
+      "/api/spilka/group-requests",
+      { group_id: groupId },
+      admin.token,
+    );
+    assert.ok(
+      forAdmin.data.some((r) => r.name === "Ніна Заявниця"),
+      "while the admin, who has to decide, still sees who applied",
+    );
+
+    const forMember = await tryApi(
+      base,
+      "POST",
+      "/api/spilka/group-requests",
+      { group_id: groupId },
+      alice.token,
+    );
+    assert.equal(forMember.status, 403);
+  });
+});
