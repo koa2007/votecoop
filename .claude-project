@@ -40,8 +40,8 @@ notes: |
     js/supabase.js (обгортка БД), js/config.js (URL + публічний anon-ключ, безпечно),
     css/style.css, service-worker.js (зараз spilka-v18), supabase/*.sql (міграції phase2..phase16).
   • Репозиторій: github.com/koa2007/votecoop — гілка main, push авто-деплоїть на spilka.top.
-  • База даних: Supabase project ygbhiorheuovtlmmyvjr, регіон eu-west-1 (Ірландія).
-    Схема + усі міграції — у файлах supabase/phaseN-*.sql. RLS увімкнено всюди.
+  • База даних: SQLite /opt/pocketbase/pb_data/data.db на VPS. Схема — у tests/fixtures/collections.json.
+    Правила доступу живуть у самих колекціях PocketBase; серверна логіка — у pb_hooks/.
   • Доступи (поза репо, локально): D:\claudeprojects\superbase-db.txt (пароль Postgres),
     D:\claudeprojects\superbase.txt (логін у Dashboard), .claude/CREDENTIALS.md (карта доступів).
   • Спільна память двох агентів: D:\claudeprojects\Obsidian\autonomus-memory\projects\votecoop\
@@ -51,6 +51,6 @@ notes: |
   • Два агенти працюють паралельно: я (Claude на ноуті) + autonomus-brain (VPS, через Telegram).
     Brain має прямий psql-доступ ($VOTECOOP_DB) і сам накатує SQL-міграції (dry-run BEGIN/ROLLBACK → COMMIT).
   • Анон-ключ у js/config.js публічний і це нормально — дані захищає RLS, не секретність ключа.
-  • Логін у Supabase Dashboard через playwright інколи ловить hCaptcha → тоді SQL котить brain.
+  • Адмінка PocketBase /_/ закрита ззовні — тільки через SSH-тунель на 127.0.0.1:8090.
   • Деплой: просто git push у main, GitHub Actions сам публікує. PWA-кеш бампиться версією SW.
   • status НЕ frozen — проєкт активний, код стабільний; "frozen" на старій картці було помилкою.
