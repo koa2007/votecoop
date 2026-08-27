@@ -1,16 +1,16 @@
 # VoteCoop — Project Bootstrap (read first every session)
 
-> Mobile-first web app for voting in housing co-ops / HOAs. Vanilla JS + Supabase backend.
+> Mobile-first web app for voting in housing co-ops / HOAs. Vanilla JS + PocketBase backend.
 
 ## ⚡ CURRENT STATE (last updated: 2026-04-25)
 
 **Live & working:**
-- Auth (Google OAuth + email/password) via Supabase
+- Auth (email + password) via PocketBase. Google sign-in is deferred, not wired up.
 - Groups: create / join by 6-digit code / approve requests / leave / delete-via-voting
 - Votings: 6 types (simple, secret, admin-change, remove-member, freeze=«exclude-from-count», delete-group)
   - Freeze reworked 2026-06-29 → "Виключення з підрахунку": removes ghost members (sold flat / gone) from the quorum denominator. Admin-only; fixed 5-day objection window; 2 distinct objections OR the target objecting = instant cancel; self-restore "Я тут" + admin restore; per-voting quorum snapshot; floor guard (≥2 active); new owner replaces ghost. Full backend in pb_hooks (was a no-op stub before). Memory: `freeze-exclude-redesign`.
 - Voting: yes / no / abstain + comments
-- Notifications (in-app, real-time via Supabase)
+- Notifications (in-app; realtime subscribes to `notifications` only — membership rules break the other subscriptions)
 - i18n: UK / EN / RU
 - CSV export of group history (admin)
 - Printable voting protocol (PDF/print) — "Протокол" button on any completed non-freeze voting, available to every member; window.print() + @media print; secret votes show counts only
@@ -31,19 +31,23 @@
 
 - **Frontend:** vanilla JS (no framework), HTML5, CSS3 with `var(--color-*)` variables
 - **Icons:** Phosphor Icons (CDN)
-- **Backend:** Supabase (Postgres + Auth + Realtime + RLS)
+- **Backend:** PocketBase 0.39.4 (Go + SQLite) on a VPS. Server-side logic lives in `pb_hooks/*.js`;
+  access rules live in the collections themselves (dumped to `tests/fixtures/collections.json`).
 - **Hosting:** any static host (currently local; future: Vercel / Netlify / Cloudflare Pages)
 - **Files:**
   - `index.html` — all screens + modals (single page)
   - `js/app.js` — main app logic (~3800 lines, single object literal `app`)
-  - `js/supabase.js` — Supabase service wrapper (single object `supabaseService`)
-  - `js/config.js` — Supabase URL + anon key (anon key is **safe to commit** — RLS protects data)
+  - `js/supabase.js` — backend adapter (single object `supabaseService`). Name is historical: it talks to PocketBase.
+  - `js/config.js` — just `POCKETBASE_URL = window.location.origin`. No key, nothing secret.
   - `css/style.css` — all styles, CSS variables for theming
-  - `supabase/*.sql` — schema + migrations (phase2 → phase6)
+  - `pb_hooks/` — the server: 25 routes, the voting/vote/freeze hooks, the minute cron
+  - `pb_migrations/` — schema migrations applied on the server
+  - `tests/` — 23 regression tests against a real PocketBase (see `tests/README.md`)
+  - `supabase/*.sql` — history only; the Supabase backend is gone
 
 ## 🔑 Configuration
 
-- `js/config.js` is committed and contains the public Supabase anon key (correct: anon keys are designed to be public, RLS enforces auth)
+- `js/config.js` is committed and holds no secret (just the same-origin URL)
 - `js/config.example.js` is the template if rotating projects
 - **Never commit:** `.env`, files with passwords, OAuth client secrets
 

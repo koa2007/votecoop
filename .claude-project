@@ -16,10 +16,10 @@ zep_group_id: votecoop
 # Де живе прод
 prod:
   domain: https://spilka.top
-  hosting: GitHub Pages (статичний фронт, custom domain, HTTPS Let's Encrypt)
+  hosting: VPS 173.242.50.141 — nginx віддає статику з /opt/spilka-web, HTTPS Let's Encrypt
   repo: github.com/koa2007/votecoop (public, branch main, push → авто-деплой GitHub Actions)
-  backend: Supabase project ygbhiorheuovtlmmyvjr (region eu-west-1 Ireland, Free tier)
-  db_access: Session Pooler aws-1-eu-west-1.pooler.supabase.com:5432 (brain через $VOTECOOP_DB)
+  backend: PocketBase 0.39.4 (Go + SQLite) на тому ж VPS, служба pocketbase.service
+  db_access: SQLite /opt/pocketbase/pb_data/data.db (тільки через SSH, вхід за ключем ~/.ssh/spilka_vps)
   email: Resend mail.spilka.top (DNS pending до AWS SES, SMTP ще не підключено)
   dns: adm.tools, домен 2013594
   admin_account: koa2007@gmail.com (єдиний адмін, хардкод у is_admin() SQL + app.isAdmin() JS)
@@ -27,8 +27,8 @@ prod:
 stack:
   language: javascript (vanilla, без фреймворку, без bundler)
   frontend: single app-object у js/app.js (~5500 рядків) + PWA + i18n (uk/en/ru)
-  backend: Supabase (Postgres + Realtime + Auth + RLS)
-  hosting: GitHub Pages
+  backend: PocketBase (SQLite) + серверні хуки на JS у pb_hooks/
+  hosting: власний VPS (nginx)
   payments: немає
 
 domain: https://spilka.top
