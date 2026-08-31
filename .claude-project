@@ -7,7 +7,7 @@ status: active
 # Короткі поля для картки дашборда
 stage: prod · код стабільний (phase16 + пост-рев'ю фікси)
 blocker: немає (по коду); бізнес — поки немає платящих клієнтів
-next: вирішити долю старого проєкту Supabase (жива база з ПДн мешканців, ніхто нею не користується) → далі маркетинг
+next: маркетинг (аудит закрито 27.08.2026; стара база Supabase — тестова, без даних мешканців, чіпати не треба)
 
 code_path: D:\claudeprojects\votingapp
 per_project_memory: D:\claudeprojects\votingapp\CLAUDE.md
